@@ -1,0 +1,3 @@
+[submodule "duckdb-trino-parity-extension"]
+	path = duckdb-trino-parity-extension
+	url = https://github.com/brikk/duckdb-trino-parity-extension
