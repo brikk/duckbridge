@@ -202,13 +202,28 @@ require_jdk17() {
 }
 
 build_doris() {
-    local targets=()
+    local targets=() jobs
     [ "${DO_BUILD_FE}" -eq 1 ] && targets+=("--fe")
     [ "${DO_BUILD_BE}" -eq 1 ] && targets+=("--be")
     [ "${#targets[@]}" -gt 0 ] || return 0
     require_jdk17
-    info "running Doris build.sh ${targets[*]} (JDK 17; this can take a LONG time) ..."
-    ( cd "${DORIS_SRC}" && DISABLE_BUILD_UI=ON ./build.sh "${targets[@]}" )
+    # Hard parallelism cap: never exceed 8 jobs (repo policy), regardless of build.sh's
+    # nproc-derived default. BUILD_JOBS env may lower it further.
+    jobs="${BUILD_JOBS:-8}"
+    [ "${jobs}" -gt 8 ] 2>/dev/null && jobs=8
+    [ "${jobs}" -ge 1 ] 2>/dev/null || jobs=1
+    # The BE build needs a prebuilt Doris thirdparty toolchain. build.sh honors
+    # DORIS_THIRDPARTY (defaults to ${DORIS_SRC}/thirdparty, which a fresh cache clone
+    # does NOT have built). Fail loud with instructions rather than let build.sh churn.
+    if [ "${DO_BUILD_BE}" -eq 1 ]; then
+        local tp="${DORIS_THIRDPARTY:-${DORIS_SRC}/thirdparty}"
+        [ -x "${tp}/installed/bin/thrift" ] ||
+            die "Doris thirdparty not built at ${tp}/installed — the BE build needs it.
+  Either set DORIS_THIRDPARTY to an existing thirdparty root (with installed/), or build it once:
+      cd ${DORIS_SRC}/thirdparty && ./build-thirdparty.sh -j ${jobs}   # heavy, hours"
+    fi
+    info "running Doris build.sh ${targets[*]} -j ${jobs} (JDK 17; this can take a LONG time) ..."
+    ( cd "${DORIS_SRC}" && DISABLE_BUILD_UI=ON ./build.sh "${targets[@]}" -j "${jobs}" )
 }
 
 # Locate a usable thrift 0.16.x executable for fe-thrift codegen, echoing its path on stdout.

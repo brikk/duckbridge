@@ -50,10 +50,21 @@ Prerequisites: JDK 17 for the Doris/maven side (the gradle toolchain resolves it
 the module itself), `thrift` 0.16.0 for `fe-thrift` codegen (`DORIS_THRIFT` env or
 `PATH`), Docker for the (future) integration environment.
 
-## Test environment (planned)
+## Test environment
 
-Integration/probe testing needs a running patched FE + BE plus a DuckDB/Quack server —
-all containerized: a compose setup (FE, BE, duck+quack) mirroring the trino module's
-testcontainers Quack fixture and doris-ducklake's compose smoke layout. Lands with the
-probe work (P1–P6); the FE/BE images come from `--build-fe`/`--build-be` output per
-`PATCHES.md`.
+Integration/probe testing needs a running patched FE + BE plus a DuckDB/Quack server, all
+containerized. **Scaffolded** in [`compose/`](compose/) (WIP — usable once the FE/BE images
+are baked):
+
+- `compose/docker-compose.yml` — `doris-fe` (patched branch FE + our plugin), `doris-be`
+  (patched branch BE — `JdbcJniScanner` is absent from stock 4.1.x, so the BE must be
+  branch-built too), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
+- `compose/bake-images.sh` — bakes the FE/BE overlay images from the `--build-fe`/`--build-be`
+  output (`~/.cache/duckbridge/doris/output`); refuses to run while the BE build is still going.
+- `compose/smoke.sh` — up → health → install plugin (`:doris-duckbridge:pluginZip`) →
+  `CREATE CATALOG ... type=duckbridge` → drive the fail-loud stub (asserts on the P1–P6 probe
+  message — that error is the correct scaffold state) → `down -v`.
+
+See [`compose/README.md`](compose/README.md) for the three commands and prerequisites. The
+plugin zip (`plugins/connector/duckbridge/` layout) is produced by the `pluginZip` gradle
+task. Real behavioral assertions replace the stub-error checks as the probes (P1–P6) land.

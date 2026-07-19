@@ -1,0 +1,127 @@
+name: doris-duckbridge-dev
+
+# Three containers for doris-duckbridge probe/integration work:
+#   • doris-fe    — our PATCHED branch-catalog-spi FE (SPI_READY_TYPES=duckbridge) hosting
+#                   the duckbridge connector plugin (mounted, not baked).
+#   • doris-be    — our PATCHED branch BE (carries the DuckDbTypeHandler; JdbcJniScanner is
+#                   NOT in stock 4.1.x, so — unlike doris-ducklake — the BE MUST be branch-
+#                   built too; plan §Which Doris).
+#   • duckdb-quack — a DuckDB CLI serving the Quack RPC protocol; the connector's scans run
+#                   here (jdbc:quack://duckdb-quack:9494).
+#
+# No Postgres/MinIO substrate (unlike doris-ducklake): the DuckDB/Quack server is the whole
+# data plane. Static IPs because init_fe.sh wants FE_SERVERS=name:ip:port and BE heartbeat
+# needs a stable FE target.
+#
+# Images are BAKED by ../bake-images.sh from the branch build output — nothing here builds
+# the Doris images at compose-up time. The quack image IS built by compose (cheap).
+#
+# Requires ../.env (copy ../.env.example → ../.env and set QUACK_TOKEN). smoke.sh handles it.
+
+services:
+  doris-fe:
+    image: doris-fe:duckbridge-local
+    container_name: doris-duckbridge-fe
+    hostname: doris-fe
+    environment:
+      FE_SERVERS: fe1:172.31.80.10:9010
+      FE_ID: "1"
+    ports:
+      - "8030:8030"   # FE HTTP
+      - "9030:9030"   # FE MySQL
+      - "9020:9020"   # FE RPC
+      - "9010:9010"   # FE edit log
+    volumes:
+      # Runtime copy of fe.conf (heap 2g etc.). init_fe.sh APPENDS priority_networks at each
+      # boot, so the mount source must be writable AND untracked — smoke.sh stages
+      # .fe.conf.runtime from the pristine tracked fe.conf before `up` (see its header).
+      - ./.fe.conf.runtime:/opt/apache-doris/fe/conf/fe.conf
+      # Plugin contents (UNZIPPED into plugins/connector/duckbridge). A named volume rather
+      # than a host bind mount because Podman's macOS bind mounts don't reliably propagate
+      # file contents into the VM; smoke.sh populates it via a one-shot docker-cp helper.
+      - fe-plugin-duckbridge:/opt/apache-doris/fe/plugins/connector/duckbridge
+      # Persist FE metadata + logs across restarts. Wipe (down -v) to reset cluster state.
+      - fe-meta:/opt/apache-doris/fe/doris-meta
+      - fe-log:/opt/apache-doris/fe/log
+    networks:
+      doris-net:
+        ipv4_address: 172.31.80.10
+    healthcheck:
+      # SHOW FRONTENDS hits FE-local state only — no BE required (SELECT 1 would deadlock
+      # against the BE depends_on:service_healthy gate).
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P9030 -uroot -e 'SHOW FRONTENDS' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
+  doris-be:
+    image: doris-be:duckbridge-local
+    container_name: doris-duckbridge-be
+    hostname: doris-be
+    # Host-overridable: defaults to amd64. On Apple Silicon set DORIS_BE_PLATFORM=linux/arm64
+    # (the wrong arch under emulation crashes the BE's ELF symbol-index init on startup).
+    platform: ${DORIS_BE_PLATFORM:-linux/amd64}
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    environment:
+      # BE reads FE_SERVERS to locate the master FE; BE_ADDR is its own heartbeat addr
+      # (9050 default). entry_point.sh derives MASTER_FE_IP / CURRENT_BE_IP /
+      # PRIORITY_NETWORKS internally from these.
+      FE_SERVERS: fe1:172.31.80.10:9020
+      BE_ADDR: 172.31.80.20:9050
+    volumes:
+      # ⚠ UNCERTAINTY: storage/log paths assume the stock BE dist root is
+      #   /opt/apache-doris/be (the layout doris-ducklake's compose relies on). Verify once
+      #   the BE image is baked (see README.md / bake-images.sh); adjust here AND the BE
+      #   Dockerfile's DORIS_BE_HOME together if the real root differs.
+      - be-storage:/opt/apache-doris/be/storage
+      - be-log:/opt/apache-doris/be/log
+    networks:
+      doris-net:
+        ipv4_address: 172.31.80.20
+    # Doris BE is sensitive to ulimits; relax them to the defaults the start scripts expect.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  duckdb-quack:
+    build:
+      context: ./docker/duckdb-quack
+    image: duckbridge/duckdb-quack:local
+    container_name: doris-duckbridge-quack
+    hostname: duckdb-quack
+    environment:
+      QUACK_PORT: "9494"
+      # Token comes from ../.env (QUACK_TOKEN). CREATE CATALOG passes the same token.
+      QUACK_TOKEN: ${QUACK_TOKEN:?set QUACK_TOKEN in doris-duckbridge/compose/.env (copy .env.example)}
+    ports:
+      - "9494:9494"   # Quack RPC (also reachable in-network as duckdb-quack:9494)
+    networks:
+      doris-net:
+        ipv4_address: 172.31.80.30
+    healthcheck:
+      # TCP-level liveness: the Quack listener is up when the port accepts a connection.
+      # (No mysql/duckdb client in the FE image path; a bash /dev/tcp probe is enough.)
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9494' 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 15s
+
+networks:
+  doris-net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.31.80.0/24
+
+volumes:
+  fe-meta:
+  fe-log:
+  fe-plugin-duckbridge:
+  be-storage:
+  be-log:

@@ -1,0 +1,7 @@
+# Real env with the Quack token — copy from .env.example. Never committed.
+.env
+
+# Runtime copy of fe.conf, staged by smoke.sh. Doris's init_fe.sh appends
+# `priority_networks` to it at boot, so it must be mutable and untracked — the tracked
+# fe.conf stays pristine.
+.fe.conf.runtime
