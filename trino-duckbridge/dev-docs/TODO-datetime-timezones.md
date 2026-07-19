@@ -48,3 +48,16 @@ needs doing.
 7. **Arrow engine (`DUCKDB_LOCAL`) date/time coverage** — the Arrow→Page converter
    handles the types the tests exercise; give it the same date/time matrix as the JDBC
    path before promoting it beyond benchmark status.
+
+## Cross-pollination from the Doris side (2026-07-19)
+
+When gap 1 (TIMESTAMPTZ column mapping) is implemented, apply the lesson from
+`doris-duckbridge`'s P3/P6 probe (`REPORT-doris-timezone-probe.md` there): a
+NAIVE timestamp literal compared against a DuckDB `TIMESTAMPTZ` column is
+interpreted in the DuckDB session zone — zone-dependent rows. Domain literals
+against TIMESTAMPTZ must be rendered as explicit-UTC instants
+(`TIMESTAMPTZ '...+00'`), never naive, and pinned with a dual-server-zone
+drift canary (UTC vs America/Los_Angeles, identical rows). The trino side's
+SET TimeZone alignment does NOT make naive rendering safe here — it aligns
+function evaluation, but explicit instants are still the robust form for
+domain literals.
