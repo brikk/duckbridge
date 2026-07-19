@@ -2,7 +2,7 @@
 
 **DONE 2026-07-19.** Transplanted from the ducklake monorepo (`@2788011`) into a
 standalone repo at `https://github.com/brikk/duckbridge` (local
-`/home/jayson/brokk/duckbridge`, branch `main`). What landed where:
+`/home/jayson/DEV/brikk/duckbridge`, branch `main`). What landed where:
 
 - `trino-duckbridge/` — the module verbatim (src, test, resources, dev-docs,
   README-lance.md). Two edits: dropped the `buildlogic.kotlin.brikk` plugin
@@ -34,7 +34,7 @@ point it moves out of the ducklake monorepo.
 
 ## Target
 
-- Local dir: `/home/jayson/brokk/duckbridge`
+- Local dir: `/home/jayson/DEV/brikk/duckbridge`
 - Remote: `https://github.com/brikk/duckbridge` (branch `main`)
 - Vendor in the parity extension so it's always at hand:
   `https://github.com/brikk/duckdb-trino-parity-extension` (already a git submodule
