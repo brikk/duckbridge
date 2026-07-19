@@ -144,5 +144,6 @@ Add a `(name, arity) → Emission` row to `EMISSION_STRATEGIES` in
   extension change needed — `testEveryNonAliasEntryHasAFixture` enforces coverage.
 - **ALIAS** (DuckDB diverges, needs native C++): add the macro/function +
   `trino_meta()` row in the `trino_parity` extension repo, mark it `Emission.Alias`
-  here, and it's covered by the `ALIAS_FUNCTIONS ⊆ trino_meta()` lockstep in
-  `TestTrinoFunctionAliases.testAliasSetIsSubsetOfMeta`.
+  here, and it's covered by the `trino_meta() == ALIAS_FUNCTIONS` lockstep in
+  `TestTrinoFunctionAliases.testAliasSetEqualsMeta` (strict equality since the
+  extension shrank to exactly the 10 natives).

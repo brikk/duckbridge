@@ -84,17 +84,15 @@ no longer needs the extension to ship them. You may drop them at your leisure.
 
 ## Coordination protocol
 
-1. **Now (this change):** the connector emits BARE/RENAME/OPERATOR/INLINE natively
-   and routes only the 10 through the extension. It **tolerates the extension still
-   shipping all 95** — the drift test is now `ALIAS_FUNCTIONS ⊆ trino_meta()`
-   (subset), not equality (`TestTrinoFunctionAliases.testAliasSetIsSubsetOfMeta`).
-   So nothing breaks while the extension is unchanged.
-2. **You, at leisure:** drop the 85 non-ALIAS macros in a version bump; keep the 10
-   natives and `trino_meta()` (which may narrow to the 10, or keep listing all — the
-   ⊆ check tolerates extras).
-3. **Connector, after your bump:** flip the subset check back to equality against the
-   narrowed `trino_meta()` (there's a marked `TODO(parity-extension shrink)` on the
-   test) so a stale extra macro is a hard failure again.
+1. **Step 1 (connector, done):** the connector emits BARE/RENAME/OPERATOR/INLINE
+   natively and routes only the 10 through the extension, tolerating the extension
+   still shipping all 95 via a subset drift check.
+2. **Step 2 (extension, done at `0d531cc`):** dropped the 85 non-ALIAS macros;
+   `trino_meta()` narrowed to catalog exactly the 10 natives.
+3. **Step 3 (connector, done):** the drift check is re-pinned to strict equality —
+   `trino_meta() == ALIAS_FUNCTIONS` (`TestTrinoFunctionAliases.testAliasSetEqualsMeta`),
+   so an extra or missing entry on either side is a hard failure again. The submodule
+   pin was bumped to `0d531cc` and the bundled binary rebuilt from it.
 
 Because the correctness of the 85 native emissions is proved by per-entry semantic
 fixtures against embedded DuckDB (`TestTrinoFunctionAliases.nonAliasSemanticFixtures`,

@@ -31,11 +31,11 @@ import java.util.Properties
  *
  * Two obligations, post "alias only what diverges":
  *
- *  (a) [testAliasSetIsSubsetOfMeta] — ALIAS LOCKSTEP: the translator's [Emission.Alias] subset (the
- *      10 native-C++ divergence-fixers that must route through the extension) must be a SUBSET of the
- *      loaded binary's `trino_meta()` catalog. It is `⊆`, not `==`, on purpose: the extension still
- *      ships all ~95 `trino_<name>` macros/functions; a follow-up will shrink it to just the 10 and
- *      re-pin equality (see the TODO on that test).
+ *  (a) [testAliasSetEqualsMeta] — ALIAS LOCKSTEP: the translator's [Emission.Alias] subset (the
+ *      10 native-C++ divergence-fixers that must route through the extension) must EQUAL the loaded
+ *      binary's `trino_meta()` catalog, exactly. The extension shed its 85 passthrough macros at
+ *      0d531cc ("shrink to the 10 native divergence-fixing functions"), so any extra or missing
+ *      entry on either side is a hard failure again.
  *
  *  (b) [nonAliasSemanticFixtures] — SEMANTIC FIXTURES: every non-ALIAS entry
  *      (Bare/Rename/Operator/Inline) has at least one fixture that TRANSLATES a Trino
@@ -49,7 +49,7 @@ class TestTrinoFunctionAliases {
 
     @Test
     @Throws(Exception::class)
-    fun testAliasSetIsSubsetOfMeta() {
+    fun testAliasSetEqualsMeta() {
         openConnectionWithExtension().use { conn ->
             conn.createStatement().use { stmt ->
                 val meta = readMeta(stmt)
@@ -57,12 +57,11 @@ class TestTrinoFunctionAliases {
                     DuckBridgeExpressionTranslator.ALIAS_FUNCTIONS
                         .map { MetaEntry(it.name, it.arity) }
                         .toHashSet()
-                // TODO(parity-extension shrink): the extension still ships all ~95 trino_<name>
-                // entries. When it drops the 85 non-ALIAS macros (version bump), re-pin this to
-                // `isEqualTo(meta)` so a stale extra macro becomes a hard failure again.
+                // Strict equality since the extension shrink (0d531cc): the binary catalogs exactly
+                // the 10 ALIAS natives — an extra macro on either side is drift and fails hard.
                 assertThat(meta)
-                    .`as`("every ALIAS-class entry must be backed by a trino_<name> in trino_meta()")
-                    .containsAll(aliasSet)
+                    .`as`("trino_meta() must catalog exactly the translator's ALIAS set (10 natives)")
+                    .isEqualTo(aliasSet)
             }
         }
     }
