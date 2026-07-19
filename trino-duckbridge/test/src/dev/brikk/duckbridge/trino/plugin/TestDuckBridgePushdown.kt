@@ -99,6 +99,41 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
             .isNotFullyPushedDown(FilterNode::class.java)
     }
 
+    // ---- Session-zone alignment (fail loud) ---------------------------------
+
+    @Test
+    fun unsettableSessionZoneFailsLoudWhenTzPushdownEnabled() {
+        // '+05:30' is a fractional bare offset: Trino accepts it as a session zone, DuckDB's
+        // SET TimeZone rejects it. With pushdown_timestamp_with_timezone enabled (the default),
+        // tz-sensitive functions may already be pushed, so the connection must fail loud rather
+        // than evaluate them in a mismatched zone.
+        val session =
+            io.trino.testing.TestingSession.testSessionBuilder()
+                .setCatalog(DuckBridgeQueryRunner.CATALOG)
+                .setSchema(DuckBridgeQueryRunner.SCHEMA)
+                .setTimeZoneKey(io.trino.spi.type.TimeZoneKey.getTimeZoneKey("+05:30"))
+                .build()
+        assertQueryFails(
+            session,
+            "SELECT id FROM people WHERE id = 1",
+            ".*DuckDB rejected SET TimeZone = '\\+05:30'.*pushdown_timestamp_with_timezone.*",
+        )
+    }
+
+    @Test
+    fun unsettableSessionZoneIsToleratedWhenTzPushdownDisabled() {
+        // Same zone, but with tz pushdown off nothing tz-sensitive is pushed — the SET failure is
+        // warned and the query runs correctly.
+        val session =
+            io.trino.testing.TestingSession.testSessionBuilder()
+                .setCatalog(DuckBridgeQueryRunner.CATALOG)
+                .setSchema(DuckBridgeQueryRunner.SCHEMA)
+                .setTimeZoneKey(io.trino.spi.type.TimeZoneKey.getTimeZoneKey("+05:30"))
+                .setCatalogSessionProperty(DuckBridgeQueryRunner.CATALOG, "pushdown_timestamp_with_timezone", "false")
+                .build()
+        assertQuery(session, "SELECT id FROM people WHERE id = 1", "VALUES 1")
+    }
+
     // ---- LIMIT / TopN pushdown ---------------------------------------------
     //
     // LIMIT is pushed AND guaranteed (a remote `LIMIT n` returns at most n rows, which is Trino's

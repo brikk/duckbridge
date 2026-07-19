@@ -131,8 +131,11 @@ class DuckBridgeClient
             try {
                 // Set the DuckDB session TimeZone to match Trino's session zone so date/time
                 // pushdown over TIMESTAMP WITH TIME ZONE interprets instants identically on both
-                // sides. Failure (e.g. a fractional bare offset DuckDB can't parse) is logged once
-                // and tolerated — Tier C pushdown degrades to Trino-side eval for this connection.
+                // sides. When tz pushdown is enabled and the zone cannot be set, this THROWS —
+                // the planner may already have pushed tz-sensitive functions, and running them
+                // against a mismatched zone would return wrong rows (fail loud, never silently
+                // wrong). With pushdown_timestamp_with_timezone=false the failure is only warned:
+                // nothing tz-sensitive is pushed on such sessions.
                 applySessionTimeZone(connection, session)
             } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
                 // Any failure while preparing the connection must not leak it back to the pool.
@@ -149,11 +152,22 @@ class DuckBridgeClient
                 connection.createStatement().use { stmt ->
                     stmt.execute("SET TimeZone = '" + duckZone.replace("'", "''") + "'")
                 }
-            } catch (@Suppress("SwallowedException") e: SQLException) {
+            } catch (e: SQLException) {
+                if (DuckBridgeSessionProperties.isPushdownTimestampWithTimeZone(session)) {
+                    // tz-sensitive functions may already be pushed for this session; evaluating
+                    // them in a mismatched zone would silently return wrong rows.
+                    throw TrinoException(
+                        NOT_SUPPORTED,
+                        "DuckDB rejected SET TimeZone = '$duckZone' (from Trino session zone '$trinoZone') while " +
+                            "pushdown_timestamp_with_timezone is enabled. Use a zone DuckDB accepts (named IANA zone or " +
+                            "integer-hour offset), or set session property pushdown_timestamp_with_timezone = false.",
+                        e,
+                    )
+                }
                 if (loggedTimeZoneFailures.add(duckZone)) {
                     log.warn(
-                        "duckbridge: could not SET TimeZone = '%s' (from Trino zone '%s'); " +
-                            "TIMESTAMP WITH TIME ZONE pushdown will fall back to Trino-side evaluation. Cause: %s",
+                        "duckbridge: could not SET TimeZone = '%s' (from Trino zone '%s'); harmless for this session " +
+                            "because pushdown_timestamp_with_timezone is disabled (no tz-sensitive pushdown). Cause: %s",
                         duckZone,
                         trinoZone,
                         e.message,
