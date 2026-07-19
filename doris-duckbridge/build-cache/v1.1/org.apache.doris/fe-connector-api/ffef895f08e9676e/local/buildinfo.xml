@@ -1,0 +1,647 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<build xsi:schemaLocation="http://maven.apache.org/BUILD-CACHE-BUILD/1.2.0 https://maven.apache.org/xsd/build-cache-build-1.2.0.xsd"
+    xmlns="http://maven.apache.org/BUILD-CACHE-BUILD/1.2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <cacheImplementationVersion>v1.1</cacheImplementationVersion>
+  <final>false</final>
+  <hashFunction>XX</hashFunction>
+  <buildTime>2026-07-19T16:52:49.997</buildTime>
+  <buildServer>geekmax</buildServer>
+  <scm />
+  <goals>
+    <goal>install</goal>
+  </goals>
+  <artifact>
+    <groupId>org.apache.doris</groupId>
+    <artifactId>fe-connector-api</artifactId>
+    <version>1.2-SNAPSHOT</version>
+    <type>jar</type>
+    <fileName>fe-connector-api.jar</fileName>
+    <fileHash>4174f41c4d247624</fileHash>
+    <fileSize>136989</fileSize>
+    <filePath>target/doris-fe-connector-api.jar</filePath>
+  </artifact>
+  <executions>
+    <execution>
+      <executionKey>enforce-maven-version:enforce:validate:maven-enforcer-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.enforcer.EnforceMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>enforce-java-version:enforce:validate:maven-enforcer-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.enforcer.EnforceMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>validate:check:validate:maven-checkstyle-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.checkstyle.CheckstyleViolationCheckMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>directories:directory-of:initialize:directory-maven-plugin:org.commonjava.maven.plugins</executionKey>
+      <mojoClassName>org.commonjava.maven.plugins.execroot.DirectoryOfGoal</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>process-resource-bundles:process:generate-resources:maven-remote-resources-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.resources.remote.ProcessRemoteResourcesMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-resources:resources:process-resources:maven-resources-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.resources.ResourcesMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>flatten:flatten:process-resources:flatten-maven-plugin:org.codehaus.mojo</executionKey>
+      <mojoClassName>org.codehaus.mojo.flatten.FlattenMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-compile:compile:compile:maven-compiler-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.compiler.CompilerMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-testResources:testResources:process-test-resources:maven-resources-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.resources.TestResourcesMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-testCompile:testCompile:test-compile:maven-compiler-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.compiler.TestCompilerMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-test:test:test:maven-surefire-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.surefire.SurefirePlugin</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-jar:jar:package:maven-jar-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.jar.JarMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>attach-descriptor:attach-descriptor:package:maven-site-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.site.descriptor.SiteDescriptorAttachMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-install:install:install:maven-install-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.install.InstallMojo</mojoClassName>
+    </execution>
+  </executions>
+  <projectsInputInfo>
+    <checksum>ffef895f08e9676e</checksum>
+    <items>
+      <item type="pom" hash="dfbde6f13ea5acbb">&lt;?xml version="1.0" encoding="UTF-8"?>
+&lt;project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  &lt;groupId>org.apache.doris&lt;/groupId>
+  &lt;artifactId>fe-connector-api&lt;/artifactId>
+  &lt;version>cache-extension-version&lt;/version>
+  &lt;dependencies>
+    &lt;dependency>
+      &lt;groupId>org.awaitility&lt;/groupId>
+      &lt;artifactId>awaitility&lt;/artifactId>
+      &lt;version>4.2.2&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.doris&lt;/groupId>
+      &lt;artifactId>fe-thrift&lt;/artifactId>
+      &lt;version>cache-extension-version&lt;/version>
+      &lt;scope>provided&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.jupiter&lt;/groupId>
+      &lt;artifactId>junit-jupiter&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.jupiter&lt;/groupId>
+      &lt;artifactId>junit-jupiter-engine&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.jupiter&lt;/groupId>
+      &lt;artifactId>junit-jupiter-params&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.platform&lt;/groupId>
+      &lt;artifactId>junit-platform-launcher&lt;/artifactId>
+      &lt;version>1.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.vintage&lt;/groupId>
+      &lt;artifactId>junit-vintage-engine&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+      &lt;artifactId>log4j-1.2-api&lt;/artifactId>
+      &lt;version>2.25.4&lt;/version>
+      &lt;scope>compile&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+      &lt;artifactId>log4j-core&lt;/artifactId>
+      &lt;version>2.25.4&lt;/version>
+      &lt;scope>compile&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+      &lt;artifactId>log4j-slf4j2-impl&lt;/artifactId>
+      &lt;version>2.25.4&lt;/version>
+      &lt;scope>compile&lt;/scope>
+      &lt;exclusions>
+        &lt;exclusion>
+          &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+          &lt;artifactId>log4j-core&lt;/artifactId>
+        &lt;/exclusion>
+      &lt;/exclusions>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.slf4j&lt;/groupId>
+      &lt;artifactId>slf4j-api&lt;/artifactId>
+      &lt;version>2.0.17&lt;/version>
+      &lt;scope>compile&lt;/scope>
+    &lt;/dependency>
+  &lt;/dependencies>
+  &lt;build>
+    &lt;plugins>
+      &lt;plugin>
+        &lt;artifactId>maven-remote-resources-plugin&lt;/artifactId>
+        &lt;version>1.7.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>process-resource-bundles&lt;/id>
+            &lt;goals>
+              &lt;goal>process&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;resourceBundles>
+                &lt;resourceBundle>org.apache:apache-jar-resource-bundle:1.4&lt;/resourceBundle>
+              &lt;/resourceBundles>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-enforcer-plugin&lt;/artifactId>
+        &lt;version>3.6.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>enforce-maven-version&lt;/id>
+            &lt;goals>
+              &lt;goal>enforce&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;rules>
+                &lt;requireMavenVersion>
+                  &lt;version>[3.9.0,)&lt;/version>
+                &lt;/requireMavenVersion>
+              &lt;/rules>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>enforce-java-version&lt;/id>
+            &lt;goals>
+              &lt;goal>enforce&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;rules>
+                &lt;requireJavaVersion>
+                  &lt;version>1.8&lt;/version>
+                &lt;/requireJavaVersion>
+              &lt;/rules>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-site-plugin&lt;/artifactId>
+        &lt;version>3.12.1&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-site&lt;/id>
+            &lt;phase>site&lt;/phase>
+            &lt;goals>
+              &lt;goal>site&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;outputDirectory>/target/site&lt;/outputDirectory>
+              &lt;reportPlugins>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+              &lt;/reportPlugins>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>default-deploy&lt;/id>
+            &lt;phase>site-deploy&lt;/phase>
+            &lt;goals>
+              &lt;goal>deploy&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;outputDirectory>/target/site&lt;/outputDirectory>
+              &lt;reportPlugins>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+              &lt;/reportPlugins>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>attach-descriptor&lt;/id>
+            &lt;goals>
+              &lt;goal>attach-descriptor&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;outputDirectory>/target/site&lt;/outputDirectory>
+              &lt;reportPlugins>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+              &lt;/reportPlugins>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;configuration>
+          &lt;outputDirectory>/target/site&lt;/outputDirectory>
+          &lt;reportPlugins>
+            &lt;reportPlugin>
+              &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+              &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+            &lt;/reportPlugin>
+            &lt;reportPlugin>
+              &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+              &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+            &lt;/reportPlugin>
+          &lt;/reportPlugins>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-dependency-plugin&lt;/artifactId>
+        &lt;version>3.4.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>copy-plugin-deps&lt;/id>
+            &lt;phase>none&lt;/phase>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;groupId>org.commonjava.maven.plugins&lt;/groupId>
+        &lt;artifactId>directory-maven-plugin&lt;/artifactId>
+        &lt;version>0.1&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>directories&lt;/id>
+            &lt;phase>initialize&lt;/phase>
+            &lt;goals>
+              &lt;goal>directory-of&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;property>fe.dir&lt;/property>
+              &lt;project>
+                &lt;groupId>org.apache.doris&lt;/groupId>
+                &lt;artifactId>fe&lt;/artifactId>
+              &lt;/project>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+        &lt;version>3.1.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>validate&lt;/id>
+            &lt;phase>validate&lt;/phase>
+            &lt;goals>
+              &lt;goal>check&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;configLocation>check/checkstyle/checkstyle.xml&lt;/configLocation>
+              &lt;suppressionsLocation>check/checkstyle/suppressions.xml&lt;/suppressionsLocation>
+              &lt;encoding>UTF-8&lt;/encoding>
+              &lt;consoleOutput>true&lt;/consoleOutput>
+              &lt;failsOnError>true&lt;/failsOnError>
+              &lt;linkXRef>false&lt;/linkXRef>
+              &lt;includeTestSourceDirectory>true&lt;/includeTestSourceDirectory>
+              &lt;propertyExpansion>config_loc=/home/jayson/.cache/duckbridge/doris/fe/check/checkstyle&lt;/propertyExpansion>
+              &lt;excludes>**/apache/doris/thrift/**/*,
+                            **/apache/parquet/**/*&lt;/excludes>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;dependencies>
+          &lt;dependency>
+            &lt;groupId>com.puppycrawl.tools&lt;/groupId>
+            &lt;artifactId>checkstyle&lt;/artifactId>
+            &lt;version>9.3&lt;/version>
+            &lt;scope>compile&lt;/scope>
+          &lt;/dependency>
+        &lt;/dependencies>
+        &lt;configuration>
+          &lt;configLocation>check/checkstyle/checkstyle.xml&lt;/configLocation>
+          &lt;suppressionsLocation>check/checkstyle/suppressions.xml&lt;/suppressionsLocation>
+          &lt;encoding>UTF-8&lt;/encoding>
+          &lt;consoleOutput>true&lt;/consoleOutput>
+          &lt;failsOnError>true&lt;/failsOnError>
+          &lt;linkXRef>false&lt;/linkXRef>
+          &lt;includeTestSourceDirectory>true&lt;/includeTestSourceDirectory>
+          &lt;propertyExpansion>config_loc=/home/jayson/.cache/duckbridge/doris/fe/check/checkstyle&lt;/propertyExpansion>
+          &lt;excludes>**/apache/doris/thrift/**/*,
+                            **/apache/parquet/**/*&lt;/excludes>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;groupId>org.codehaus.mojo&lt;/groupId>
+        &lt;artifactId>flatten-maven-plugin&lt;/artifactId>
+        &lt;version>1.2.5&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>flatten&lt;/id>
+            &lt;phase>process-resources&lt;/phase>
+            &lt;goals>
+              &lt;goal>flatten&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;updatePomFile>true&lt;/updatePomFile>
+              &lt;flattenMode>bom&lt;/flattenMode>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>flatten.clean&lt;/id>
+            &lt;phase>clean&lt;/phase>
+            &lt;goals>
+              &lt;goal>clean&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;updatePomFile>true&lt;/updatePomFile>
+              &lt;flattenMode>bom&lt;/flattenMode>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;configuration>
+          &lt;updatePomFile>true&lt;/updatePomFile>
+          &lt;flattenMode>bom&lt;/flattenMode>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;groupId>org.codehaus.mojo&lt;/groupId>
+        &lt;artifactId>exec-maven-plugin&lt;/artifactId>
+        &lt;version>3.1.0&lt;/version>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-clean-plugin&lt;/artifactId>
+        &lt;version>3.2.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-clean&lt;/id>
+            &lt;phase>clean&lt;/phase>
+            &lt;goals>
+              &lt;goal>clean&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-resources-plugin&lt;/artifactId>
+        &lt;version>3.3.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-testResources&lt;/id>
+            &lt;phase>process-test-resources&lt;/phase>
+            &lt;goals>
+              &lt;goal>testResources&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>default-resources&lt;/id>
+            &lt;phase>process-resources&lt;/phase>
+            &lt;goals>
+              &lt;goal>resources&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-jar-plugin&lt;/artifactId>
+        &lt;version>3.3.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-jar&lt;/id>
+            &lt;phase>package&lt;/phase>
+            &lt;goals>
+              &lt;goal>jar&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;archive>
+                &lt;manifest>
+                  &lt;addDefaultSpecificationEntries>true&lt;/addDefaultSpecificationEntries>
+                  &lt;addDefaultImplementationEntries>true&lt;/addDefaultImplementationEntries>
+                &lt;/manifest>
+              &lt;/archive>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;configuration>
+          &lt;archive>
+            &lt;manifest>
+              &lt;addDefaultSpecificationEntries>true&lt;/addDefaultSpecificationEntries>
+              &lt;addDefaultImplementationEntries>true&lt;/addDefaultImplementationEntries>
+            &lt;/manifest>
+          &lt;/archive>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-compiler-plugin&lt;/artifactId>
+        &lt;version>3.10.1&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-compile&lt;/id>
+            &lt;phase>compile&lt;/phase>
+            &lt;goals>
+              &lt;goal>compile&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>default-testCompile&lt;/id>
+            &lt;phase>test-compile&lt;/phase>
+            &lt;goals>
+              &lt;goal>testCompile&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-surefire-plugin&lt;/artifactId>
+        &lt;version>2.22.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-test&lt;/id>
+            &lt;phase>test&lt;/phase>
+            &lt;goals>
+              &lt;goal>test&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-install-plugin&lt;/artifactId>
+        &lt;version>3.1.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-install&lt;/id>
+            &lt;phase>install&lt;/phase>
+            &lt;goals>
+              &lt;goal>install&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-deploy-plugin&lt;/artifactId>
+        &lt;version>2.8.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-deploy&lt;/id>
+            &lt;phase>deploy&lt;/phase>
+            &lt;goals>
+              &lt;goal>deploy&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+    &lt;/plugins>
+  &lt;/build>
+&lt;/project>
+</item>
+      <item type="file" hash="af3ee25829f212ad" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/Connector.java</item>
+      <item type="file" hash="ecbacf5c1d042205" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorCapability.java</item>
+      <item type="file" hash="20535800b9d06ac4" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorColumn.java</item>
+      <item type="file" hash="e9f98212585dd664" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorColumnStatistics.java</item>
+      <item type="file" hash="d194d7c484429ecc" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorContractValidator.java</item>
+      <item type="file" hash="db7ed9531d48b943" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorDatabaseMetadata.java</item>
+      <item type="file" hash="508539ed41dbff07" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorDelegatedCredential.java</item>
+      <item type="file" hash="260bb4f7f04effe5" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorHttpSecurityHook.java</item>
+      <item type="file" hash="9cfdd972ebfc842a" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorIdentifierOps.java</item>
+      <item type="file" hash="5ff0052ff929b4dc" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorMetadata.java</item>
+      <item type="file" hash="45700ced4fa77c19" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorPartitionInfo.java</item>
+      <item type="file" hash="d29056a1e4713f58" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorPropertyMetadata.java</item>
+      <item type="file" hash="3e070ae40425d9dc" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorPushdownOps.java</item>
+      <item type="file" hash="e6d0465ef62e914a" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorSchemaOps.java</item>
+      <item type="file" hash="4273d7c3e1354890" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorSession.java</item>
+      <item type="file" hash="cbf79394b532974a" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorStatisticsOps.java</item>
+      <item type="file" hash="34576749b44811a8" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorTableOps.java</item>
+      <item type="file" hash="110094a8da950f9c" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorTableSchema.java</item>
+      <item type="file" hash="c7ebba6db0fecf41" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorTableStatistics.java</item>
+      <item type="file" hash="e45daedc27ec0e49" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorTestResult.java</item>
+      <item type="file" hash="7f6cf49c5bf8d4c9" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorType.java</item>
+      <item type="file" hash="55789e06f20cef42" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorValidationContext.java</item>
+      <item type="file" hash="c65e2d2565615a59" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorViewDefinition.java</item>
+      <item type="file" hash="a1145997d64e8baf" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ConnectorWriteOps.java</item>
+      <item type="file" hash="2be3760bcd7e468b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/BranchChange.java</item>
+      <item type="file" hash="9642e7b435474caa" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorBucketSpec.java</item>
+      <item type="file" hash="975395ba9d3a0a35" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorColumnPosition.java</item>
+      <item type="file" hash="7278b71fa4b8ddb2" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorCreateTableRequest.java</item>
+      <item type="file" hash="99867bd642653122" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorPartitionField.java</item>
+      <item type="file" hash="2175da93aeaa6333" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorPartitionSpec.java</item>
+      <item type="file" hash="f747bd2250bb0aaf" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorPartitionValueDef.java</item>
+      <item type="file" hash="2bde11bbee68902c" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/ConnectorSortField.java</item>
+      <item type="file" hash="556262fb96cfff71" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/DropRefChange.java</item>
+      <item type="file" hash="9011243573137f21" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/PartitionFieldChange.java</item>
+      <item type="file" hash="dc8f7978abc881e0" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/ddl/TagChange.java</item>
+      <item type="file" hash="5893b738c8b08ef9" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/DorisConnectorException.java</item>
+      <item type="file" hash="1cd9bd051a895d76" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/event/ConnectorEventSource.java</item>
+      <item type="file" hash="8c2794145b80bffb" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/event/EventPollRequest.java</item>
+      <item type="file" hash="62d337701df76d5a" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/event/EventPollResult.java</item>
+      <item type="file" hash="44a5ff514bd547be" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/event/MetastoreChangeDescriptor.java</item>
+      <item type="file" hash="80078d926ee70fd1" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/ConnectorColumnHandle.java</item>
+      <item type="file" hash="dabb95058193010b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/ConnectorPartitionHandle.java</item>
+      <item type="file" hash="1558d6dde47c5910" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/ConnectorTableHandle.java</item>
+      <item type="file" hash="d4a4c36f54006d04" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/handle/ConnectorTransaction.java</item>
+      <item type="file" hash="2706a235f9697646" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/ConnectorTransactionHandle.java</item>
+      <item type="file" hash="99a1f06a87a70bf9" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/handle/ConnectorWriteHandle.java</item>
+      <item type="file" hash="c43047fc7c99b9e1" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/NamedColumnHandle.java</item>
+      <item type="file" hash="be879ce2d9b17521" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/handle/NoOpConnectorTransaction.java</item>
+      <item type="file" hash="50122cd106143013" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/PassthroughQueryTableHandle.java</item>
+      <item type="file" hash="3b184e84369640aa" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/handle/WriteOperation.java</item>
+      <item type="file" hash="3f1757c2e2ef6147" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/mvcc/ConnectorMvccPartition.java</item>
+      <item type="file" hash="6642709068974c70" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/mvcc/ConnectorMvccPartitionView.java</item>
+      <item type="file" hash="1df6c95ff10e80aa" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/mvcc/ConnectorMvccSnapshot.java</item>
+      <item type="file" hash="82a24e4f60ffe055" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/mvcc/ConnectorTableFreshness.java</item>
+      <item type="file" hash="529fdd6b76c3d11b" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/mvcc/ConnectorTimeTravelSpec.java</item>
+      <item type="file" hash="337b030da34931bd" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/procedure/ConnectorProcedureOps.java</item>
+      <item type="file" hash="5fe720d1893862dc" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/procedure/ConnectorProcedureResult.java</item>
+      <item type="file" hash="4598a437668ebd2c" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/procedure/ConnectorRewriteGroup.java</item>
+      <item type="file" hash="8bff2373484a5aab" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/procedure/ProcedureExecutionMode.java</item>
+      <item type="file" hash="b40bb8c5fc55b3ed" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorAnd.java</item>
+      <item type="file" hash="8490c1734888031d" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorBetween.java</item>
+      <item type="file" hash="c5efe6cf99ebbdb5" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorColumnAssignment.java</item>
+      <item type="file" hash="4027b7849f0fcbbf" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorColumnRef.java</item>
+      <item type="file" hash="2b093f9c424dd4d2" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorComparison.java</item>
+      <item type="file" hash="8b90dc286a0ed19b" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorDomain.java</item>
+      <item type="file" hash="04e29244d7cfb92b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorExpression.java</item>
+      <item type="file" hash="2d1edb9298771e80" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorFilterConstraint.java</item>
+      <item type="file" hash="15c0b17468736bbb" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorFunctionCall.java</item>
+      <item type="file" hash="1a76192e920bfa42" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorIn.java</item>
+      <item type="file" hash="a51761c4bf592d91" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorIsNull.java</item>
+      <item type="file" hash="46bafd3b07dca194" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorLike.java</item>
+      <item type="file" hash="825fb27f142e2161" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorLiteral.java</item>
+      <item type="file" hash="519c307c64e0c7a5" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorNot.java</item>
+      <item type="file" hash="3d0cc5156a74d2fc" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorOr.java</item>
+      <item type="file" hash="eed45a70ed0398fb" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorPredicate.java</item>
+      <item type="file" hash="8e49b8427fb2e03f" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ConnectorRange.java</item>
+      <item type="file" hash="6ca84c90c95e7db9" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/FilterApplicationResult.java</item>
+      <item type="file" hash="6c37a3a00dc81b5b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/LimitApplicationResult.java</item>
+      <item type="file" hash="39ff9a5c4bf26186" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/pushdown/ProjectionApplicationResult.java</item>
+      <item type="file" hash="c67e12c45bef2edd" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorColumnCategory.java</item>
+      <item type="file" hash="76d337a2aaa1a932" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorDeleteFile.java</item>
+      <item type="file" hash="2cf77aee60be2036" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorPartitionValues.java</item>
+      <item type="file" hash="f9e0eb67401d90ca" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorScanPlanProvider.java</item>
+      <item type="file" hash="ad40162b224ad9ab" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorScanProfile.java</item>
+      <item type="file" hash="528a9fda4fa8c7af" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorScanRange.java</item>
+      <item type="file" hash="f144bb130374dcc5" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorScanRangeType.java</item>
+      <item type="file" hash="6f695e113dcac378" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ConnectorSplitSource.java</item>
+      <item type="file" hash="2b6e244b6e98379c" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/scan/ScanNodePropertiesResult.java</item>
+      <item type="file" hash="5fbb158ad507eb92" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/write/ConnectorSinkPlan.java</item>
+      <item type="file" hash="4c4c25db076cf03b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/write/ConnectorWritePartitionField.java</item>
+      <item type="file" hash="b72761e44b90747d" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/write/ConnectorWritePartitionSpec.java</item>
+      <item type="file" hash="9144c9201199f13c" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/main/java/org/apache/doris/connector/api/write/ConnectorWritePlanProvider.java</item>
+      <item type="file" hash="2b58a5b59099b342" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/connector/api/write/ConnectorWriteSortColumn.java</item>
+      <item type="file" hash="8c6a935066926b14" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorColumnTest.java</item>
+      <item type="file" hash="6246c4a4c1c981e7" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorMetadataTimeTravelDefaultsTest.java</item>
+      <item type="file" hash="67af5a8e077fac07" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorPartitionInfoTest.java</item>
+      <item type="file" hash="7cbdd5d215d2e02a" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorScanProviderSelectionTest.java</item>
+      <item type="file" hash="aa09f94767aacf18" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorSchemaOpsDefaultsTest.java</item>
+      <item type="file" hash="84bc017f97bb7994" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorViewDefaultsTest.java</item>
+      <item type="file" hash="ca9d8aea3b64701e" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/ConnectorViewDefinitionTest.java</item>
+      <item type="file" hash="5fec71a63d788ce3" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/handle/ConnectorWriteHandleTest.java</item>
+      <item type="file" hash="159b4b9f0d3853a0" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/handle/NoOpConnectorTransactionTest.java</item>
+      <item type="file" hash="977220ac882de991" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/mvcc/ConnectorMvccSnapshotTest.java</item>
+      <item type="file" hash="6f9ec647ac6912eb" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/mvcc/ConnectorTimeTravelSpecTest.java</item>
+      <item type="file" hash="392333da2392be22" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/procedure/ConnectorProcedureOpsDefaultsTest.java</item>
+      <item type="file" hash="ce904a688ee7b7f9" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/pushdown/ConnectorPredicateTest.java</item>
+      <item type="file" hash="4b657d6a5a964099" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/scan/ConnectorScanPlanProviderBatchScanTest.java</item>
+      <item type="file" hash="d6552924345aaab8" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/scan/ConnectorScanPlanProviderCompressTypeTest.java</item>
+      <item type="file" hash="e1d59bae5c306904" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/scan/ConnectorScanRangeWeightDefaultsTest.java</item>
+      <item type="file" hash="d3ef4349b8be1ab1" content="text/x-java" isText="yes" charset="UTF-8" eol="LF">src/test/java/org/apache/doris/connector/api/write/ConnectorWritePlanProviderDefaultsTest.java</item>
+      <item type="file" hash="b4b70295c30ad57b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/test/java/org/apache/doris/connector/api/write/ConnectorWriteSortColumnTest.java</item>
+      <item type="dependency" hash="340c70f05de08324">org.apache.doris:fe-thrift:jar</item>
+    </items>
+  </projectsInputInfo>
+</build>

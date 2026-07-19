@@ -1,0 +1,48 @@
+Subject: [duckbridge][fe] Whitelist catalog type "duckbridge" in SPI_READY_TYPES
+
+What:
+  Adds "duckbridge" to CatalogFactory.SPI_READY_TYPES so that
+  CREATE CATALOG ... type="duckbridge" is routed to the fe-connector SPI
+  (a PluginDrivenExternalCatalog around our ServiceLoader-discovered
+  DuckBridgeConnectorProvider) instead of being rejected as an unknown type.
+
+Why upstream needs it:
+  SPI_READY_TYPES is a hard-coded allowlist; the SPI silently ignores any
+  ConnectorProvider whose getType() is not in the set (no connector-declared
+  registration seam exists yet). Without this entry the plugin never loads.
+  "jdbc" is already whitelisted but routes to the in-tree fe-connector-jdbc, so
+  we use a distinct type ("duckbridge") + this one-line patch rather than
+  colliding with it. This is a READ-ONLY connector, so it needs ONLY this
+  whitelist entry -- the pluginCatalogTypeToEngine() CREATE-TABLE patch that
+  doris-ducklake carries is deliberately NOT included here (plan Deploy shape:
+  a read-only connector needs only the whitelist guard).
+
+Upstream ask / exit criteria:
+  Generalize SPI_READY_TYPES to a connector-declared capability/registration
+  seam so a new SPI full-adopter does not need an FE source edit. When that
+  lands (and a Doris release ships the fe-connector SPI), this patch is deleted
+  and BASELINE points at the release tag.
+
+Anchor at pin 5f009592035:
+  fe/fe-core/src/main/java/org/apache/doris/datasource/CatalogFactory.java
+  private static final Set<String> SPI_READY_TYPES =
+      ImmutableSet.of("jdbc", "es", "trino-connector", "max_compute", "paimon", "iceberg", "hms");
+  (upstream set as of this pin: {jdbc, es, trino-connector, max_compute,
+   paimon, iceberg, hms}; "hms" was added by the Hive P11 migration.)
+
+Apply:  git apply --3way doris-patches/fe/0001-spi-ready-types-duckbridge.patch
+--- (patch body below; lines above this marker are commentary ignored by git apply) ---
+diff --git a/fe/fe-core/src/main/java/org/apache/doris/datasource/CatalogFactory.java b/fe/fe-core/src/main/java/org/apache/doris/datasource/CatalogFactory.java
+index 2016402..319c946 100644
+--- a/fe/fe-core/src/main/java/org/apache/doris/datasource/CatalogFactory.java
++++ b/fe/fe-core/src/main/java/org/apache/doris/datasource/CatalogFactory.java
+@@ -54,7 +54,8 @@ public class CatalogFactory {
+     // set. Adding "hudi" here would build a standalone PluginDrivenExternalCatalog around HudiConnector with no
+     // fe-core catalog class backing it.
+     private static final Set<String> SPI_READY_TYPES =
+-            ImmutableSet.of("jdbc", "es", "trino-connector", "max_compute", "paimon", "iceberg", "hms");
++            ImmutableSet.of("jdbc", "es", "trino-connector", "max_compute", "paimon", "iceberg", "hms",
++                    "duckbridge");
+ 
+     /**
+      * create the catalog instance from catalog log.

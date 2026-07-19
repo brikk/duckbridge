@@ -17,4 +17,8 @@ dependencyResolutionManagement {
 }
 
 include(":trino-duckbridge")
-// Room for a future :doris-duckbridge sibling — packages stay separated per engine.
+// Doris sibling of :trino-duckbridge — packages stay separated per engine
+// (dev.brikk.duckbridge.doris.* vs dev.brikk.duckbridge.trino.*). Targets Doris's
+// fe-connector catalog SPI (branch-catalog-spi); SPI jars resolve from the project-local
+// doris-duckbridge/doris-m2/ repo, bootstrapped by tools/doris-baseline.sh --install-spi-jars.
+include(":doris-duckbridge")

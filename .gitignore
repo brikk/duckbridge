@@ -16,3 +16,7 @@ out/
 
 # Kotlin daemon session metadata (Kotlin 2.x creates this at the project root)
 .kotlin/
+
+# Project-local Doris artifact repository — bootstrapped by tools/doris-baseline.sh
+# --install-spi-jars from the pinned baseline. Never committed (multi-MB derived jars).
+doris-duckbridge/doris-m2/

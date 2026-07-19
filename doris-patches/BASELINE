@@ -1,0 +1,26 @@
+# Machine-readable single source of truth for the Doris baseline this repo's
+# FE/BE patches (doris-patches/) apply against. Read by tools/doris-baseline.sh
+# and referenced by PATCHES.md. Format: KEY=VALUE, '#' comments, blank lines ok.
+#
+# Bump procedure + re-vendor log live in PATCHES.md (§Re-vendor log).
+
+# Immutable fork-mirror pin. Upstream branch-catalog-spi REBASES and GCs SHAs;
+# this SHA survives because it is pushed to the brikk/doris fork as an immutable
+# dated baseline branch (see FORK_BRANCH / FORK_URL below).
+PIN_SHA=5f009592035262029c66e31f40fd0390fc15ab2c
+
+# Upstream commit subject at the pin (match by subject if the SHA is ever GC'd
+# on upstream — the fork mirror keeps the SHA alive regardless).
+PIN_SUBJECT=[fix](catalog) iceberg system-table scan: restore #65262 positional JNI read + order-preserving projection
+
+# Author/commit date of the pinned commit (informational).
+PIN_DATE=2026-07-19
+
+# Immutable baseline branch on the fork mirror. Never force-pushed / rebased.
+FORK_BRANCH=duckbridge/baseline-20260719
+
+# Fork mirror remote. Clone/fetch this (NOT apache/doris) at PIN_SHA.
+FORK_URL=https://github.com/brikk/doris.git
+
+# The upstream line this baseline tracks (informational; do not build a blind tip).
+UPSTREAM_BRANCH=branch-catalog-spi

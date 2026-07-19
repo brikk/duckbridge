@@ -1,0 +1,521 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<build xsi:schemaLocation="http://maven.apache.org/BUILD-CACHE-BUILD/1.2.0 https://maven.apache.org/xsd/build-cache-build-1.2.0.xsd"
+    xmlns="http://maven.apache.org/BUILD-CACHE-BUILD/1.2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <cacheImplementationVersion>v1.1</cacheImplementationVersion>
+  <final>false</final>
+  <hashFunction>XX</hashFunction>
+  <buildTime>2026-07-19T16:50:09.882</buildTime>
+  <buildServer>geekmax</buildServer>
+  <scm />
+  <goals>
+    <goal>install</goal>
+  </goals>
+  <artifact>
+    <groupId>org.apache.doris</groupId>
+    <artifactId>fe-extension-spi</artifactId>
+    <version>1.2-SNAPSHOT</version>
+    <type>jar</type>
+    <fileName>fe-extension-spi.jar</fileName>
+    <fileHash>ae4126dc3bfc11e4</fileHash>
+    <fileSize>9778</fileSize>
+    <filePath>target/fe-extension-spi-1.2-SNAPSHOT.jar</filePath>
+  </artifact>
+  <executions>
+    <execution>
+      <executionKey>enforce-maven-version:enforce:validate:maven-enforcer-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.enforcer.EnforceMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>enforce-java-version:enforce:validate:maven-enforcer-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.enforcer.EnforceMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>validate:check:validate:maven-checkstyle-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.checkstyle.CheckstyleViolationCheckMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>directories:directory-of:initialize:directory-maven-plugin:org.commonjava.maven.plugins</executionKey>
+      <mojoClassName>org.commonjava.maven.plugins.execroot.DirectoryOfGoal</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>process-resource-bundles:process:generate-resources:maven-remote-resources-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.resources.remote.ProcessRemoteResourcesMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-resources:resources:process-resources:maven-resources-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.resources.ResourcesMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-compile:compile:compile:maven-compiler-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.compiler.CompilerMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-testResources:testResources:process-test-resources:maven-resources-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.resources.TestResourcesMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-testCompile:testCompile:test-compile:maven-compiler-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.compiler.TestCompilerMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-test:test:test:maven-surefire-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugin.surefire.SurefirePlugin</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-jar:jar:package:maven-jar-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.jar.JarMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>attach-descriptor:attach-descriptor:package:maven-site-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.site.descriptor.SiteDescriptorAttachMojo</mojoClassName>
+    </execution>
+    <execution>
+      <executionKey>default-install:install:install:maven-install-plugin:org.apache.maven.plugins</executionKey>
+      <mojoClassName>org.apache.maven.plugins.install.InstallMojo</mojoClassName>
+    </execution>
+  </executions>
+  <projectsInputInfo>
+    <checksum>0ce1ead73bc85b83</checksum>
+    <items>
+      <item type="pom" hash="10ec090d4e7ea575">&lt;?xml version="1.0" encoding="UTF-8"?>
+&lt;project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  &lt;groupId>org.apache.doris&lt;/groupId>
+  &lt;artifactId>fe-extension-spi&lt;/artifactId>
+  &lt;version>cache-extension-version&lt;/version>
+  &lt;dependencies>
+    &lt;dependency>
+      &lt;groupId>org.awaitility&lt;/groupId>
+      &lt;artifactId>awaitility&lt;/artifactId>
+      &lt;version>4.2.2&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.jupiter&lt;/groupId>
+      &lt;artifactId>junit-jupiter-engine&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.jupiter&lt;/groupId>
+      &lt;artifactId>junit-jupiter-params&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.platform&lt;/groupId>
+      &lt;artifactId>junit-platform-launcher&lt;/artifactId>
+      &lt;version>1.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.junit.vintage&lt;/groupId>
+      &lt;artifactId>junit-vintage-engine&lt;/artifactId>
+      &lt;version>5.14.1&lt;/version>
+      &lt;scope>test&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+      &lt;artifactId>log4j-1.2-api&lt;/artifactId>
+      &lt;version>2.25.4&lt;/version>
+      &lt;scope>compile&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+      &lt;artifactId>log4j-core&lt;/artifactId>
+      &lt;version>2.25.4&lt;/version>
+      &lt;scope>compile&lt;/scope>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+      &lt;artifactId>log4j-slf4j2-impl&lt;/artifactId>
+      &lt;version>2.25.4&lt;/version>
+      &lt;scope>compile&lt;/scope>
+      &lt;exclusions>
+        &lt;exclusion>
+          &lt;groupId>org.apache.logging.log4j&lt;/groupId>
+          &lt;artifactId>log4j-core&lt;/artifactId>
+        &lt;/exclusion>
+      &lt;/exclusions>
+    &lt;/dependency>
+    &lt;dependency>
+      &lt;groupId>org.slf4j&lt;/groupId>
+      &lt;artifactId>slf4j-api&lt;/artifactId>
+      &lt;version>2.0.17&lt;/version>
+      &lt;scope>compile&lt;/scope>
+    &lt;/dependency>
+  &lt;/dependencies>
+  &lt;build>
+    &lt;plugins>
+      &lt;plugin>
+        &lt;artifactId>maven-remote-resources-plugin&lt;/artifactId>
+        &lt;version>1.7.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>process-resource-bundles&lt;/id>
+            &lt;goals>
+              &lt;goal>process&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;resourceBundles>
+                &lt;resourceBundle>org.apache:apache-jar-resource-bundle:1.4&lt;/resourceBundle>
+              &lt;/resourceBundles>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-enforcer-plugin&lt;/artifactId>
+        &lt;version>3.6.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>enforce-maven-version&lt;/id>
+            &lt;goals>
+              &lt;goal>enforce&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;rules>
+                &lt;requireMavenVersion>
+                  &lt;version>[3.9.0,)&lt;/version>
+                &lt;/requireMavenVersion>
+              &lt;/rules>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>enforce-java-version&lt;/id>
+            &lt;goals>
+              &lt;goal>enforce&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;rules>
+                &lt;requireJavaVersion>
+                  &lt;version>1.8&lt;/version>
+                &lt;/requireJavaVersion>
+              &lt;/rules>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-site-plugin&lt;/artifactId>
+        &lt;version>3.12.1&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-site&lt;/id>
+            &lt;phase>site&lt;/phase>
+            &lt;goals>
+              &lt;goal>site&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;outputDirectory>/target/site&lt;/outputDirectory>
+              &lt;reportPlugins>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+              &lt;/reportPlugins>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>default-deploy&lt;/id>
+            &lt;phase>site-deploy&lt;/phase>
+            &lt;goals>
+              &lt;goal>deploy&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;outputDirectory>/target/site&lt;/outputDirectory>
+              &lt;reportPlugins>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+              &lt;/reportPlugins>
+            &lt;/configuration>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>attach-descriptor&lt;/id>
+            &lt;goals>
+              &lt;goal>attach-descriptor&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;outputDirectory>/target/site&lt;/outputDirectory>
+              &lt;reportPlugins>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+                &lt;reportPlugin>
+                  &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+                  &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+                &lt;/reportPlugin>
+              &lt;/reportPlugins>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;configuration>
+          &lt;outputDirectory>/target/site&lt;/outputDirectory>
+          &lt;reportPlugins>
+            &lt;reportPlugin>
+              &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+              &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+            &lt;/reportPlugin>
+            &lt;reportPlugin>
+              &lt;groupId>org.apache.maven.plugins&lt;/groupId>
+              &lt;artifactId>maven-project-info-reports-plugin&lt;/artifactId>
+            &lt;/reportPlugin>
+          &lt;/reportPlugins>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-dependency-plugin&lt;/artifactId>
+        &lt;version>3.4.0&lt;/version>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;groupId>org.commonjava.maven.plugins&lt;/groupId>
+        &lt;artifactId>directory-maven-plugin&lt;/artifactId>
+        &lt;version>0.1&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>directories&lt;/id>
+            &lt;phase>initialize&lt;/phase>
+            &lt;goals>
+              &lt;goal>directory-of&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;property>fe.dir&lt;/property>
+              &lt;project>
+                &lt;groupId>org.apache.doris&lt;/groupId>
+                &lt;artifactId>fe&lt;/artifactId>
+              &lt;/project>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-checkstyle-plugin&lt;/artifactId>
+        &lt;version>3.1.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>validate&lt;/id>
+            &lt;phase>validate&lt;/phase>
+            &lt;goals>
+              &lt;goal>check&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;configLocation>check/checkstyle/checkstyle.xml&lt;/configLocation>
+              &lt;suppressionsLocation>check/checkstyle/suppressions.xml&lt;/suppressionsLocation>
+              &lt;encoding>UTF-8&lt;/encoding>
+              &lt;consoleOutput>true&lt;/consoleOutput>
+              &lt;failsOnError>true&lt;/failsOnError>
+              &lt;linkXRef>false&lt;/linkXRef>
+              &lt;includeTestSourceDirectory>true&lt;/includeTestSourceDirectory>
+              &lt;propertyExpansion>config_loc=/home/jayson/.cache/duckbridge/doris/fe/check/checkstyle&lt;/propertyExpansion>
+              &lt;excludes>**/apache/doris/thrift/**/*,
+                            **/apache/parquet/**/*&lt;/excludes>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;dependencies>
+          &lt;dependency>
+            &lt;groupId>com.puppycrawl.tools&lt;/groupId>
+            &lt;artifactId>checkstyle&lt;/artifactId>
+            &lt;version>9.3&lt;/version>
+            &lt;scope>compile&lt;/scope>
+          &lt;/dependency>
+        &lt;/dependencies>
+        &lt;configuration>
+          &lt;configLocation>check/checkstyle/checkstyle.xml&lt;/configLocation>
+          &lt;suppressionsLocation>check/checkstyle/suppressions.xml&lt;/suppressionsLocation>
+          &lt;encoding>UTF-8&lt;/encoding>
+          &lt;consoleOutput>true&lt;/consoleOutput>
+          &lt;failsOnError>true&lt;/failsOnError>
+          &lt;linkXRef>false&lt;/linkXRef>
+          &lt;includeTestSourceDirectory>true&lt;/includeTestSourceDirectory>
+          &lt;propertyExpansion>config_loc=/home/jayson/.cache/duckbridge/doris/fe/check/checkstyle&lt;/propertyExpansion>
+          &lt;excludes>**/apache/doris/thrift/**/*,
+                            **/apache/parquet/**/*&lt;/excludes>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-clean-plugin&lt;/artifactId>
+        &lt;version>3.2.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-clean&lt;/id>
+            &lt;phase>clean&lt;/phase>
+            &lt;goals>
+              &lt;goal>clean&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-resources-plugin&lt;/artifactId>
+        &lt;version>3.3.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-testResources&lt;/id>
+            &lt;phase>process-test-resources&lt;/phase>
+            &lt;goals>
+              &lt;goal>testResources&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>default-resources&lt;/id>
+            &lt;phase>process-resources&lt;/phase>
+            &lt;goals>
+              &lt;goal>resources&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-jar-plugin&lt;/artifactId>
+        &lt;version>3.3.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-jar&lt;/id>
+            &lt;phase>package&lt;/phase>
+            &lt;goals>
+              &lt;goal>jar&lt;/goal>
+            &lt;/goals>
+            &lt;configuration>
+              &lt;archive>
+                &lt;manifest>
+                  &lt;addDefaultSpecificationEntries>true&lt;/addDefaultSpecificationEntries>
+                  &lt;addDefaultImplementationEntries>true&lt;/addDefaultImplementationEntries>
+                &lt;/manifest>
+              &lt;/archive>
+            &lt;/configuration>
+          &lt;/execution>
+        &lt;/executions>
+        &lt;configuration>
+          &lt;archive>
+            &lt;manifest>
+              &lt;addDefaultSpecificationEntries>true&lt;/addDefaultSpecificationEntries>
+              &lt;addDefaultImplementationEntries>true&lt;/addDefaultImplementationEntries>
+            &lt;/manifest>
+          &lt;/archive>
+        &lt;/configuration>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-compiler-plugin&lt;/artifactId>
+        &lt;version>3.10.1&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-compile&lt;/id>
+            &lt;phase>compile&lt;/phase>
+            &lt;goals>
+              &lt;goal>compile&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+          &lt;execution>
+            &lt;id>default-testCompile&lt;/id>
+            &lt;phase>test-compile&lt;/phase>
+            &lt;goals>
+              &lt;goal>testCompile&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-surefire-plugin&lt;/artifactId>
+        &lt;version>2.22.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-test&lt;/id>
+            &lt;phase>test&lt;/phase>
+            &lt;goals>
+              &lt;goal>test&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-install-plugin&lt;/artifactId>
+        &lt;version>3.1.0&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-install&lt;/id>
+            &lt;phase>install&lt;/phase>
+            &lt;goals>
+              &lt;goal>install&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+      &lt;plugin>
+        &lt;artifactId>maven-deploy-plugin&lt;/artifactId>
+        &lt;version>2.8.2&lt;/version>
+        &lt;executions>
+          &lt;execution>
+            &lt;id>default-deploy&lt;/id>
+            &lt;phase>deploy&lt;/phase>
+            &lt;goals>
+              &lt;goal>deploy&lt;/goal>
+            &lt;/goals>
+          &lt;/execution>
+        &lt;/executions>
+      &lt;/plugin>
+    &lt;/plugins>
+  &lt;/build>
+&lt;/project>
+</item>
+      <item type="file" hash="f01d630b1b383cb6" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/extension/spi/package-info.java</item>
+      <item type="file" hash="5ad287f607d1acf0" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/extension/spi/Plugin.java</item>
+      <item type="file" hash="0a9fcb63d48aedc7" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/extension/spi/PluginContext.java</item>
+      <item type="file" hash="75a9b94b22386198" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/extension/spi/PluginException.java</item>
+      <item type="file" hash="388fa5c37fac1d2b" content="text/x-java" isText="yes" charset="US-ASCII" eol="LF">src/main/java/org/apache/doris/extension/spi/PluginFactory.java</item>
+      <item type="file" hash="5ae3f06455e87d1c" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/cloud.proto</item>
+      <item type="file" hash="2ee4095223e11584" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/data.proto</item>
+      <item type="file" hash="f0939c3260cfad9d" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/descriptors.proto</item>
+      <item type="file" hash="6fdaa0e71c97c499" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/file_cache.proto</item>
+      <item type="file" hash="71ac3683bff7e9f7" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/function_service.proto</item>
+      <item type="file" hash="76cb4bfc0048ab40" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/internal_service.proto</item>
+      <item type="file" hash="4db02b470efd1eb8" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/olap_common.proto</item>
+      <item type="file" hash="35826dfdd6cd50ba" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/olap_file.proto</item>
+      <item type="file" hash="ebac21fc6e7c17dd" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/runtime_profile.proto</item>
+      <item type="file" hash="1cc794c494ef92cf" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/segment_v2.proto</item>
+      <item type="file" hash="43467b37d4f80251" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/proto/types.proto</item>
+      <item type="file" hash="13b74120fa0e94a7" content="application/x-sh" isText="yes" charset="US-ASCII" eol="LF">../../gensrc/script/gen_build_version.sh</item>
+      <item type="file" hash="89a05bf8492da9ab" content="text/x-python" isText="yes" charset="US-ASCII" eol="LF">../../gensrc/script/gen_functions.py</item>
+      <item type="file" hash="975006c8adc2fc6d" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/script/Makefile</item>
+      <item type="file" hash="8884f44b4556b771" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/AgentService.thrift</item>
+      <item type="file" hash="ebfd7c6866f795f9" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/BackendService.thrift</item>
+      <item type="file" hash="7eddf2465eda5555" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Data.thrift</item>
+      <item type="file" hash="d770ae2658f8dcac" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/DataSinks.thrift</item>
+      <item type="file" hash="faa4542fe53043f5" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Descriptors.thrift</item>
+      <item type="file" hash="6481e44a2d4f571a" isText="unknown" charset="UTF-8" eol="LF">../../gensrc/thrift/DorisExternalService.thrift</item>
+      <item type="file" hash="05299f9c5b1f2776" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Exprs.thrift</item>
+      <item type="file" hash="bfe1caa72ba10332" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/ExternalTableSchema.thrift</item>
+      <item type="file" hash="8f0e7497bb6887ca" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/FrontendService.thrift</item>
+      <item type="file" hash="c6266dc22a75cd23" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/HeartbeatService.thrift</item>
+      <item type="file" hash="db8bcfec4e5e7a7b" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/MasterService.thrift</item>
+      <item type="file" hash="f142481c150deaec" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/MetricDefs.thrift</item>
+      <item type="file" hash="412d10d02d4a6408" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Metrics.thrift</item>
+      <item type="file" hash="667483228af0207e" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/NetworkTest.thrift</item>
+      <item type="file" hash="dc199d562561133a" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Normalization.thrift</item>
+      <item type="file" hash="d5310a041a98bf33" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Opcodes.thrift</item>
+      <item type="file" hash="7424292f23d4830c" isText="unknown" charset="UTF-8" eol="LF">../../gensrc/thrift/PaloBrokerService.thrift</item>
+      <item type="file" hash="e078ae539f238048" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/PaloInternalService.thrift</item>
+      <item type="file" hash="bfe6ef2ec4812f87" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/parquet.thrift</item>
+      <item type="file" hash="189481b3f1852049" isText="unknown" charset="UTF-8" eol="LF">../../gensrc/thrift/Partitions.thrift</item>
+      <item type="file" hash="41d5f544cca4d4d5" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Planner.thrift</item>
+      <item type="file" hash="90306ad767904560" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/PlanNodes.thrift</item>
+      <item type="file" hash="dd08ec20fc022f37" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/QueryCache.thrift</item>
+      <item type="file" hash="728407909d50e934" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/QueryPlanExtra.thrift</item>
+      <item type="file" hash="8d914f159341aea5" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/RuntimeProfile.thrift</item>
+      <item type="file" hash="3cb8f50fc1af1d5d" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Status.thrift</item>
+      <item type="file" hash="529502f42d423dcf" isText="unknown" charset="US-ASCII" eol="LF">../../gensrc/thrift/Types.thrift</item>
+    </items>
+  </projectsInputInfo>
+</build>

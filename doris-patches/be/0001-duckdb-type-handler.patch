@@ -1,0 +1,326 @@
+Subject: [duckbridge][be] Add DuckDbTypeHandler to the jdbc-scanner + DUCKDB factory case
+
+What:
+  Adds a first-class DuckDbTypeHandler to the BE be-java-extensions/jdbc-scanner
+  and a `case "DUCKDB"` to JdbcTypeHandlerFactory.create(), so the duckbridge
+  connector can emit `table_type = DUCKDB` and have JdbcJniScanner decode DuckDB
+  result sets (read over quack-jdbc, jdbc:quack://...) with DuckDB-faithful
+  ResultSet -> Doris coercions.
+
+Why upstream needs it (and why it is BE-only):
+  On the JdbcJniScanner path, `table_type` is just a free string selecting a
+  value-coercion JdbcTypeHandler; JdbcTypeHandlerFactory's default returns
+  DefaultTypeHandler (no TOdbcTableType enum gate, no throwing default -- that
+  throwing gate is the LEGACY JdbcExecutorFactory path we do not use). No stock
+  handler fits DuckDB cleanly:
+    - DefaultTypeHandler : LARGEINT + VARBINARY, but NO ARRAY
+    - ClickHouseTypeHandler: LARGEINT + ARRAY, but NO VARBINARY
+    - TrinoTypeHandler   : ARRAY + VARBINARY, but DROPS LARGEINT (throws)
+  DuckDB maps HUGEINT/UBIGINT -> LARGEINT, BLOB -> VARBINARY, LIST -> ARRAY, so
+  it needs all three arms at once. One handler is strictly cleaner than
+  contorting the FE type map to fit someone else's dialect.
+  This change touches ONLY be-java-extensions/jdbc-scanner (Java): it needs NO
+  thrift TOdbcTableType change and NO FE JdbcDbType change -- those bind only the
+  legacy stock-catalog path duckbridge bypasses -- so it is a small,
+  self-contained, reapplyable patch, and (per the plan) can rebuild just the
+  jdbc-scanner jar to overlay into an existing BE image without a C++ rebuild.
+
+Coverage (v1):
+  - all scalars (bool, tinyint..bigint, float/double, DECIMAL<=38,
+    date/datetime, char/varchar/string) -- same reads as DefaultTypeHandler.
+  - LARGEINT  (DuckDB HUGEINT / UBIGINT) -> BigInteger, normalized defensively.
+  - VARBINARY (DuckDB BLOB) -> byte[].
+  - ARRAY     (DuckDB LIST) -> List, elements widened like ClickHouseTypeHandler
+    (int128/wide-unsigned elements arrive as BigInteger).
+  - STRUCT / MAP: NOT decoded in v1. The duckbridge FE maps DuckDB
+    STRUCT/MAP/JSON to STRING/JSON, so they arrive as strings and take the
+    scalar path. First-class nested decode is a follow-up (probe P4).
+
+Upstream ask / exit criteria:
+  Break this handler out into an upstream Doris PR before release, so a stock
+  Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
+  lands in a release, this patch is deleted and BASELINE points at the tag.
+
+Anchors at pin 5f009592035:
+  NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
+  EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
+       (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the
+        existing `case "CLICKHOUSE"` arm)
+
+Apply:  git apply --3way doris-patches/be/0001-duckdb-type-handler.patch
+--- (patch body below; lines above this marker are commentary ignored by git apply) ---
+diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java
+new file mode 100644
+index 0000000..06b1622
+--- /dev/null
++++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java
+@@ -0,0 +1,256 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++package org.apache.doris.jdbc;
++
++import org.apache.doris.common.jni.vec.ColumnType;
++import org.apache.doris.common.jni.vec.ColumnValueConverter;
++
++import com.google.common.collect.Lists;
++
++import java.math.BigDecimal;
++import java.math.BigInteger;
++import java.sql.Array;
++import java.sql.Date;
++import java.sql.ResultSet;
++import java.sql.ResultSetMetaData;
++import java.sql.SQLException;
++import java.sql.Timestamp;
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * DuckDB-specific type handler for the {@code duckbridge} connector, which runs a verbatim
++ * DuckDB {@code SELECT} through the quack-jdbc driver ({@code jdbc:quack://...}) inside the
++ * BE's embedded JVM and streams rows back via {@link JdbcJniScanner}.
++ *
++ * <p>Selected by {@code table_type = DUCKDB} (see {@link JdbcTypeHandlerFactory}). This one
++ * handler covers the split that neither stock handler could: {@code DefaultTypeHandler} has
++ * LARGEINT + VARBINARY but no ARRAY; {@code ClickHouseTypeHandler} has LARGEINT + ARRAY but
++ * no VARBINARY; {@code TrinoTypeHandler} drops LARGEINT entirely. DuckDB maps
++ * {@code HUGEINT -> LARGEINT}, {@code BLOB -> VARBINARY}, and {@code LIST -> ARRAY}, so we need
++ * all three arms in one place.
++ *
++ * <p>Type-map coverage (v1):
++ * <ul>
++ *   <li>All scalars (bool, tinyint..bigint, float/double, DECIMAL(&le;38), date/datetime,
++ *       char/varchar/string) — read exactly as {@link DefaultTypeHandler}.</li>
++ *   <li>LARGEINT — DuckDB {@code HUGEINT}/{@code UBIGINT}; normalized to {@link BigInteger}
++ *       (quack-jdbc may hand back {@link BigInteger}, {@link BigDecimal}, or a narrower
++ *       {@link Number}).</li>
++ *   <li>VARBINARY / BYTE — DuckDB {@code BLOB}; raw {@code byte[]}.</li>
++ *   <li>ARRAY — DuckDB {@code LIST}; decoded from {@link Array#getArray()} with the same
++ *       element-widening rules as {@link ClickHouseTypeHandler} (int128/wide-unsigned list
++ *       elements arrive as {@link BigInteger}).</li>
++ * </ul>
++ *
++ * <p>STRUCT / MAP are deliberately NOT decoded in v1: no BE handler decodes them today and
++ * the {@code duckbridge} FE maps DuckDB {@code STRUCT}/{@code MAP}/{@code JSON} to
++ * {@code STRING}/{@code JSON} columns, so those values arrive here as strings and take the
++ * scalar/default path. First-class nested decode is a follow-up (see the plan's coverage
++ * table + probe P4, quack-jdbc metadata fidelity) and would add STRUCT/MAP arms here plus
++ * their {@code getOutputConverter} wiring.
++ */
++public class DuckDbTypeHandler extends DefaultTypeHandler {
++
++    @Override
++    public Object getColumnValue(ResultSet rs, int columnIndex, ColumnType type,
++                                 ResultSetMetaData metadata) throws SQLException {
++        Object value;
++        switch (type.getType()) {
++            case BOOLEAN:
++                value = rs.getBoolean(columnIndex);
++                break;
++            case TINYINT:
++                value = rs.getByte(columnIndex);
++                break;
++            case SMALLINT:
++                value = rs.getShort(columnIndex);
++                break;
++            case INT:
++                value = rs.getInt(columnIndex);
++                break;
++            case BIGINT:
++                value = rs.getLong(columnIndex);
++                break;
++            case LARGEINT:
++                // DuckDB HUGEINT (int128) and UBIGINT (wide unsigned). quack-jdbc may hand back
++                // BigInteger directly, a BigDecimal, or a narrower Number — normalize to BigInteger.
++                value = rs.getObject(columnIndex);
++                value = toBigInteger(value);
++                break;
++            case FLOAT:
++                value = rs.getFloat(columnIndex);
++                break;
++            case DOUBLE:
++                value = rs.getDouble(columnIndex);
++                break;
++            case DECIMALV2:
++            case DECIMAL32:
++            case DECIMAL64:
++            case DECIMAL128:
++                value = rs.getBigDecimal(columnIndex);
++                break;
++            case DATE:
++            case DATEV2: {
++                Date sqlDate = rs.getDate(columnIndex);
++                value = sqlDate != null ? sqlDate.toLocalDate() : null;
++                break;
++            }
++            case DATETIME:
++            case DATETIMEV2: {
++                Timestamp ts = rs.getTimestamp(columnIndex);
++                value = ts != null ? ts.toLocalDateTime() : null;
++                break;
++            }
++            case CHAR:
++            case VARCHAR:
++            case STRING:
++                // Also the v1 landing spot for DuckDB STRUCT/MAP/JSON (FE maps them to STRING/JSON).
++                value = rs.getString(columnIndex);
++                break;
++            case VARBINARY:
++            case BYTE: {
++                // DuckDB BLOB.
++                byte[] data = rs.getBytes(columnIndex);
++                return rs.wasNull() ? null : data;
++            }
++            case ARRAY: {
++                // DuckDB LIST. getArray() may be unsupported by the driver for a genuine SQL NULL;
++                // guard on wasNull() first so a NULL list column returns null cleanly.
++                Array array = rs.getArray(columnIndex);
++                if (array == null || rs.wasNull()) {
++                    return null;
++                }
++                return convertArrayToList(array.getArray());
++            }
++            default:
++                value = rs.getString(columnIndex);
++                break;
++        }
++        return rs.wasNull() ? null : value;
++    }
++
++    @Override
++    public ColumnValueConverter getOutputConverter(ColumnType columnType, String replaceString) {
++        if (columnType.getType() == ColumnType.Type.ARRAY) {
++            return createConverter(
++                    input -> convertArray((List<?>) input, columnType.getChildTypes().get(0)),
++                    List.class);
++        }
++        return null;
++    }
++
++    /**
++     * Normalize a raw HUGEINT/UBIGINT value to {@link BigInteger}, mirroring
++     * {@link DefaultTypeHandler}'s LARGEINT arm. Null-safe: a SQL NULL returns null.
++     */
++    private static BigInteger toBigInteger(Object value) {
++        if (value == null) {
++            return null;
++        }
++        if (value instanceof BigInteger) {
++            return (BigInteger) value;
++        }
++        if (value instanceof BigDecimal) {
++            return ((BigDecimal) value).toBigInteger();
++        }
++        return new BigInteger(value.toString());
++    }
++
++    private static List<?> convertArrayToList(Object array) {
++        if (array == null) {
++            return null;
++        }
++        int length = java.lang.reflect.Array.getLength(array);
++        List<Object> list = new ArrayList<>(length);
++        for (int i = 0; i < length; i++) {
++            list.add(java.lang.reflect.Array.get(array, i));
++        }
++        return list;
++    }
++
++    /**
++     * Widen list elements to the declared Doris element type, mirroring
++     * {@link ClickHouseTypeHandler}'s {@code convertArray}: DuckDB LIST elements of
++     * int128/wide-unsigned types arrive as {@link BigInteger}, so each numeric arm coerces
++     * defensively rather than assuming the JDBC element class.
++     */
++    private List<?> convertArray(List<?> array, ColumnType type) {
++        if (array == null) {
++            return null;
++        }
++        switch (type.getType()) {
++            case SMALLINT: {
++                List<Short> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : asNumber(element).shortValue());
++                }
++                return result;
++            }
++            case INT: {
++                List<Integer> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : asNumber(element).intValue());
++                }
++                return result;
++            }
++            case BIGINT: {
++                List<Long> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : asNumber(element).longValue());
++                }
++                return result;
++            }
++            case LARGEINT: {
++                List<BigInteger> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : toBigInteger(element));
++                }
++                return result;
++            }
++            case STRING: {
++                List<String> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : element.toString());
++                }
++                return result;
++            }
++            case ARRAY: {
++                List<List<?>> resultArray = Lists.newArrayList();
++                for (Object element : array) {
++                    if (element == null) {
++                        resultArray.add(null);
++                    } else {
++                        resultArray.add(
++                                Lists.newArrayList(convertArray((List<?>) element, type.getChildTypes().get(0))));
++                    }
++                }
++                return resultArray;
++            }
++            default:
++                return array;
++        }
++    }
++
++    private static Number asNumber(Object element) {
++        if (element instanceof Number) {
++            return (Number) element;
++        }
++        throw new IllegalArgumentException("Unsupported DuckDB list element type: " + element.getClass());
++    }
++}
+diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
+index 4a6f045..04f575c 100644
+--- a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
++++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
+@@ -43,6 +43,8 @@ public class JdbcTypeHandlerFactory {
+                 return new PostgreSQLTypeHandler();
+             case "CLICKHOUSE":
+                 return new ClickHouseTypeHandler();
++            case "DUCKDB":
++                return new DuckDbTypeHandler();
+             case "SQLSERVER":
+                 return new SQLServerTypeHandler();
+             case "DB2":
