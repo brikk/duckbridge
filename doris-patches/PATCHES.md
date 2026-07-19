@@ -133,6 +133,25 @@ plugin unpatched.
 
 ---
 
+## Noted future upstream asks (NOT patches — no current diff)
+
+These are gaps a future feature would need Doris to close. None blocks v1; recorded so the asks
+aren't lost.
+
+- **A per-scan JDBC connection-init hook on `JdbcJniScanner` (probe P3/P6).** The BE's
+  `JdbcJniScanner` configures HikariCP with a fixed set (`setDriverClassName/JdbcUrl/Username/
+  Password` + pool sizing) and exposes **no `connectionInitSql` / per-scan connection property**.
+  Combined with pooled-connection reuse, this makes any per-scan `SET TimeZone` (or other session
+  init) impossible to apply soundly — a smuggled `SET` in `query_sql` persists on the pooled
+  connection and poisons the next scan. **Ask:** a HikariCP `connectionInitSql` (applied on
+  checkout/reset so it can't leak across pooled scans) or a per-scan connection-property map in
+  `jdbc_params`. **Needed for:** any future tz-*sensitive* pushdown that depends on the DuckDB
+  session zone (e.g. `at_timezone` rewrites). **Not needed for v1** — duckbridge's enabled temporal
+  predicates are all zone-independent (naive wall-clock, or explicit-UTC `TIMESTAMPTZ '…+00'`
+  literals; see `doris-duckbridge/dev-docs/REPORT-doris-timezone-probe.md`), so no `SET` is required.
+
+---
+
 ## Re-vendor log
 
 - **2026-07-19 — initial baseline at `5f009592035`** (subject: *"[fix](catalog) iceberg

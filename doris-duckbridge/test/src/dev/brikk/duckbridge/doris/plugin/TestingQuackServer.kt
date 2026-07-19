@@ -28,12 +28,21 @@ import java.util.Properties
  * this module's `test/resources/docker/quack-server/`. Lean — no parity extension (P4 is pure
  * metadata; parity is P1's concern).
  */
-internal class TestingQuackServer : AutoCloseable {
+internal class TestingQuackServer(
+    /**
+     * Container `TZ` env → the DuckDB server session TimeZone. Default UTC. A test can set an
+     * exotic zone (e.g. "America/Los_Angeles") to PROVE our rendered predicates are server-zone
+     * independent (probe P3/P6): re-run the same fixtures with a different server zone; results must
+     * not change.
+     */
+    serverTimeZone: String = "Etc/UTC",
+) : AutoCloseable {
     private val container: GenericContainer<*> =
         GenericContainer(buildImage())
             .withExposedPorts(CONTAINER_PORT)
             .withEnv("QUACK_PORT", CONTAINER_PORT.toString())
             .withEnv("QUACK_TOKEN", TOKEN)
+            .withEnv("TZ", serverTimeZone)
             .withStartupAttempts(3)
             .waitingFor(Wait.forListeningPort())
 

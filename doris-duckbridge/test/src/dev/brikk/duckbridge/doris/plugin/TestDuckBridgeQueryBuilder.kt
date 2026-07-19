@@ -47,7 +47,10 @@ class TestDuckBridgeQueryBuilder {
         columns: List<ConnectorColumnHandle>,
         filter: ConnectorExpression? = null,
         limit: Long = -1,
-    ) = DuckBridgeQueryBuilder.buildQuery("memory", "sales", "customers", columns, filter, limit)
+        columnDuckdbTypes: Map<String, String> = emptyMap(),
+    ) = DuckBridgeQueryBuilder.buildQuery(
+        "memory", "sales", "customers", columns, filter, limit, columnDuckdbTypes,
+    )
 
     private fun colRef(name: String, type: ConnectorType = ConnectorType.of("INT")) =
         ConnectorColumnRef(name, type)
@@ -135,7 +138,9 @@ class TestDuckBridgeQueryBuilder {
                 ),
             ),
         )
-        val sql = build(listOf(intCol("id")), and)
+        // Provide the signup column's DuckDB type (naive DATE) so the date comparison pushes
+        // zone-safely (P3/P6). Without a known type a temporal comparison drops (fail-safe).
+        val sql = build(listOf(intCol("id")), and, columnDuckdbTypes = mapOf("signup" to "DATE"))
         // Top-level AND flattens into WHERE (a) AND (b).
         assertThat(sql).contains(""""id" >= 1""").contains("""DATE '2020-01-15'""").contains(" AND ")
         val or = ConnectorOr(
@@ -305,5 +310,76 @@ class TestDuckBridgeQueryBuilder {
         val call = fn("sqrt", ConnectorType.of("DOUBLE"), colRef("id"))
         assertThat(build(listOf(intCol("id")), fnEq(call, ConnectorLiteral.ofDouble(2.0))))
             .isEqualTo("""SELECT "id" FROM "memory"."sales"."customers"""")
+    }
+
+    // ---- P3/P6 timezone-safe temporal rendering ----
+
+    private val dtLit = ConnectorLiteral.ofDatetime(java.time.LocalDateTime.of(2024, 6, 1, 6, 30, 0))
+    private val dateLit = ConnectorLiteral.ofDate(LocalDate.of(2024, 6, 1))
+    private fun dtCmp(col: String) = ConnectorComparison(
+        ConnectorComparison.Operator.GE, colRef(col, ConnectorType.of("DATETIMEV2", 6, 0)), dtLit,
+    )
+
+    @Test
+    fun naiveTimestampColumnPushesNaiveLiteral() {
+        // A DuckDB naive TIMESTAMP column → naive literal (wall-clock, zone-independent).
+        val sql = build(
+            listOf(intCol("id")),
+            dtCmp("dt"),
+            columnDuckdbTypes = mapOf("dt" to "TIMESTAMP"),
+        )
+        assertThat(sql).contains("""WHERE ("dt" >= TIMESTAMP '2024-06-01 06:30:00')""")
+        assertThat(sql).doesNotContain("+00")
+    }
+
+    @Test
+    fun timestamptzColumnPushesExplicitUtcLiteral() {
+        // A DuckDB TIMESTAMPTZ column → explicit-UTC literal (option 2, proven zone-independent).
+        val sql = build(
+            listOf(intCol("id")),
+            dtCmp("ts"),
+            columnDuckdbTypes = mapOf("ts" to "TIMESTAMP WITH TIME ZONE"),
+        )
+        assertThat(sql).contains("""WHERE ("ts" >= TIMESTAMPTZ '2024-06-01 06:30:00+00')""")
+    }
+
+    @Test
+    fun timestamptzColumnDateLiteralPushesExplicitUtcMidnight() {
+        val cmp = ConnectorComparison(
+            ConnectorComparison.Operator.GE, colRef("ts", ConnectorType.of("DATETIMEV2", 6, 0)), dateLit,
+        )
+        val sql = build(
+            listOf(intCol("id")), cmp, columnDuckdbTypes = mapOf("ts" to "TIMESTAMPTZ"),
+        )
+        assertThat(sql).contains("""WHERE ("ts" >= TIMESTAMPTZ '2024-06-01 00:00:00+00')""")
+    }
+
+    @Test
+    fun unknownColumnTypeDropsTemporalComparison() {
+        // Fail-safe: a datetime comparison against a column whose DuckDB type is UNKNOWN (not in the
+        // map) DROPS — never the zone-dependent naive-literal-vs-TIMESTAMPTZ form.
+        val sql = build(listOf(intCol("id")), dtCmp("mystery"), columnDuckdbTypes = emptyMap())
+        assertThat(sql).isEqualTo("""SELECT "id" FROM "memory"."sales"."customers"""")
+    }
+
+    @Test
+    fun naiveDateColumnPushesDateLiteral() {
+        val cmp = ConnectorComparison(
+            ConnectorComparison.Operator.GE, colRef("d", ConnectorType.of("DATEV2")), dateLit,
+        )
+        val sql = build(listOf(intCol("id")), cmp, columnDuckdbTypes = mapOf("d" to "DATE"))
+        assertThat(sql).contains("""WHERE ("d" >= DATE '2024-06-01')""")
+    }
+
+    @Test
+    fun timestamptzInListRendersExplicitUtc() {
+        val inExpr = ConnectorIn(
+            colRef("ts", ConnectorType.of("DATETIMEV2", 6, 0)),
+            listOf(dtLit, ConnectorLiteral.ofDatetime(java.time.LocalDateTime.of(2024, 6, 1, 8, 0, 0))),
+            false,
+        )
+        val sql = build(listOf(intCol("id")), inExpr, columnDuckdbTypes = mapOf("ts" to "TIMESTAMPTZ"))
+        assertThat(sql).contains("TIMESTAMPTZ '2024-06-01 06:30:00+00'")
+        assertThat(sql).contains("TIMESTAMPTZ '2024-06-01 08:00:00+00'")
     }
 }

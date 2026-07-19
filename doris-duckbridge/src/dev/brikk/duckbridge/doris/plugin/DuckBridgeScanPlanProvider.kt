@@ -60,6 +60,7 @@ internal class DuckBridgeScanPlanProvider(
             columns,
             filter.orElse(null),
             limit,
+            columnDuckdbTypes(columns),
         )
 
         val range = DuckBridgeJdbcScanRange.Builder()
@@ -100,9 +101,20 @@ internal class DuckBridgeScanPlanProvider(
             columns,
             filter.orElse(null),
             NO_LIMIT,
+            columnDuckdbTypes(columns),
         )
         return mapOf("query" to querySql)
     }
+
+    /**
+     * columnName → raw DuckDB `TYPE_NAME` for the columns the FE handed us (the scan's slots, which
+     * include filter-referenced columns that must materialize for BE re-evaluation). Powers the
+     * builder's zone-safe temporal rendering (probe P3/P6). A filter column NOT in this set drops its
+     * temporal predicate (fail-safe) — never rendered zone-dependently.
+     */
+    private fun columnDuckdbTypes(columns: List<ConnectorColumnHandle>): Map<String, String> =
+        columns.filterIsInstance<DuckBridgeColumnHandle>()
+            .associate { it.columnName to it.duckdbType }
 
     private companion object {
         const val NO_LIMIT: Long = -1L

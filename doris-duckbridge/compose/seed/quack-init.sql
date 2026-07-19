@@ -23,13 +23,16 @@ INSERT INTO sales.customers VALUES
     (2, 'straße', 42.00,  DATE '2021-06-30', -5, ['de']),
     (3, 'δοκιμή', 0.00,   DATE '2022-12-01', 0, []);
 
+-- placed_at is a naive TIMESTAMP (zone-independent predicates); shipped_at is a TIMESTAMPTZ so
+-- the smoke can exercise the P3/P6 zone-explicit (`TIMESTAMPTZ '…+00'`) rendering end-to-end.
 CREATE TABLE IF NOT EXISTS sales.orders (
-    order_id  BIGINT,
-    cust_id   BIGINT,
-    amount    DOUBLE,
-    placed_at TIMESTAMP
+    order_id   BIGINT,
+    cust_id    BIGINT,
+    amount     DOUBLE,
+    placed_at  TIMESTAMP,
+    shipped_at TIMESTAMPTZ
 );
 
 INSERT INTO sales.orders VALUES
-    (100, 1, 19.99, TIMESTAMP '2023-03-01 10:00:00'),
-    (101, 2, 5.00,  TIMESTAMP '2023-03-02 11:30:00');
+    (100, 1, 19.99, TIMESTAMP '2023-03-01 10:00:00', TIMESTAMPTZ '2023-03-01 18:00:00+00'),
+    (101, 2, 5.00,  TIMESTAMP '2023-03-02 11:30:00', TIMESTAMPTZ '2023-03-02 20:00:00+00');

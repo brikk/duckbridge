@@ -354,6 +354,38 @@ else
     log "P1 CHECK: char_length=6 returned ids=[${fn_ids}] (expected 2,3) — inspect above."
 fi
 
+# ── P3/P6 temporal pushdown: naive TIMESTAMP + TIMESTAMPTZ predicates render zone-safely and push.
+# A naive TIMESTAMP col (placed_at) → naive literal in QUERY; a TIMESTAMPTZ col (shipped_at) →
+# explicit-UTC 'TIMESTAMPTZ …+00' in QUERY (proven zone-independent). Both must appear IN the QUERY.
+log "P3/P6: WHERE placed_at >= '2023-03-02 00:00:00' (naive TIMESTAMP pushdown)…"
+set +e
+tz1_explain=$(fe_sql -e "EXPLAIN VERBOSE SELECT order_id FROM duckbridge_test.sales.orders WHERE placed_at >= '2023-03-02 00:00:00';" 2>&1)
+tz1_query=$(echo "${tz1_explain}" | grep -iE "QUERY:" | head -1)
+tz1_ids=$(fe_sql -N -e "SELECT order_id FROM duckbridge_test.sales.orders WHERE placed_at >= '2023-03-02 00:00:00' ORDER BY order_id;" 2>&1 | grep -oE "^[0-9]+" | tr '\n' ',' | sed 's/,$//')
+set -e
+echo "  ${tz1_query}"
+if echo "${tz1_query}" | grep -qiE "placed_at.*>=.*TIMESTAMP '2023-03-02" && [[ "${tz1_ids}" == "101" ]]; then
+    log "P3/P6 GREEN: naive TIMESTAMP predicate pushed (naive literal) and returned exactly {101}."
+else
+    log "P3/P6 CHECK: naive TIMESTAMP push — QUERY above, ids=[${tz1_ids}] (expected 101). Inspect."
+fi
+
+log "P3/P6: WHERE shipped_at >= '2023-03-02 00:00:00' (TIMESTAMPTZ → explicit-UTC pushdown)…"
+set +e
+tz2_explain=$(fe_sql -e "EXPLAIN VERBOSE SELECT order_id FROM duckbridge_test.sales.orders WHERE shipped_at >= '2023-03-02 00:00:00';" 2>&1)
+tz2_query=$(echo "${tz2_explain}" | grep -iE "QUERY:" | head -1)
+tz2_ids=$(fe_sql -N -e "SELECT order_id FROM duckbridge_test.sales.orders WHERE shipped_at >= '2023-03-02 00:00:00' ORDER BY order_id;" 2>&1 | grep -oE "^[0-9]+" | tr '\n' ',' | sed 's/,$//')
+set -e
+echo "  ${tz2_query}"
+# The distinctive marker: the TIMESTAMPTZ column's literal is rendered explicit-UTC (…+00).
+if echo "${tz2_query}" | grep -qiE "shipped_at.*>=.*TIMESTAMPTZ '2023-03-02.*\+00'" && [[ "${tz2_ids}" == "101" ]]; then
+    log "P3/P6 GREEN: TIMESTAMPTZ predicate pushed as explicit-UTC ('…+00') and returned exactly {101} —"
+    log "  zone-safe instant comparison, no session-zone dependence (option 2)."
+else
+    log "P3/P6 CHECK: TIMESTAMPTZ push — QUERY above, ids=[${tz2_ids}] (expected 101). Expected the"
+    log "  literal rendered as TIMESTAMPTZ '…+00'. Inspect (plugin may be stale, or rendering regressed)."
+fi
+
 # ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
 # Static: the connector emits ONE range per query (a JDBC scan is un-partitionable). Empirical:
 # hammer the stack sequentially and concurrently to watch for Quack 1.5.4 server-pool exhaustion
