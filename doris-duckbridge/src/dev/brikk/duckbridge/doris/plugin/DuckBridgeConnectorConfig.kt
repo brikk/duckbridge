@@ -14,6 +14,10 @@ package dev.brikk.duckbridge.doris.plugin
  *   when the driver is already on the BE classpath.
  * @property user optional DuckDB/Quack user.
  * @property password optional DuckDB/Quack credential / Quack token.
+ * @property enableTimestampTz mirrors the iceberg/ducklake `enable.mapping.timestamp_tz` knob
+ *   (default false). v1 maps TIMESTAMPTZ to naive DATETIMEV2(6) over correct UTC instants either
+ *   way (tz-sensitive pushdown gated off, plan §Timezone; see the P4 report §TIMESTAMPTZ) — the
+ *   flag is reserved for a future zone-aware mapping once the BE converter + P3 land.
  */
 data class DuckBridgeConnectorConfig(
     val jdbcUrl: String,
@@ -21,16 +25,19 @@ data class DuckBridgeConnectorConfig(
     val driverUrl: String? = null,
     val user: String? = null,
     val password: String? = null,
+    val enableTimestampTz: Boolean = false,
 ) {
     companion object {
-        /** quack-jdbc's driver class (`jdbc:quack://...`). */
-        const val DEFAULT_DRIVER_CLASS: String = "com.gizmodata.quackjdbc.QuackDriver"
+        /** quack-jdbc's driver class (`jdbc:quack://...`), verified against the shipped jar's
+         *  `META-INF/services/java.sql.Driver`. */
+        const val DEFAULT_DRIVER_CLASS: String = "com.gizmodata.quack.jdbc.sql.QuackDriver"
 
         const val PROP_JDBC_URL: String = "jdbc_url"
         const val PROP_DRIVER_CLASS: String = "driver_class"
         const val PROP_DRIVER_URL: String = "driver_url"
         const val PROP_USER: String = "user"
         const val PROP_PASSWORD: String = "password"
+        const val PROP_ENABLE_TIMESTAMP_TZ: String = "enable.mapping.timestamp_tz"
 
         /**
          * Build a config from raw catalog properties. Requires [PROP_JDBC_URL]; everything else is
@@ -49,6 +56,7 @@ data class DuckBridgeConnectorConfig(
                 driverUrl = properties[PROP_DRIVER_URL]?.takeIf { it.isNotBlank() },
                 user = properties[PROP_USER]?.takeIf { it.isNotBlank() },
                 password = properties[PROP_PASSWORD]?.takeIf { it.isNotBlank() },
+                enableTimestampTz = properties[PROP_ENABLE_TIMESTAMP_TZ].toBoolean(),
             )
         }
     }

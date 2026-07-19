@@ -8,19 +8,21 @@ import org.apache.doris.connector.spi.ConnectorContext
 
 /**
  * Read-only duckbridge [Connector]. Composes the SPI object graph — metadata resolution and the
- * scan-plan seam — so the plugin loads and wires end-to-end.
+ * scan-plan seam.
  *
- * WIP scaffold: the object graph is real, but metadata and `planScan` are stubbed to fail loud
- * (see [DuckBridgeDorisMetadata] / [DuckBridgeScanPlanProvider]) until the plan's P1–P6 probes
- * are settled. Fail-loud over silently-wrong: we never return an empty listing or an empty scan
- * to fake progress.
+ * As of probe P4 (quack-jdbc metadata fidelity), the **metadata plane is real**:
+ * [DuckBridgeDorisMetadata] resolves schemas/tables/columns over quack-jdbc with the probe-decided
+ * type map. `planScan` remains a fail-loud stub — P1 (pushdown divergence audit) and P5 (what the
+ * SPI hands planScan) are still open. Fail-loud over silently-wrong throughout.
  */
 class DuckBridgeConnector internal constructor(
     private val config: DuckBridgeConnectorConfig,
     @Suppress("unused") private val context: ConnectorContext,
 ) : Connector {
 
-    private val metadata = DuckBridgeDorisMetadata(config)
+    private val connections = DuckBridgeQuackConnections(config)
+    private val metadata =
+        DuckBridgeDorisMetadata(config, connections, config.enableTimestampTz)
     private val scanPlanProvider = DuckBridgeScanPlanProvider(config)
 
     override fun getMetadata(session: ConnectorSession?): ConnectorMetadata = metadata
@@ -28,8 +30,7 @@ class DuckBridgeConnector internal constructor(
     override fun getScanPlanProvider(): ConnectorScanPlanProvider = scanPlanProvider
 
     override fun close() {
-        // No live resources held yet (no connection pool in the scaffold). Once the FE opens a
-        // quack-jdbc connection for metadata resolution (probe P4), close it here.
+        // Metadata connections are per-call and self-closing; no long-lived FE-side pool to release.
     }
 
     internal fun config(): DuckBridgeConnectorConfig = config

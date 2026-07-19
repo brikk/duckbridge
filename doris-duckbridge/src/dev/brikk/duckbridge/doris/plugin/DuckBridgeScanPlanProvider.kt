@@ -33,12 +33,12 @@ internal class DuckBridgeScanPlanProvider(
         columns: List<ConnectorColumnHandle>,
         filter: Optional<ConnectorExpression>,
     ): List<ConnectorScanRange> = throw UnsupportedOperationException(
-        "duckbridge planScan is not implemented yet. A real implementation must settle the plan's " +
-            "open probes before emitting a JDBC_SCAN range: P1 (Doris↔DuckDB divergence audit — " +
-            "what is safe to push), P2 (JDBC_SCAN range count vs the Quack connection pool), P3 " +
-            "(session-init / zone-explicit SQL for tz correctness), P4 (quack-jdbc metadata " +
-            "fidelity), P5 (what the SPI hands planScan beyond conjuncts — LIMIT/TopN), P6 (Doris " +
-            "session time_zone visibility). Failing loud instead of returning an empty scan " +
-            "(which would silently under-return). See dev-docs/PLAN-doris-duckbridge.md §Open probes.",
+        "duckbridge planScan is not implemented yet. Metadata resolution is now real (probe P4 " +
+            "settled — schemas/tables/columns resolve over quack-jdbc), but the scan seam still " +
+            "needs its gating probes: P1 (Doris↔DuckDB divergence audit — what is safe to push), " +
+            "P5 (what the SPI hands planScan beyond conjuncts — LIMIT/TopN/aggregates), with P2 " +
+            "(JDBC_SCAN range count vs the Quack pool) and P3 (tz-safe SQL) informing the emitted " +
+            "range. Failing loud instead of returning an empty scan (which would silently " +
+            "under-return). See dev-docs/PLAN-doris-duckbridge.md §Open probes.",
     )
 }

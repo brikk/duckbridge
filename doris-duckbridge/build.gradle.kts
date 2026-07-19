@@ -106,6 +106,13 @@ dependencies {
     testImplementation("org.apache.doris:fe-connector-api:$dorisVersion")
     testImplementation("org.apache.doris:fe-connector-spi:$dorisVersion")
     // junit / assertj / kotlin-test come from buildlogic.kotlin.common.
+
+    // P4 metadata probe + the over-Quack integration tests spin up a real DuckDB/Quack server
+    // (testcontainers) and talk to it through quack-jdbc — the same driver the FE uses at plan
+    // time. quack-jdbc is `implementation` above (bundled in the plugin); tests need it on the
+    // test classpath explicitly too.
+    testImplementation(libs.testcontainers.core)
+    testImplementation(libs.quack.jdbc)
 }
 
 tasks.withType<JavaCompile>().configureEach {

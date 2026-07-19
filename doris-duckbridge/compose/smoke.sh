@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Live FE+BE+Quack smoke for doris-duckbridge.
 #
-# Brings up the patched Doris cluster + a DuckDB/Quack server, installs the connector
-# plugin, and drives it to the CURRENT scaffold boundary: the connector LOADS, a catalog is
-# CREATEd with type=duckbridge, and a scan triggers the fail-loud stub. At this WIP stage a
-# metadata/scan attempt is EXPECTED to fail with the P1–P6 probe message — that error IS the
-# green state, and this script asserts on it truthfully (a SUCCESS there would mean the stub
-# was silently bypassed).
+# Brings up the patched Doris cluster + a DuckDB/Quack server (seeded with a schema + tables),
+# installs the connector plugin, and drives it to the CURRENT boundary:
+#   • the connector LOADS + CREATE CATALOG type=duckbridge passes the FE gate;
+#   • METADATA is REAL (probe P4): SHOW DATABASES/TABLES + DESC resolve the seeded quack schema
+#     over quack-jdbc with the probe-decided Doris type map — assert the seeded objects appear;
+#   • the SCAN still fails loud: a SELECT reaches planScan and throws the P1/P5 message — THAT
+#     is the new green (a silent SELECT success would mean planScan was bypassed).
 #
 # Usage:
 #   ./smoke.sh             # build plugin → up → wait healthy → install plugin → drive → down -v
@@ -15,13 +16,12 @@
 #   ./smoke.sh --keep      # drive, but do NOT tear down at the end
 #   ./smoke.sh --down      # tear everything down (-v) and exit
 #
-# What unlocks as the connector grows (today all of these fail-loud by design):
-#   • listing schemas/tables/columns → needs probe P4 (quack-jdbc DatabaseMetaData fidelity)
-#   • SELECT reaching the BE JdbcJniScanner → needs planScan (probes P1/P5) + the DUCKDB
-#     type handler emitting table_type=DUCKDB
-#   • pushdown assertions (EXPLAIN shows the pushed predicate) → the parity/pushdown work
-# When those land, replace the "expect the stub error" assertions below with real result
-# assertions (the doris-ducklake smoke.sh is the template for that shape).
+# What unlocks next as the connector grows:
+#   • SELECT reaching the BE JdbcJniScanner → needs planScan (probes P1/P5) + the DUCKDB type
+#     handler emitting table_type=DUCKDB (planScan still fails loud today);
+#   • pushdown assertions (EXPLAIN shows the pushed predicate) → the parity/pushdown work.
+# When those land, replace the "expect the planScan stub" assertion with real result assertions
+# (the doris-ducklake smoke.sh is the template for that shape).
 
 set -euo pipefail
 
@@ -176,8 +176,7 @@ cat_out=$(fe_sql -e "
     CREATE CATALOG duckbridge_test PROPERTIES (
         'type'         = 'duckbridge',
         'jdbc_url'     = 'jdbc:quack://duckdb-quack:9494',
-        'driver_class' = 'com.gizmodata.quackjdbc.QuackDriver',
-        'user'         = 'duckbridge',
+        'driver_class' = 'com.gizmodata.quack.jdbc.sql.QuackDriver',
         'password'     = '${QUACK_TOKEN}'
     );
     SHOW CATALOGS;
@@ -196,45 +195,68 @@ if [[ $cat_status -ne 0 ]]; then
 fi
 log "GATE OK: catalog created — SPI whitelist + provider registration both work."
 
-# 8. Drive the fail-loud stub. Listing / SELECT is EXPECTED to fail with the P1–P6 probe
-# message at this scaffold stage. We assert the error text is our stub's — a SUCCESS or a
-# DIFFERENT error is a real problem (silent bypass, or a wiring break).
-log "Exercising the fail-loud stub (metadata/scan attempt — expect the P1–P6 message)…"
+# 8. METADATA is now REAL (probe P4 settled): resolution over quack-jdbc should list the seeded
+# quack schemas/tables and DESC a table's columns with the probe-decided Doris types. The SCAN
+# still fails loud — planScan is gated on P1/P5 — and THAT is the new green.
+#
+# ── History (pre-P4 scaffold expectations, kept for the record) ──────────────────────────────
+#   Before P4, listing was honestly EMPTY and resolution-by-name fell to the FE's own "Unknown
+#   database" (the connector stubs were structurally unreachable behind FE-side resolution). The
+#   old smoke asserted that. Now listing is real, so we assert the seeded schema/tables appear.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+log "Metadata resolution: SHOW DATABASES (expect the seeded quack schema 'sales')…"
 set +e
-# Listing is honestly EMPTY in the scaffold (and must not error — catalog health):
-probe_out=$(fe_sql -e "SHOW DATABASES FROM duckbridge_test;" 2>&1)
-probe_status=$?
-if [[ $probe_status -ne 0 ]]; then
-    log "WARN: SHOW DATABASES failed — empty listing should succeed; inspect:"
-    echo "${probe_out}"
-fi
-# Resolution BY NAME must hit the fail-loud stub (databaseExists/getTableHandle throw the
-# P4 probe message). information_schema is FE-internal and never reaches the connector —
-# a qualified reference is what exercises our metadata.
-scan_out=$(fe_sql -e "SHOW TABLES FROM duckbridge_test.probe_db;" 2>&1)
+dbs_out=$(fe_sql -e "SHOW DATABASES FROM duckbridge_test;" 2>&1)
 set -e
-
-combined="${probe_out}
-${scan_out}"
-echo "${combined}" | tail -20
-
-# Truthful scaffold expectations (verified against a live stack 2026-07-19):
-#   (a) SHOW DATABASES lists only FE builtins (information_schema, mysql) — the connector's
-#       listing is honestly empty and must not error.
-#   (b) Qualified resolution gets the FE's OWN "Unknown database": the FE resolves against its
-#       cached db map (built from our empty listing) and answers BEFORE consulting the
-#       connector — so the connector's fail-loud stubs (probe P4 / P1–P6 messages) are
-#       structurally unreachable here until listing is implemented post-P4. If the stub text
-#       DOES appear (FE call path changed), that's equally green — it means the throw works.
-if echo "${combined}" | grep -qiE "probe P[1-6]|planScan is not implemented|not implemented yet"; then
-    log "RESOLUTION GREEN: the connector's fail-loud stub surfaced (FE call path reaches the connector)."
-elif echo "${combined}" | grep -qi "Unknown database 'probe_db'"; then
-    log "RESOLUTION GREEN: FE answered 'Unknown database' from the connector's honest empty listing."
-    log "  Connector stubs stay unreachable behind FE-side resolution until listing lands (post-P4)."
+echo "${dbs_out}" | tail -20
+if echo "${dbs_out}" | grep -qiw "sales"; then
+    log "METADATA GREEN: SHOW DATABASES lists the seeded quack schema 'sales' (real resolution over quack-jdbc)."
 else
-    log "RESOLUTION UNEXPECTED: neither the FE's 'Unknown database' nor the connector stub — inspect:"
-    echo "${combined}" | tail -5
-    log "  Possible wiring break (plugin jar stale? FE resolution path changed?) — investigate before trusting."
+    log "METADATA CHECK: expected a 'sales' database from the seeded quack server — inspect above + fe.log."
+    log "  (Seed file: compose/seed/quack-init.sql; the quack container must have run it.)"
+fi
+
+log "Metadata resolution: SHOW TABLES FROM duckbridge_test.sales (expect customers, orders)…"
+set +e
+tables_out=$(fe_sql -e "SHOW TABLES FROM duckbridge_test.sales;" 2>&1)
+set -e
+echo "${tables_out}" | tail -20
+if echo "${tables_out}" | grep -qiw "customers" && echo "${tables_out}" | grep -qiw "orders"; then
+    log "METADATA GREEN: SHOW TABLES resolves the seeded tables."
+else
+    log "METADATA CHECK: expected 'customers' + 'orders' — inspect above + fe.log."
+fi
+
+log "Metadata resolution: DESC duckbridge_test.sales.customers (expect the P4 type map)…"
+set +e
+desc_out=$(fe_sql -e "DESC duckbridge_test.sales.customers;" 2>&1)
+set -e
+echo "${desc_out}" | tail -20
+# balance DECIMAL(18,2), big_id HUGEINT→LARGEINT, tags VARCHAR[]→ARRAY<STRING> are the
+# distinctive P4-mapped columns.
+if echo "${desc_out}" | grep -qiE "largeint" && echo "${desc_out}" | grep -qiE "array"; then
+    log "METADATA GREEN: DESC shows the probe-decided types (HUGEINT→LARGEINT, VARCHAR[]→ARRAY)."
+else
+    log "METADATA CHECK: expected LARGEINT + ARRAY columns from the type map — inspect above."
+fi
+
+# The SCAN is still gated: a SELECT must reach planScan and fail loud with the P1/P5 message.
+# THIS is the new green — metadata real, scan still gated. (A silent success here would mean
+# planScan was bypassed; a metadata-stage error would mean resolution regressed.)
+log "Scan attempt: SELECT * FROM duckbridge_test.sales.customers LIMIT 1 (expect planScan P1/P5 stub)…"
+set +e
+scan_out=$(fe_sql -e "SELECT * FROM duckbridge_test.sales.customers LIMIT 1;" 2>&1)
+set -e
+echo "${scan_out}" | tail -20
+if echo "${scan_out}" | grep -qiE "planScan is not implemented|probe.*P1|P5|Doris.DuckDB divergence"; then
+    log "SCAN-GATE GREEN: the SELECT reached planScan and failed loud (P1/P5 open) — the correct state."
+elif echo "${scan_out}" | grep -qiE "error|exception|unsupported"; then
+    log "SCAN-GATE CHECK: an error surfaced but not the planScan P1/P5 stub — inspect above (metadata OK, but"
+    log "  the scan path may have changed, or the plugin jar is stale)."
+else
+    log "SCAN-GATE UNEXPECTED-SUCCESS: SELECT returned WITHOUT the planScan stub — planScan may have been"
+    log "  bypassed (or is now implemented). Investigate before trusting; scan is still gated on P1/P5."
 fi
 
 # 9. Teardown.

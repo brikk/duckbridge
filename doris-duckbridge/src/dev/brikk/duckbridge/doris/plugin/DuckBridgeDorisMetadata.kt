@@ -1,65 +1,198 @@
 package dev.brikk.duckbridge.doris.plugin
 
+import org.apache.doris.connector.api.ConnectorColumn
 import org.apache.doris.connector.api.ConnectorMetadata
 import org.apache.doris.connector.api.ConnectorSession
 import org.apache.doris.connector.api.ConnectorTableSchema
+import org.apache.doris.connector.api.DorisConnectorException
 import org.apache.doris.connector.api.handle.ConnectorColumnHandle
 import org.apache.doris.connector.api.handle.ConnectorTableHandle
+import java.sql.Connection
+import java.sql.DatabaseMetaData
 import java.util.Optional
 
 /**
- * Read-side metadata for duckbridge. The FE resolves schemas/tables/columns by querying the
- * user's DuckDB/Quack server through quack-jdbc `DatabaseMetaData` at plan time.
+ * Read-side metadata for duckbridge — the REAL implementation, built on what probe P4 proved about
+ * quack-jdbc `DatabaseMetaData` fidelity (`dev-docs/REPORT-quack-jdbc-metadata-probe.md`).
  *
- * WIP scaffold: metadata fidelity through quack-jdbc for the *Doris* type map is unproven (plan
- * probe P4 — the Trino-side validation does NOT transfer), so every resolution method fails loud
- * rather than returning a plausible-but-unverified answer. Listing methods return "nothing"
- * honestly (an empty catalog is a true statement about a not-yet-implemented resolver), while
- * anything that would assert a *shape* (handles, schema, columns) throws with a pointer to P4.
- * Per the repo rule: fail loud over silently wrong — never hand back a fabricated column type.
+ * Namespace flattening (P4): DuckDB is 3-level (`catalog.schema.table`), Doris catalogs are 2-level
+ * (`database.table`). We map **DuckDB schema → Doris database**, scoped to the connection's **main
+ * catalog only** (discovered from the connection, not hard-coded — an in-memory server's is
+ * `memory`, a file/attached DB's is its name). DuckDB-internal catalogs (`system`, `temp`) and
+ * schemas (`information_schema`, `pg_catalog`) are excluded, and only `TABLE`/`VIEW` table types are
+ * listed (not `SYSTEM VIEW`). Multi-catalog (`ATTACH`) is deferred (report §Open question).
+ *
+ * Types map via [DuckDbToDorisTypeMapper] keyed off `getColumns().TYPE_NAME` (the faithful field;
+ * `DATA_TYPE` is lossy). Unmappable types fail loud naming the column.
+ *
+ * Connections are short-lived: one per resolution call, closed immediately (doris-ducklake's
+ * plan-time round-trip pattern; P2 note in the report).
  */
 internal class DuckBridgeDorisMetadata(
-    @Suppress("unused") private val config: DuckBridgeConnectorConfig,
+    private val config: DuckBridgeConnectorConfig,
+    private val connections: DuckBridgeQuackConnections,
+    private val enableTimestampTz: Boolean,
 ) : ConnectorMetadata {
 
-    // Listing NAMES stays honestly empty: the FE lists during catalog registration/refresh, and
-    // an empty catalog is a valid, healthy state (CREATE CATALOG must succeed — that's the
-    // SPI_READY_TYPES gate we smoke-test). Resolution BY NAME, however, cannot be answered
-    // truthfully before probe P4 (quack-jdbc metadata fidelity), so it fails loud below rather
-    // than returning a silent "does not exist".
-    override fun listDatabaseNames(session: ConnectorSession?): List<String> = emptyList()
+    override fun listDatabaseNames(session: ConnectorSession?): List<String> =
+        connections.withConnection { conn -> userSchemas(conn, mainCatalog(conn)) }
 
     override fun databaseExists(session: ConnectorSession?, database: String): Boolean =
-        throw unimplemented("databaseExists($database)")
+        connections.withConnection { conn -> userSchemas(conn, mainCatalog(conn)).contains(database) }
 
     override fun listTableNames(session: ConnectorSession?, database: String): List<String> =
-        throw unimplemented("listTableNames($database)")
+        connections.withConnection { conn ->
+            val catalog = mainCatalog(conn)
+            val out = ArrayList<String>()
+            conn.metaData.getTables(catalog, database, "%", USER_TABLE_TYPES).use { rs ->
+                while (rs.next()) {
+                    out.add(rs.getString("TABLE_NAME"))
+                }
+            }
+            out
+        }
 
     override fun getTableHandle(
         session: ConnectorSession?,
         database: String,
         table: String,
-    ): Optional<ConnectorTableHandle> = throw unimplemented("getTableHandle($database.$table)")
+    ): Optional<ConnectorTableHandle> =
+        connections.withConnection { conn ->
+            val catalog = mainCatalog(conn)
+            val exists = conn.metaData.getTables(catalog, database, table, USER_TABLE_TYPES).use { it.next() }
+            if (exists) {
+                Optional.of(DuckBridgeTableHandle(catalog, database, table))
+            } else {
+                Optional.empty()
+            }
+        }
 
     override fun getTableSchema(
         session: ConnectorSession?,
         tableHandle: ConnectorTableHandle,
-    ): ConnectorTableSchema = throw unimplemented("getTableSchema")
+    ): ConnectorTableSchema {
+        val handle = tableHandle.asDuckBridgeHandle()
+        val columns = connections.withConnection { conn -> resolveColumns(conn, handle) }
+        val connectorColumns = ArrayList<ConnectorColumn>(columns.size)
+        for (col in columns) {
+            connectorColumns.add(
+                ConnectorColumn(
+                    col.columnName,
+                    col.columnType,
+                    "", // DuckDB column comments not surfaced in v1
+                    col.nullable,
+                    null, // no default-value backfill for a live JDBC source
+                ),
+            )
+        }
+        return ConnectorTableSchema(
+            handle.table,
+            connectorColumns,
+            DuckBridgeConnectorProvider.TYPE,
+            emptyMap(),
+        )
+    }
 
     override fun getColumnHandles(
         session: ConnectorSession?,
         tableHandle: ConnectorTableHandle,
-    ): Map<String, ConnectorColumnHandle> = throw unimplemented("getColumnHandles")
-
-    override fun close() {
-        // No resources held in the scaffold.
+    ): Map<String, ConnectorColumnHandle> {
+        val handle = tableHandle.asDuckBridgeHandle()
+        val columns = connections.withConnection { conn -> resolveColumns(conn, handle) }
+        // LinkedHashMap preserves DuckDB's column order so DESC / SELECT * line up.
+        val out = LinkedHashMap<String, ConnectorColumnHandle>(columns.size)
+        for (col in columns) {
+            out[col.columnName] = col
+        }
+        return out
     }
 
-    private fun unimplemented(what: String): UnsupportedOperationException =
-        UnsupportedOperationException(
-            "duckbridge metadata: $what is not implemented yet — probe P4 " +
-                "(quack-jdbc DatabaseMetaData fidelity for the Doris type map) must be settled " +
-                "before resolving real schema. See dev-docs/NOTES-scaffold.md and " +
-                "dev-docs/PLAN-doris-duckbridge.md §Open probes.",
-        )
+    override fun close() {
+        // Connections are per-call and self-closing; nothing long-lived to release here.
+    }
+
+    // ---- resolution helpers ----
+
+    /**
+     * The connection's main catalog: the single non-system, non-temp catalog quack reports. DuckDB
+     * exposes `system` + `temp` internally plus the user's DB (`memory` in-memory, or the attached
+     * name). v1 uses exactly one user catalog (ATTACH/multi-catalog deferred — report §Open
+     * question), so more than one is a fail-loud (we won't guess which the user meant).
+     */
+    private fun mainCatalog(conn: Connection): String {
+        conn.catalog?.takeIf { it.isNotBlank() && it !in SYSTEM_CATALOGS }?.let { return it }
+        val user = ArrayList<String>()
+        conn.metaData.catalogs.use { rs ->
+            while (rs.next()) {
+                val cat = rs.getString("TABLE_CAT")
+                if (cat != null && cat !in SYSTEM_CATALOGS) {
+                    user.add(cat)
+                }
+            }
+        }
+        return when (user.size) {
+            1 -> user[0]
+            0 -> throw DorisConnectorException(
+                "duckbridge: the DuckDB/Quack server at '${config.jdbcUrl}' exposes no user catalog " +
+                    "(only ${SYSTEM_CATALOGS.joinToString()}). Attach or create a database.",
+            )
+            else -> throw DorisConnectorException(
+                "duckbridge: the DuckDB/Quack server exposes multiple user catalogs " +
+                    "(${user.joinToString()}). v1 supports a single (main) catalog only — multi-catalog " +
+                    "ATTACH mapping is not implemented yet (see the P4 report §Open question).",
+            )
+        }
+    }
+
+    /** User schemas (Doris databases) under [catalog]: non-system schemas only. */
+    private fun userSchemas(conn: Connection, catalog: String): List<String> {
+        val out = ArrayList<String>()
+        conn.metaData.getSchemas(catalog, "%").use { rs ->
+            while (rs.next()) {
+                val schema = rs.getString("TABLE_SCHEM")
+                if (schema != null && schema !in SYSTEM_SCHEMAS) {
+                    out.add(schema)
+                }
+            }
+        }
+        return out
+    }
+
+    /** Resolve a table's columns to duckbridge handles, mapping each type off the faithful TYPE_NAME. */
+    private fun resolveColumns(conn: Connection, handle: DuckBridgeTableHandle): List<DuckBridgeColumnHandle> {
+        val out = ArrayList<DuckBridgeColumnHandle>()
+        conn.metaData.getColumns(handle.catalog, handle.database, handle.table, "%").use { rs ->
+            var ordinal = 0
+            while (rs.next()) {
+                val name = rs.getString("COLUMN_NAME")
+                val duckdbType = rs.getString("TYPE_NAME")
+                val nullable = rs.getInt("NULLABLE") != DatabaseMetaData.columnNoNulls
+                val dorisType = DuckDbToDorisTypeMapper.toDorisType(duckdbType, name, enableTimestampTz)
+                out.add(DuckBridgeColumnHandle(name, dorisType, duckdbType, nullable, ordinal++))
+            }
+        }
+        if (out.isEmpty()) {
+            throw DorisConnectorException(
+                "duckbridge: table '${handle.database}.${handle.table}' has no columns (or was " +
+                    "dropped between resolution calls).",
+            )
+        }
+        return out
+    }
+
+    private fun ConnectorTableHandle.asDuckBridgeHandle(): DuckBridgeTableHandle =
+        this as? DuckBridgeTableHandle
+            ?: throw DorisConnectorException(
+                "duckbridge received a foreign table handle: ${this::class.java.name}",
+            )
+
+    private companion object {
+        // DuckDB-internal catalogs / schemas excluded from user-facing listing (probe P4).
+        val SYSTEM_CATALOGS = setOf("system", "temp")
+        val SYSTEM_SCHEMAS = setOf("information_schema", "pg_catalog")
+
+        // getTables type filter: base tables report "TABLE", views "VIEW"; "SYSTEM VIEW" /
+        // "LOCAL TEMPORARY" are DuckDB internals we don't surface (probe P4).
+        val USER_TABLE_TYPES = arrayOf("TABLE", "VIEW")
+    }
 }

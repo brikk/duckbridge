@@ -40,15 +40,19 @@ Real (mechanics):
 - `DuckBridgeConnector` — composes the SPI object graph (metadata + scan-plan seam).
 - `DuckBridgeConnectorConfig` — parses the DuckDB/Quack JDBC connection coordinates off the catalog
   properties (real, tested).
+- **`DuckBridgeDorisMetadata` — REAL as of P4 (2026-07-19).** Resolves schemas/tables/columns over
+  quack-jdbc `DatabaseMetaData` (short-lived per-call connections, `DuckBridgeQuackConnections`) with
+  the probe-decided type map (`DuckDbToDorisTypeMapper`, keyed off the faithful `TYPE_NAME`).
+  Schema→database flattening, main-catalog-only, system objects excluded. Unmappable types
+  (UHUGEINT, INTERVAL) fail loud naming the column. Evidence + decided map:
+  `dev-docs/REPORT-quack-jdbc-metadata-probe.md`. Proven live in the compose smoke (DESC shows
+  `HUGEINT→largeint`, `VARCHAR[]→array<text>`, `DECIMAL(18,2)`).
 
 Stubbed (fail loud, never silently wrong):
-- `DuckBridgeDorisMetadata` — listing returns empty (an honest statement about a not-yet-implemented
-  resolver); anything asserting a *shape* (table handle, schema, column handles) throws
-  `UnsupportedOperationException` pointing at probe **P4** (quack-jdbc `DatabaseMetaData` fidelity for
-  the Doris type map). We never fabricate a column type.
 - `DuckBridgeScanPlanProvider` — `getScanRangeType()` declares `JDBC_SCAN` (Route J rides the BE's
   shared `jdbc` reader); `planScan` throws rather than returning an empty scan (a silent under-return
-  is banned). The throw enumerates the gating probes P1–P6.
+  is banned). The throw now names the *remaining* gating probes (P1 divergence audit, P5 planScan
+  inputs) — metadata (P4) is settled.
 
 ## Doris-side patches (separate from this module)
 
@@ -71,24 +75,29 @@ them so the wiring can't be mistaken for a working connector:
 | P1 | Doris vs DuckDB built-in divergence audit on the fixture corpus | how many `doris_*` parity macros (if any) |
 | P2 | `JDBC_SCAN` range count/query + BE connection behavior vs the Quack 1.5.4 pool | whether the pool gate applies |
 | P3 | quack-jdbc session-init / zone-explicit SQL rendering | any tz-sensitive pushdown (v1 default: gated off) |
-| P4 | quack-jdbc `DatabaseMetaData` fidelity for the Doris type map | FE metadata resolution trustworthiness |
+| ~~P4~~ ✅ | quack-jdbc `DatabaseMetaData` fidelity for the Doris type map | **SETTLED 2026-07-19** — metadata plane real; report `REPORT-quack-jdbc-metadata-probe.md` |
 | P5 | what the SPI hands `planScan` beyond conjuncts (limit? sort? aggregates?) | LIMIT/TopN pushdown scope |
 | P6 | Doris session `time_zone` visibility from the plugin | tz options 1–2 |
 
-First concrete work item: **P4** — stand up quack-jdbc metadata resolution behind
-`DuckBridgeDorisMetadata`, then **P1** (divergence audit) to seed the pushdown allowlist. The
-pushdown translator is a new FE over the ported `trino-duckbridge` discipline (per-conjunct partial
-pushdown, per-argument type gates, fixture-per-entry allowlist).
+**P4 is settled.** Next concrete work item: **P1** (divergence audit) to seed the pushdown allowlist,
+alongside **P5** (what the SPI hands `planScan`) to build the scan seam. The pushdown translator is a
+new FE over the ported `trino-duckbridge` discipline (per-conjunct partial pushdown, per-argument
+type gates, fixture-per-entry allowlist).
 
-## Live-stack findings (smoke, 2026-07-19)
+## Live-stack findings (smoke)
 
-First full compose run (patched FE + patched BE + quack): plugin loads
-(`jarCount=4`, type `duckbridge` registered), `CREATE CATALOG type=duckbridge`
-passes (SPI whitelist gate), BE registers, teardown clean.
+**2026-07-19 (pre-P4):** first full compose run (patched FE + patched BE + quack): plugin loads,
+type `duckbridge` registered, `CREATE CATALOG` passes the SPI whitelist gate, BE registers, clean
+teardown. Metadata was honestly-empty then, so the FE answered `Unknown database` from its own
+cached db map without consulting the connector.
 
-**FE-side resolution shields the connector stubs:** the FE answers
-`Unknown database` from its own cached db map (built from our honestly-empty
-`listDatabaseNames`) without ever consulting `databaseExists`/`getTableHandle`.
-So the P4/P1–P6 fail-loud stubs are structurally unreachable via SQL until
-listing is implemented (post-P4). They stay as throws (fail loud if any FE call
-path reaches them); `smoke.sh` asserts the truthful current state instead.
+**2026-07-19 (post-P4):** with the real metadata plane, the seeded quack schema resolves
+end-to-end over the live FE:
+- `SHOW DATABASES FROM duckbridge_test` → lists `sales` (the seeded quack schema);
+- `SHOW TABLES FROM duckbridge_test.sales` → `customers`, `orders`;
+- `DESC duckbridge_test.sales.customers` → the P4 type map, verbatim from the FE:
+  `id bigint`, `name text`, `balance decimal(18,2)`, `signup date`, `big_id largeint`
+  (HUGEINT→LARGEINT), `tags array<text>` (VARCHAR[]→ARRAY<STRING>);
+- `SELECT * FROM …` → reaches `planScan` and fails loud with the P1/P5 message — the new green
+  (scan still gated). `smoke.sh` asserts each of these truthfully; the quack server is seeded via
+  `compose/seed/quack-init.sql`.

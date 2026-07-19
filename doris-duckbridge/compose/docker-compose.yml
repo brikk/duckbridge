@@ -99,6 +99,10 @@ services:
       QUACK_TOKEN: ${QUACK_TOKEN:?set QUACK_TOKEN in doris-duckbridge/compose/.env (copy .env.example)}
     ports:
       - "9494:9494"   # Quack RPC (also reachable in-network as duckdb-quack:9494)
+    volumes:
+      # Seed schema/table so metadata resolution (probe P4) has something to list: the
+      # entrypoint runs /seed/init.sql before serving. Read-only mount of the tracked seed.
+      - ./seed/quack-init.sql:/seed/init.sql:ro
     networks:
       doris-net:
         ipv4_address: 172.31.80.30
