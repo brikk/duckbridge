@@ -66,7 +66,7 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
 
     @Test
     fun lengthPredicateIsFullyPushedDown() {
-        // trino_length(name) is a parity function → the whole filter pushes into DuckDB.
+        // length(name) is a BARE emission (bare DuckDB built-in) → the whole filter pushes into DuckDB.
         assertThat(query("SELECT id FROM people WHERE length(name) = 5"))
             .isFullyPushedDown()
     }

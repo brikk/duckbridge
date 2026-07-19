@@ -118,14 +118,9 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
     }
 
     @Test
-    fun parityFunctionPushdownOverQuack() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(
-            parityAvailable,
-            "trino_parity extension not available for the container platform — parity pushdown skipped",
-        )
-        // trino_length pushes as a trino_*() call the remote server resolves via the loaded extension.
-        val plan = explain("SELECT id FROM t WHERE length(name) = 5")
-        assertThat(plan).contains("trino_length")
+    fun bareFunctionPushdownOverQuack() {
+        // length is now a BARE emission (no extension needed) — it pushes as the bare built-in name
+        // even over Quack, independent of the parity extension's availability on the server.
         val ids =
             computeActual("SELECT id FROM t WHERE length(name) = 5 ORDER BY id").materializedRows.map { it.getField(0) as Long }
         // Alice (5), straße (6→no), δοκιμή (6→no), bob (3→no) → Alice only.
@@ -135,7 +130,8 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
     @Test
     fun parityUnicodeCaseFoldOverQuack() {
         org.junit.jupiter.api.Assumptions.assumeTrue(parityAvailable, "parity not available")
-        // upper('straße') → 'STRASSE' server-side; predicate pushes and matches row 3.
+        // upper is an ALIAS emission → trino_upper server-side ICU full case fold: 'straße' →
+        // 'STRASSE'. The predicate pushes and matches row 3 only when the extension is available.
         val ids =
             computeActual("SELECT id FROM t WHERE upper(name) = 'STRASSE'").materializedRows.map { it.getField(0) as Long }
         assertThat(ids).containsExactly(3L)

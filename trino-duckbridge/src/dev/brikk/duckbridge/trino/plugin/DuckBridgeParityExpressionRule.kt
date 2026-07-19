@@ -23,9 +23,15 @@ import io.trino.spi.expression.Call
 import java.util.Optional
 
 /**
- * A single base-jdbc [ConnectorExpressionRule] that delegates a whole [Call] conjunct to the ported
+ * A single base-jdbc [ConnectorExpressionRule] that delegates a whole [Call] conjunct to the
  * [DuckBridgeExpressionTranslator], preserving the translator's hard-won semantics verbatim rather
  * than re-deriving them as a pile of `GenericRewrite` string patterns.
+ *
+ * [aliasAvailable] mirrors whether the `trino_parity` extension's `trino_<name>(...)` layer is
+ * available on the target connection (i.e. parity is enabled). When false, the translator refuses to
+ * push [DuckBridgeExpressionTranslator.Emission.Alias] entries — but the Bare/Rename/Operator/Inline
+ * classes still push, because they never touch the extension and their correctness is fixture-proven
+ * against a bare DuckDB. This is why the rule is ALWAYS registered, even when parity is disabled.
  *
  * Why one whole-expression rule instead of `addStandardRules(...)` + per-function rules:
  *
@@ -47,7 +53,9 @@ import java.util.Optional
  * Call (comparison, AND, IS NULL, LIKE, ...), so matching `Call` covers the pushable shapes. Bare
  * Variable/Constant conjuncts are not independently pushable predicates and are correctly skipped.
  */
-class DuckBridgeParityExpressionRule : ConnectorExpressionRule<Call, ParameterizedExpression> {
+class DuckBridgeParityExpressionRule(
+    private val aliasAvailable: Boolean,
+) : ConnectorExpressionRule<Call, ParameterizedExpression> {
     override fun getPattern(): Pattern<Call> = PATTERN
 
     override fun rewrite(
@@ -56,7 +64,7 @@ class DuckBridgeParityExpressionRule : ConnectorExpressionRule<Call, Parameteriz
         context: ConnectorExpressionRule.RewriteContext<ParameterizedExpression>,
     ): Optional<ParameterizedExpression> {
         val sql =
-            DuckBridgeExpressionTranslator.translate(call, context.assignments, context.session)
+            DuckBridgeExpressionTranslator.translate(call, context.assignments, context.session, aliasAvailable)
                 ?: return Optional.empty()
         return Optional.of(ParameterizedExpression(sql, emptyList<QueryParameter>()))
     }

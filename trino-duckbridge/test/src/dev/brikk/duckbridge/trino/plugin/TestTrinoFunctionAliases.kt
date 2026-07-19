@@ -13,8 +13,11 @@
  */
 package dev.brikk.duckbridge.trino.plugin
 
+import dev.brikk.duckbridge.trino.plugin.DuckBridgeExpressionTranslator.NameArity
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -22,78 +25,122 @@ import java.sql.Statement
 import java.util.Properties
 
 /**
- * SQL-level acceptance + drift tests for the `trino_*` parity layer, run against the REAL built
+ * SQL-level acceptance + parity tests for the emission-class rework, run against the REAL built
  * `trino_parity.duckdb_extension` binary (resolved and extracted by [TrinoParityExtensionResolver],
- * the same path the production client uses). Ported from the DuckLake connector's
- * `TestTrinoFunctionAliases`, trimmed to the drift-critical checks plus a representative semantic
- * sample; the full 200-fixture semantic matrix stays in the extension's own test suite.
+ * the same path the production client uses).
  *
- * [testJavaPushableSetMatchesDuckDbMeta] is THE DRIFT TEST: the Java-side
- * [DuckBridgeExpressionTranslator.PUSHABLE_FUNCTIONS] must equal the DuckDB-side `trino_meta()`
- * catalog of the loaded binary, exactly.
+ * Two obligations, post "alias only what diverges":
+ *
+ *  (a) [testAliasSetIsSubsetOfMeta] — ALIAS LOCKSTEP: the translator's [Emission.Alias] subset (the
+ *      10 native-C++ divergence-fixers that must route through the extension) must be a SUBSET of the
+ *      loaded binary's `trino_meta()` catalog. It is `⊆`, not `==`, on purpose: the extension still
+ *      ships all ~95 `trino_<name>` macros/functions; a follow-up will shrink it to just the 10 and
+ *      re-pin equality (see the TODO on that test).
+ *
+ *  (b) [nonAliasSemanticFixtures] — SEMANTIC FIXTURES: every non-ALIAS entry
+ *      (Bare/Rename/Operator/Inline) has at least one fixture that TRANSLATES a Trino
+ *      [io.trino.spi.expression.Call] through the production [DuckBridgeExpressionTranslator], then
+ *      evaluates the emitted DuckDB SQL against embedded DuckDB and compares it to the Trino-side
+ *      expected value. These are the canary that re-proves native alignment on DuckDB pin bumps —
+ *      if a bare/rename/inline built-in ever drifts from Trino, its fixture goes red.
  */
 class TestTrinoFunctionAliases {
-    @Test
-    @Throws(Exception::class)
-    fun testJavaPushableSetMatchesDuckDbMeta() {
-        openConnectionWithExtension().use { conn ->
-            conn.createStatement().use { stmt ->
-                val duckDbMeta = readMeta(stmt)
-                val javaAsNameArity =
-                    DuckBridgeExpressionTranslator.PUSHABLE_FUNCTIONS
-                        .map { NameArity(it.name, it.arity) }
-                        .toHashSet()
-                assertThat(javaAsNameArity)
-                    .`as`("DuckBridgeExpressionTranslator.PUSHABLE_FUNCTIONS vs trino_meta() drifted")
-                    .isEqualTo(duckDbMeta)
-            }
-        }
-    }
+    // ---- (a) ALIAS lockstep -------------------------------------------------
 
     @Test
     @Throws(Exception::class)
-    fun testTrinoMetaCatalogMatchesInstalledMacros() {
+    fun testAliasSetIsSubsetOfMeta() {
         openConnectionWithExtension().use { conn ->
             conn.createStatement().use { stmt ->
                 val meta = readMeta(stmt)
-                val installed = installedTrinoFunctions(stmt)
-                for (entry in meta) {
-                    assertThat(installed)
-                        .`as`("trino_%s must be registered (declared in trino_meta with arity %d)", entry.name, entry.arity)
-                        .contains("trino_" + entry.name)
-                }
+                val aliasSet =
+                    DuckBridgeExpressionTranslator.ALIAS_FUNCTIONS
+                        .map { MetaEntry(it.name, it.arity) }
+                        .toHashSet()
+                // TODO(parity-extension shrink): the extension still ships all ~95 trino_<name>
+                // entries. When it drops the 85 non-ALIAS macros (version bump), re-pin this to
+                // `isEqualTo(meta)` so a stale extra macro becomes a hard failure again.
+                assertThat(meta)
+                    .`as`("every ALIAS-class entry must be backed by a trino_<name> in trino_meta()")
+                    .containsAll(aliasSet)
             }
         }
     }
 
     @Test
     @Throws(Exception::class)
-    fun testRepresentativeMacroSemantics() {
-        openConnectionWithExtension().use { conn ->
-            conn.createStatement().use { stmt ->
-                // A representative slice of the semantic matrix — enough to prove the loaded binary
-                // actually evaluates the aligned semantics (ISO week/day, ß expansion, code-point
-                // length, NULL propagation), not just that the names exist.
-                assertThat(scalar(stmt, "SELECT trino_lower('HeLLo')")).isEqualTo("hello")
-                assertThat(scalar(stmt, "SELECT trino_upper('ß')")).isEqualTo("SS")
-                assertThat(numeric(stmt, "SELECT trino_length('пингвин')")).isEqualTo(7.0)
-                assertThat(numeric(stmt, "SELECT trino_day_of_week(DATE '2024-01-07')")).isEqualTo(7.0)
-                assertThat(numeric(stmt, "SELECT trino_year_of_week(DATE '2024-12-30')")).isEqualTo(2025.0)
-                assertThat(numeric(stmt, "SELECT trino_week(DATE '2021-01-01')")).isEqualTo(53.0)
-                assertThat(scalar(stmt, "SELECT trino_lower(NULL)")).isNull()
-                assertThat(scalar(stmt, "SELECT trino_abs(CAST(NULL AS INTEGER))")).isNull()
+    fun testAliasSetIsExactlyTheTenNatives() {
+        // The keep-list handed to the parity-extension maintainers: exactly these 10 native C++
+        // entries route through the extension. If this drifts, the ANSWER doc + README are stale.
+        val expected =
+            setOf(
+                NameArity("lower", 1),
+                NameArity("upper", 1),
+                NameArity("reverse", 1),
+                NameArity("trim", 1),
+                NameArity("ltrim", 1),
+                NameArity("rtrim", 1),
+                NameArity("normalize", 1),
+                NameArity("xxhash64", 1),
+                NameArity("sha512", 1),
+                NameArity("hmac_sha256", 2),
+            )
+        assertThat(DuckBridgeExpressionTranslator.ALIAS_FUNCTIONS).isEqualTo(expected)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testEveryNonAliasEntryHasAFixture() {
+        val nonAlias =
+            DuckBridgeExpressionTranslator.EMISSION_STRATEGIES
+                .filterValues { it !is DuckBridgeExpressionTranslator.Emission.Alias }
+                .keys
+        val covered = SemanticFixtures.all().map { NameArity(it.name, it.arity) }.toSet()
+        assertThat(covered)
+            .`as`("every Bare/Rename/Operator/Inline entry must carry a semantic fixture")
+            .containsAll(nonAlias)
+    }
+
+    // ---- (b) semantic fixtures ---------------------------------------------
+
+    @TestFactory
+    @Throws(Exception::class)
+    fun nonAliasSemanticFixtures(): List<DynamicTest> {
+        val conn = openConnectionWithExtension()
+        val stmt = conn.createStatement()
+        return SemanticFixtures.all().map { fx ->
+            DynamicTest.dynamicTest("${fx.name}/${fx.arity} :: ${fx.label}") {
+                val sql = fx.emittedSql()
+                assertThat(sql)
+                    .`as`("fixture %s/%d [%s] must be pushable (translator returned SQL)", fx.name, fx.arity, fx.label)
+                    .isNotNull()
+                val actual = scalar(stmt, fx.query(sql!!))
+                fx.assertMatches(actual)
             }
         }
     }
 
-    private data class NameArity(val name: String, val arity: Int)
+    // ---- representative extension-macro semantics (loaded binary sanity) ----
+
+    @Test
+    @Throws(Exception::class)
+    fun testRepresentativeAliasSemantics() {
+        openConnectionWithExtension().use { conn ->
+            conn.createStatement().use { stmt ->
+                // The ALIAS class is where DuckDB's built-in diverges; prove the loaded binary
+                // actually evaluates the Trino-aligned semantics (ICU full case folding, code-point
+                // reverse, NULL propagation).
+                assertThat(scalar(stmt, "SELECT trino_lower('HeLLo')")).isEqualTo("hello")
+                assertThat(scalar(stmt, "SELECT trino_upper('ß')")).isEqualTo("SS")
+                assertThat(scalar(stmt, "SELECT trino_reverse('abc')")).isEqualTo("cba")
+                assertThat(scalar(stmt, "SELECT trino_lower(NULL)")).isNull()
+            }
+        }
+    }
+
+    private data class MetaEntry(val name: String, val arity: Int)
 
     companion object {
-        /**
-         * Opens an in-memory DuckDB with the built trino_parity extension LOADed via the production
-         * resolver + loader. Fails fast if the bundled extension is missing on the test classpath —
-         * the extension is now built, so a miss is a real failure, not an environment quirk.
-         */
         @Throws(SQLException::class)
         private fun openConnectionWithExtension(): Connection {
             val path =
@@ -110,27 +157,14 @@ class TestTrinoFunctionAliases {
         }
 
         @Throws(SQLException::class)
-        private fun readMeta(stmt: Statement): Set<NameArity> {
-            val meta = HashSet<NameArity>()
+        private fun readMeta(stmt: Statement): Set<MetaEntry> {
+            val meta = HashSet<MetaEntry>()
             stmt.executeQuery("SELECT trino_name, arg_count FROM trino_meta() ORDER BY trino_name, arg_count").use { rs ->
                 while (rs.next()) {
-                    meta.add(NameArity(rs.getString(1), rs.getInt(2)))
+                    meta.add(MetaEntry(rs.getString(1), rs.getInt(2)))
                 }
             }
             return meta
-        }
-
-        @Throws(SQLException::class)
-        private fun installedTrinoFunctions(stmt: Statement): List<String> {
-            val installed = ArrayList<String>()
-            stmt.executeQuery(
-                "SELECT function_name FROM duckdb_functions() WHERE function_name LIKE 'trino\\_%' ESCAPE '\\'",
-            ).use { rs ->
-                while (rs.next()) {
-                    installed.add(rs.getString(1))
-                }
-            }
-            return installed
         }
 
         @Throws(SQLException::class)
@@ -138,14 +172,6 @@ class TestTrinoFunctionAliases {
             stmt.executeQuery(sql).use { rs ->
                 assertThat(rs.next()).`as`("query produced no rows: %s", sql).isTrue()
                 return rs.getObject(1)
-            }
-        }
-
-        @Throws(SQLException::class)
-        private fun numeric(stmt: Statement, sql: String): Double {
-            stmt.executeQuery(sql).use { rs ->
-                assertThat(rs.next()).`as`("query produced no rows: %s", sql).isTrue()
-                return (rs.getObject(1) as Number).toDouble()
             }
         }
     }

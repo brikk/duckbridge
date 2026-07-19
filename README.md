@@ -9,9 +9,11 @@ with pushdown that goes far beyond the usual JDBC-connector floor: projections, 
 predicates, `LIMIT`/`ORDER BY ... LIMIT`, and a large catalog of scalar functions are
 executed inside DuckDB instead of in Trino.
 
-Pushdown correctness is backed by the `trino_parity` DuckDB extension: an expression is
-only pushed when DuckDB is known to evaluate it with Trino-identical semantics (NULLs,
-unicode, arithmetic edge cases, date/time zone rules). No parity, no pushdown — never
+Pushdown correctness is held to Trino-identical semantics (NULLs, unicode, arithmetic
+edge cases, date/time zone rules). Most scalar functions are emitted as plain DuckDB
+SQL that DuckDB already evaluates identically to Trino (proven by per-function
+cross-engine fixtures); only the handful DuckDB *cannot* match natively are backed by
+the `trino_parity` DuckDB extension. When in doubt, an expression is not pushed — never
 wrong results.
 
 ## Quick start
@@ -42,22 +44,28 @@ managed on the server by the connector.
 ## Pushdown
 
 - **Projection + predicates** (`TupleDomain`): always on.
-- **Scalar functions**: pushed via the `trino_parity` extension's `trino_*` macros —
-  string, math, date/time, and more (see the full
-  [pushdown reference](trino-duckbridge/README-pushdown-reference.md)). Per-conjunct:
-  unsupported conjuncts stay in Trino, supported ones push.
+- **Scalar functions**: string, math, date/time, and more (see the full
+  [pushdown reference](trino-duckbridge/README-pushdown-reference.md)). Most emit plain
+  DuckDB SQL natively; a small set that DuckDB can't match is backed by the
+  `trino_parity` extension. Per-conjunct: unsupported conjuncts stay in Trino,
+  supported ones push.
 - **LIMIT** and **`ORDER BY ... LIMIT` (TopN)**.
 - `TIMESTAMP WITH TIME ZONE` functions push only when the
   `pushdown_timestamp_with_timezone` session property is on (default on); the connector
   aligns DuckDB's session `TimeZone` with Trino's.
 
-### The `trino_parity` extension — required by default
+### The `trino_parity` extension — only the functions DuckDB can't match
 
-Function pushdown depends on the
-[`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-parity-extension),
-and the connector treats it as **required unless you opt out**. There is no silent
-degrade: if the planner could promise pushdown that the extension can't back, results
-could be wrong, so a missing extension is a hard, clearly-worded error — never a quiet
+The [`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-parity-extension)
+backs **only the functions whose semantics DuckDB cannot match natively**: ICU case
+folding / trim / `normalize` (`lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`,
+`normalize/1`) and the vendored-crypto hashes (`xxhash64`, `sha512`, `hmac_sha256`) —
+10 functions in all. Everything else (the ~85 other pushable functions) is emitted as
+plain DuckDB SQL that DuckDB already evaluates identically to Trino, verified by
+per-function cross-engine fixtures.
+
+When the planner promises pushdown the extension can't back, results could be wrong, so
+for those 10 a missing extension is a hard, clearly-worded error — never a quiet
 fallback.
 
 - **Embedded** (`jdbc:duckdb:`): nothing to do. The extension binary is bundled in the
@@ -67,9 +75,10 @@ fallback.
   `duckbridge.parity-extension-path`. The connector probes for it on first use and fails
   with install instructions if it's absent.
 - **Opting out**: set `duckbridge.parity.enabled=false` to run without the extension.
-  Function pushdown turns off entirely; projection, predicate (domain), and LIMIT/TopN
-  pushdown still apply, and all queries remain correct — scalar functions are simply
-  evaluated by Trino above the scan.
+  This no longer disables *all* function pushdown — only the 10 extension-backed
+  functions drop out; the ~85 natively-emitted functions still push, alongside
+  projection, predicate (domain), and LIMIT/TopN pushdown. All queries remain correct —
+  the 10 are simply evaluated by Trino above the scan.
 
 ## Lance and Vortex (experimental)
 

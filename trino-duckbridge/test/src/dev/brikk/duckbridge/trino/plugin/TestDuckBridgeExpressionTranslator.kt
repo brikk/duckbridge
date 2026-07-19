@@ -62,7 +62,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(5L, BIGINT),
             )
         val conjuncts = DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)
-        assertThat(conjuncts).containsExactly("(trino_length(\"name\") = 5)")
+        assertThat(conjuncts).containsExactly("(length(\"name\") = 5)")
     }
 
     @Test
@@ -83,7 +83,7 @@ class TestDuckBridgeExpressionTranslator {
             )
         val and: ConnectorExpression = call(StandardFunctions.AND_FUNCTION_NAME, BOOLEAN, pushable, notPushable)
         val conjuncts = DuckBridgeExpressionTranslator.translateConjuncts(and, ASSIGNMENTS)
-        assertThat(conjuncts).containsExactly("(trino_length(\"name\") = 5)")
+        assertThat(conjuncts).containsExactly("(length(\"name\") = 5)")
     }
 
     @Test
@@ -129,7 +129,7 @@ class TestDuckBridgeExpressionTranslator {
             )
         val and: ConnectorExpression = call(StandardFunctions.AND_FUNCTION_NAME, BOOLEAN, pushable1, pushable2)
         val conjuncts = DuckBridgeExpressionTranslator.translateConjuncts(and, ASSIGNMENTS)
-        assertThat(conjuncts).containsExactly("(trino_length(\"name\") = 5)", "(\"id\" < 10)")
+        assertThat(conjuncts).containsExactly("(length(\"name\") = 5)", "(\"id\" < 10)")
     }
 
     @Test
@@ -445,7 +445,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(2024L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_year(\"d\") = 2024)")
+            .containsExactly("(year(\"d\") = 2024)")
     }
 
     @Test
@@ -458,7 +458,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(2024L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_year(\"ts\") = 2024)")
+            .containsExactly("(year(\"ts\") = 2024)")
     }
 
     @Test
@@ -484,7 +484,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(7L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_day_of_week(\"d\") = 7)")
+            .containsExactly("(isodow(\"d\") = 7)")
     }
 
     @Test
@@ -509,7 +509,7 @@ class TestDuckBridgeExpressionTranslator {
                 Variable("d", DATE),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_date_trunc('month', \"d\") = \"d\")")
+            .containsExactly("(date_trunc('month', \"d\") = \"d\")")
     }
 
     @Test
@@ -522,7 +522,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(0L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_date_diff('day', \"d\", \"d\") = 0)")
+            .containsExactly("(date_diff('day', \"d\", \"d\") = 0)")
     }
 
     @Test
@@ -535,7 +535,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(0.0, DOUBLE),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_to_unixtime(\"ts\") = 0.0)")
+            .containsExactly("(CAST(epoch(\"ts\") AS DOUBLE) = 0.0)")
     }
 
     // --- TIMESTAMP WITH TIME ZONE gated by session property -----------------
@@ -550,7 +550,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(2024L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly("(trino_year(\"tstz\") = 2024)")
+            .containsExactly("(year(\"tstz\") = 2024)")
     }
 
     @Test
@@ -576,7 +576,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(0.0, DOUBLE),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly("(trino_to_unixtime(\"tstz\") = 0.0)")
+            .containsExactly("(CAST(epoch(\"tstz\") AS DOUBLE) = 0.0)")
     }
 
     @Test
@@ -606,7 +606,7 @@ class TestDuckBridgeExpressionTranslator {
                 ),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_with_timezone(\"ts\", 'America/Los_Angeles') IS NULL)")
+            .containsExactly("(timezone('America/Los_Angeles', \"ts\") IS NULL)")
     }
 
     @Test
@@ -619,7 +619,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(5L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(trino_length(\"name\") = 5)")
+            .containsExactly("(length(\"name\") = 5)")
     }
 
     @Test
