@@ -5,3 +5,7 @@
 # `priority_networks` to it at boot, so it must be mutable and untracked — the tracked
 # fe.conf stays pristine.
 .fe.conf.runtime
+
+# quack-jdbc driver jar staged by smoke.sh (extracted from the built plugin zip) and
+# mounted into the BE. Derived artifact — never committed.
+.be-drivers/

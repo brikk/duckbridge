@@ -78,6 +78,13 @@ services:
       #   Dockerfile's DORIS_BE_HOME together if the real root differs.
       - be-storage:/opt/apache-doris/be/storage
       - be-log:/opt/apache-doris/be/log
+      # quack-jdbc driver jar for the BE's JdbcJniScanner. The BE resolves the catalog's
+      # driver_url; we mount the jar at a fixed path and CREATE CATALOG points driver_url at
+      # 'file:///opt/duckbridge-drivers/quack-jdbc.jar'. smoke.sh extracts the jar from the built
+      # plugin zip into ./ .be-drivers before `up`. DEPLOYMENT EXPECTATION: operators put
+      # quack-jdbc where the BE can read it (this dir, or DORIS_HOME/plugins/jdbc_drivers) and set
+      # driver_url accordingly. (No checksum gate on the JNI-reader path — see NOTES-p5-p2-scan.md.)
+      - ./.be-drivers:/opt/duckbridge-drivers:ro
     networks:
       doris-net:
         ipv4_address: 172.31.80.20

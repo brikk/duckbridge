@@ -40,7 +40,8 @@ We implement the SPI's `ConnectorProvider` / `Connector` / `ConnectorMetadata` /
 `ConnectorScanPlanProvider`. In `planScan`, the pushdown core translates the projected
 columns + pushed-down filter (and pushable functions, plus LIMIT / `ORDER BY … LIMIT`
 where the SPI hands them down — probe item P5) into a DuckDB `SELECT`, and we return
-a `ConnectorScanRange` of type **`JDBC_SCAN`** with `getTableFormatType() == "jdbc"` and
+a `ConnectorScanRange` with **`getRangeType() == FILE_SCAN`** (corrected 2026-07-19: there is
+no `JDBC_SCAN` enum — the in-tree JDBC connector rides `FILE_SCAN`), `getTableFormatType() == "jdbc"` and
 `getFileFormat() == "jni"`, carrying in its `jdbc_params` map the `{driver_class,
 driver_url, jdbc_url (jdbc:quack://user-host), query}`. The FE bridge (`PluginDrivenScanNode`)
 passes `table_format_type="jdbc"` through to BE thrift verbatim, so the BE dispatches
@@ -317,16 +318,16 @@ Pushdown you can't prove is pushdown you don't have. The Trino side's bar carrie
 - **Env:** compose with a branch-built FE+BE pair + a Quack server — `doris-ducklake`'s
   compose smoke setup is the template.
 
-## Open probes (settle before building)
+## Open probes
 
-| # | Probe | Gates |
-|---|---|---|
-| P1 | Divergence audit: Doris vs DuckDB built-ins on the fixture corpus | Parity approach depth (how many `doris_*` macros, if any) |
-| P2 | `JDBC_SCAN` range count per query + BE connection behavior vs Quack 1.5.4 pool | Whether the pool gate applies to Route J |
-| P3 | Session-init capability of quack-jdbc / zone-explicit SQL rendering | Any tz-sensitive pushdown (v1 default: gated off) |
-| P4 | quack-jdbc `DatabaseMetaData` fidelity for the Doris type map | FE metadata resolution trustworthiness |
-| P5 | What the SPI hands `planScan` beyond conjuncts (limit? sort? aggregates?) | LIMIT/TopN pushdown scope |
-| P6 | Doris session `time_zone` visibility from the plugin | §Timezone options 1–2 |
+| # | Probe | Gates | Status |
+|---|---|---|---|
+| P1 | Divergence audit: Doris vs DuckDB built-ins on the fixture corpus | Parity approach depth (how many `doris_*` macros, if any) | **OPEN** — domain floor only until settled |
+| P2 | Scan-range count per query + BE connection behavior vs Quack 1.5.4 pool | Whether the pool gate applies to Route J | **RESOLVED 2026-07-19**: 1 range/query, BE Hikari pool per (catalog,params); 20 sequential + 8 concurrent SELECTs green — pool gate does NOT apply at this cardinality (`NOTES-p5-p2-scan.md`) |
+| P3 | Session-init capability of quack-jdbc / zone-explicit SQL rendering | Any tz-sensitive pushdown (v1 default: gated off) | **OPEN** |
+| P4 | quack-jdbc `DatabaseMetaData` fidelity for the Doris type map | FE metadata resolution trustworthiness | **RESOLVED 2026-07-19**: TYPE_NAME 100% faithful, JDBC codes lossy — map keys off the type string (`REPORT-quack-jdbc-metadata-probe.md`) |
+| P5 | What the SPI hands `planScan` beyond conjuncts (limit? sort? aggregates?) | LIMIT/TopN pushdown scope | **RESOLVED 2026-07-19**: typed ConnectorExpression tree + limit (5-arg overload); no sort/aggregate surface; FE retains ALL conjuncts when applyFilter is unimplemented — domain floor pushed, everything else re-filtered above (`NOTES-p5-p2-scan.md`) |
+| P6 | Doris session `time_zone` visibility from the plugin | §Timezone options 1–2 | **OPEN** |
 
 ## Ceiling of Route J (and what's deliberately out of scope)
 

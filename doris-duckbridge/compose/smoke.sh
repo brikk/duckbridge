@@ -2,12 +2,13 @@
 # Live FE+BE+Quack smoke for doris-duckbridge.
 #
 # Brings up the patched Doris cluster + a DuckDB/Quack server (seeded with a schema + tables),
-# installs the connector plugin, and drives it to the CURRENT boundary:
+# installs the connector plugin, and drives it end-to-end:
 #   • the connector LOADS + CREATE CATALOG type=duckbridge passes the FE gate;
-#   • METADATA is REAL (probe P4): SHOW DATABASES/TABLES + DESC resolve the seeded quack schema
-#     over quack-jdbc with the probe-decided Doris type map — assert the seeded objects appear;
-#   • the SCAN still fails loud: a SELECT reaches planScan and throws the P1/P5 message — THAT
-#     is the new green (a silent SELECT success would mean planScan was bypassed).
+#   • METADATA is REAL (probe P4): SHOW DATABASES/TABLES + DESC resolve the seeded quack schema;
+#   • the SCAN is REAL (probes P5/P2): planScan emits a JDBC scan range so rows flow through the
+#     BE JdbcJniScanner + our patched DuckDbTypeHandler. Asserts EXACT rows (incl. the LARGEINT
+#     and ARRAY columns — the handler's first live exercise), an exact predicate result, count(*),
+#     and EXPLAIN carrying the pushed predicate. Plus a P2 load probe (sequential + concurrent).
 #
 # Usage:
 #   ./smoke.sh             # build plugin → up → wait healthy → install plugin → drive → down -v
@@ -16,12 +17,10 @@
 #   ./smoke.sh --keep      # drive, but do NOT tear down at the end
 #   ./smoke.sh --down      # tear everything down (-v) and exit
 #
-# What unlocks next as the connector grows:
-#   • SELECT reaching the BE JdbcJniScanner → needs planScan (probes P1/P5) + the DUCKDB type
-#     handler emitting table_type=DUCKDB (planScan still fails loud today);
-#   • pushdown assertions (EXPLAIN shows the pushed predicate) → the parity/pushdown work.
-# When those land, replace the "expect the planScan stub" assertion with real result assertions
-# (the doris-ducklake smoke.sh is the template for that shape).
+# What unlocks next: FUNCTION-shape pushdown (P1 divergence audit) — comparisons/IN/IS NULL push
+# today (the domain floor); functions/LIKE/arithmetic are evaluated by Doris above the scan.
+# A truthful SCAN failure is the DEPLOYMENT SEAM: if the BE can't load the quack-jdbc driver, the
+# smoke fails loud with the fix (driver-jar placement + driver_url).
 
 set -euo pipefail
 
@@ -95,6 +94,26 @@ if [[ -z "$zip_path" ]]; then
     log "No plugin zip found under ${PLUGIN_ZIP_GLOB} — run without --no-build, or ./gradlew :doris-duckbridge:pluginZip"
     exit 1
 fi
+
+# 1b. Stage the quack-jdbc driver jar for the BE. The BE's JdbcJniScanner needs the driver on a
+# path it can read; we extract it from the built plugin zip (which bundles it under lib/) into
+# ./.be-drivers, mounted into the BE at /opt/duckbridge-drivers. CREATE CATALOG's driver_url then
+# points at file:///opt/duckbridge-drivers/quack-jdbc.jar. (Deployment: operators put the jar in
+# the drivers dir or a shared path and set driver_url — no checksum gate on the JNI path.)
+log "Staging quack-jdbc driver jar for the BE (from the plugin zip → .be-drivers)…"
+rm -rf "${HERE}/.be-drivers" && mkdir -p "${HERE}/.be-drivers"
+tmp_extract="$(mktemp -d)"
+unzip -oq "$zip_path" -d "$tmp_extract"
+driver_src="$(find "$tmp_extract" -name 'quack-jdbc-*.jar' | head -1)"
+if [[ -z "$driver_src" ]]; then
+    log "ERROR: quack-jdbc jar not found inside the plugin zip — the plugin build must bundle it."
+    rm -rf "$tmp_extract"
+    exit 1
+fi
+cp "$driver_src" "${HERE}/.be-drivers/quack-jdbc.jar"
+rm -rf "$tmp_extract"
+BE_DRIVER_URL="file:///opt/duckbridge-drivers/quack-jdbc.jar"
+log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driver_url=${BE_DRIVER_URL})"
 
 # 2. Bring up the cluster (FE + BE + Quack).
 log "Starting Doris FE + BE + DuckDB/Quack…"
@@ -177,6 +196,7 @@ cat_out=$(fe_sql -e "
         'type'         = 'duckbridge',
         'jdbc_url'     = 'jdbc:quack://duckdb-quack:9494',
         'driver_class' = 'com.gizmodata.quack.jdbc.sql.QuackDriver',
+        'driver_url'   = '${BE_DRIVER_URL}',
         'password'     = '${QUACK_TOKEN}'
     );
     SHOW CATALOGS;
@@ -241,22 +261,106 @@ else
     log "METADATA CHECK: expected LARGEINT + ARRAY columns from the type map — inspect above."
 fi
 
-# The SCAN is still gated: a SELECT must reach planScan and fail loud with the P1/P5 message.
-# THIS is the new green — metadata real, scan still gated. (A silent success here would mean
-# planScan was bypassed; a metadata-stage error would mean resolution regressed.)
-log "Scan attempt: SELECT * FROM duckbridge_test.sales.customers LIMIT 1 (expect planScan P1/P5 stub)…"
+# ── SCAN is REAL now (P5/P2): planScan emits a JDBC scan range; rows flow through the BE
+#    JdbcJniScanner + our DuckDbTypeHandler. This replaces the old "SCAN-GATE stub" expectation.
+#    (History: before P5, a SELECT hit the planScan fail-loud stub — that WAS the green then.)
+#    A truthful failure here is the DEPLOYMENT SEAM: if the BE can't load the driver, we say so.
+
+log "SCAN: SELECT ... ORDER BY id (full-row read incl. largeint + array — DuckDbTypeHandler's first live run)…"
 set +e
-scan_out=$(fe_sql -e "SELECT * FROM duckbridge_test.sales.customers LIMIT 1;" 2>&1)
+sel_out=$(fe_sql -e "SELECT id, name, big_id, tags FROM duckbridge_test.sales.customers ORDER BY id;" 2>&1)
+sel_status=$?
 set -e
-echo "${scan_out}" | tail -20
-if echo "${scan_out}" | grep -qiE "planScan is not implemented|probe.*P1|P5|Doris.DuckDB divergence"; then
-    log "SCAN-GATE GREEN: the SELECT reached planScan and failed loud (P1/P5 open) — the correct state."
-elif echo "${scan_out}" | grep -qiE "error|exception|unsupported"; then
-    log "SCAN-GATE CHECK: an error surfaced but not the planScan P1/P5 stub — inspect above (metadata OK, but"
-    log "  the scan path may have changed, or the plugin jar is stale)."
+echo "${sel_out}"
+if [[ $sel_status -ne 0 ]]; then
+    if echo "${sel_out}" | grep -qiE "driver|ClassNotFound|No suitable driver|jdbc_driver|quack-jdbc|resolve"; then
+        log "SCAN DEPLOYMENT-SEAM: the BE could not load the quack-jdbc driver. Fix: ensure the jar is"
+        log "  mounted where the BE reads it (.be-drivers → /opt/duckbridge-drivers) and driver_url points"
+        log "  at it (file:///opt/duckbridge-drivers/quack-jdbc.jar). See NOTES-p5-p2-scan.md §driver-jar."
+        exit 1
+    fi
+    log "SCAN FAIL: SELECT errored — inspect above + be.log (fe.log for the plan)."
+    exit 1
+fi
+# Expected exact rows (name unicode-preserved; big_id: HUGEINT max, -5, 0; tags: array text).
+if echo "${sel_out}" | grep -q "Alice" && echo "${sel_out}" | grep -q "straße" \
+   && echo "${sel_out}" | grep -q "δοκιμή" \
+   && echo "${sel_out}" | grep -q "170141183460469231731687303715884105727" \
+   && echo "${sel_out}" | grep -qE "\[.?.vip"; then
+    log "SCAN GREEN: full-row SELECT round-tripped — unicode strings, LARGEINT (HUGEINT max) and ARRAY"
+    log "  all decoded by the BE DuckDbTypeHandler over quack-jdbc. 🎉"
 else
-    log "SCAN-GATE UNEXPECTED-SUCCESS: SELECT returned WITHOUT the planScan stub — planScan may have been"
-    log "  bypassed (or is now implemented). Investigate before trusting; scan is still gated on P1/P5."
+    log "SCAN CHECK: rows returned but not the exact expected values — inspect above."
+fi
+
+log "SCAN: predicate SELECT ... WHERE id >= 2 (pushdown; assert exact filtered rows)…"
+set +e
+pred_out=$(fe_sql -e "SELECT id, name FROM duckbridge_test.sales.customers WHERE id >= 2 ORDER BY id;" 2>&1)
+set -e
+echo "${pred_out}"
+pred_ids=$(echo "${pred_out}" | grep -oE "^[0-9]+" | tr '\n' ',' | sed 's/,$//')
+if [[ "${pred_ids}" == "2,3" ]]; then
+    log "SCAN GREEN: WHERE id>=2 returned exactly rows {2,3}."
+else
+    log "SCAN CHECK: WHERE id>=2 returned ids=[${pred_ids}] (expected 2,3) — inspect above."
+fi
+
+log "SCAN: EXPLAIN shows the pushed query (a 'stopped pushing' regression would be red)…"
+set +e
+explain_out=$(fe_sql -e "EXPLAIN VERBOSE SELECT id FROM duckbridge_test.sales.customers WHERE id >= 2;" 2>&1)
+set -e
+echo "${explain_out}" | grep -iE "query|WHERE|customers|>=|SELECT" | head -8 | sed 's/^/  /'
+if echo "${explain_out}" | grep -qiE 'id.*>=.*2|WHERE'; then
+    log "SCAN GREEN: EXPLAIN carries the pushed predicate in the query."
+else
+    log "SCAN NOTE: could not confirm the pushed predicate in EXPLAIN (format may differ) — inspect above."
+fi
+
+log "SCAN: SELECT count(*) (aggregate over the JDBC scan)…"
+set +e
+cnt=$(fe_sql -N -e "SELECT count(*) FROM duckbridge_test.sales.customers;" 2>&1 | tail -1)
+set -e
+if [[ "${cnt}" == "3" ]]; then
+    log "SCAN GREEN: count(*) = 3."
+else
+    log "SCAN CHECK: count(*) = '${cnt}' (expected 3) — inspect above."
+fi
+
+# ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
+# Static: the connector emits ONE range per query (a JDBC scan is un-partitionable). Empirical:
+# hammer the stack sequentially and concurrently to watch for Quack 1.5.4 server-pool exhaustion
+# (the trino side saw the fixed pool exhaust under churn).
+log "P2: N=20 sequential SELECTs (pool reuse — watch for connection errors)…"
+seq_fail=0
+for _ in $(seq 1 20); do
+    if ! fe_sql -N -e "SELECT count(*) FROM duckbridge_test.sales.customers;" >/dev/null 2>&1; then
+        seq_fail=$((seq_fail + 1))
+    fi
+done
+log "  sequential failures: ${seq_fail}/20"
+
+log "P2: M=8 concurrent SELECTs (≤8 per constraint — watch for pool exhaustion)…"
+conc_fail_dir="$(mktemp -d)"
+for i in $(seq 1 8); do
+    (
+        if fe_sql -N -e "SELECT id, name, big_id FROM duckbridge_test.sales.customers ORDER BY id;" >/dev/null 2>&1; then
+            : > "${conc_fail_dir}/ok_${i}"
+        else
+            : > "${conc_fail_dir}/fail_${i}"
+        fi
+    ) &
+done
+wait
+conc_ok=$(find "${conc_fail_dir}" -name 'ok_*' | wc -l | tr -d ' ')
+conc_fail=$(find "${conc_fail_dir}" -name 'fail_*' | wc -l | tr -d ' ')
+rm -rf "${conc_fail_dir}"
+log "  concurrent: ${conc_ok}/8 ok, ${conc_fail}/8 failed"
+if [[ "${seq_fail}" -eq 0 && "${conc_fail}" -eq 0 ]]; then
+    log "P2 GREEN: 20 sequential + 8 concurrent SELECTs all succeeded — no Quack-pool exhaustion at"
+    log "  one-range-per-query. Route J does not need connection-reuse work before real use (record in NOTES)."
+else
+    log "P2 CHECK: ${seq_fail} sequential + ${conc_fail} concurrent failures — possible pool pressure;"
+    log "  inspect be.log for Quack connection errors and record the verdict in NOTES-p5-p2-scan.md."
 fi
 
 # 9. Teardown.

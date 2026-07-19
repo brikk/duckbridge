@@ -10,20 +10,20 @@ import org.apache.doris.connector.spi.ConnectorContext
  * Read-only duckbridge [Connector]. Composes the SPI object graph — metadata resolution and the
  * scan-plan seam.
  *
- * As of probe P4 (quack-jdbc metadata fidelity), the **metadata plane is real**:
- * [DuckBridgeDorisMetadata] resolves schemas/tables/columns over quack-jdbc with the probe-decided
- * type map. `planScan` remains a fail-loud stub — P1 (pushdown divergence audit) and P5 (what the
- * SPI hands planScan) are still open. Fail-loud over silently-wrong throughout.
+ * As of probes P4 (metadata) + P5/P2 (scan), both planes are **real**: [DuckBridgeDorisMetadata]
+ * resolves schemas/tables/columns over quack-jdbc, and [DuckBridgeScanPlanProvider] emits a JDBC
+ * scan range so rows flow through the BE `JdbcJniScanner` + our `DuckDbTypeHandler`. Predicate
+ * pushdown is the DOMAIN FLOOR only (comparisons/IN/IS NULL); function-shape pushdown waits on P1.
  */
 class DuckBridgeConnector internal constructor(
     private val config: DuckBridgeConnectorConfig,
-    @Suppress("unused") private val context: ConnectorContext,
+    private val context: ConnectorContext,
 ) : Connector {
 
     private val connections = DuckBridgeQuackConnections(config)
     private val metadata =
         DuckBridgeDorisMetadata(config, connections, config.enableTimestampTz)
-    private val scanPlanProvider = DuckBridgeScanPlanProvider(config)
+    private val scanPlanProvider = DuckBridgeScanPlanProvider(config, context.catalogId)
 
     override fun getMetadata(session: ConnectorSession?): ConnectorMetadata = metadata
 
