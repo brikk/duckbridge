@@ -51,16 +51,25 @@ managed on the server by the connector.
   `pushdown_timestamp_with_timezone` session property is on (default on); the connector
   aligns DuckDB's session `TimeZone` with Trino's.
 
-Parity extension requirements:
+### The `trino_parity` extension — required by default
 
-- **Embedded** (`jdbc:duckdb:`): the extension is bundled in the plugin jar and loaded
-  automatically.
-- **Remote** (`jdbc:quack://`): the extension must be available to the server
-  (`duckbridge.parity-extension-path` names a server-side path, or pre-load it). If
-  parity is enabled but unavailable, the connector fails at startup with install
-  instructions.
-- `duckbridge.parity.enabled=false` turns function pushdown off entirely (projection,
-  domain, and LIMIT pushdown still apply).
+Function pushdown depends on the
+[`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-parity-extension),
+and the connector treats it as **required unless you opt out**. There is no silent
+degrade: if the planner could promise pushdown that the extension can't back, results
+could be wrong, so a missing extension is a hard, clearly-worded error — never a quiet
+fallback.
+
+- **Embedded** (`jdbc:duckdb:`): nothing to do. The extension binary is bundled in the
+  plugin jar and loaded automatically on every connection.
+- **Remote** (`jdbc:quack://`): the extension must be available to the *server* — either
+  pre-loaded there, or reachable at a server-side path named by
+  `duckbridge.parity-extension-path`. The connector probes for it on first use and fails
+  with install instructions if it's absent.
+- **Opting out**: set `duckbridge.parity.enabled=false` to run without the extension.
+  Function pushdown turns off entirely; projection, predicate (domain), and LIMIT/TopN
+  pushdown still apply, and all queries remain correct — scalar functions are simply
+  evaluated by Trino above the scan.
 
 ## Lance and Vortex (experimental)
 
