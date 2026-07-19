@@ -37,8 +37,7 @@ scalar functions provided by the
 connection. The other 85 emit plain DuckDB SQL that evaluates with
 Trino-identical semantics natively (proven by per-entry semantic fixtures against
 embedded DuckDB), so they **stay pushable even when parity is disabled** — only
-the 10 ALIAS entries drop out. See
-[ANSWER-parity-passthrough-candidates.md](dev-docs/ANSWER-parity-passthrough-candidates.md).
+the 10 ALIAS entries drop out.
 
 ---
 
@@ -108,8 +107,8 @@ Translator-level rewrites — emitted directly as SQL, not via the macro catalog
 class — native C++ in the extension); the other **85 emit plain DuckDB SQL
 natively** (BARE / RENAME / OPERATOR / INLINE) and push regardless of whether the
 extension is loaded. The **Ext?** column below marks which entries are
-extension-backed. `trino_meta()` still lists all ~95 for now (a follow-up shrinks
-it to the 10 — see [ANSWER-parity-passthrough-candidates.md](dev-docs/ANSWER-parity-passthrough-candidates.md)).
+extension-backed. `trino_meta()` catalogs exactly the 10 extension-backed
+entries, and the drift test pins that set with strict equality.
 Counts: string 22, numeric 32, regex 5, encoding 6, distance 2, hash 6, date 20,
 conditional 2.
 

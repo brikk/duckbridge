@@ -78,8 +78,9 @@ object DuckBridgeExpressionTranslator {
      * semantics natively, and only the entries DuckDB genuinely cannot match without the C++ layer
      * route through the `trino_<name>(...)` [ALIAS] macros/functions of the `trino_parity` extension.
      *
-     * Classification authority: `dev-docs/trino-parity-passthrough-candidates.md` and, for the
-     * [INLINE] bodies, the verified macro bodies in `macro_definitions.cpp`.
+     * Classification authority: the extension maintainers' passthrough audit and, for the
+     * [INLINE] bodies, the verified macro bodies in the extension's `macro_definitions.cpp`
+     * (as of the pre-shrink revision that still carried them).
      *
      *  - [Emission.Bare]     — same bare built-in name (`length(s)`, `abs(x)`, `year(x)`).
      *  - [Emission.Rename]   — a different bare DuckDB built-in name (`to_hex→hex`).

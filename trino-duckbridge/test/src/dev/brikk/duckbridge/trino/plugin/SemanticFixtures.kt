@@ -45,8 +45,8 @@ import java.util.Optional
  * and asserts equality — proving the natively-emitted form (bare built-in, rename, operator, inline
  * transform) stays byte-for-byte aligned with Trino on every DuckDB pin bump.
  *
- * Coverage deliberately includes unicode, NULL, and edge inputs where the passthrough-candidates
- * doc flagged them (code-point length, ISO week/day-of-week, NULL propagation, empty-match regex).
+ * Coverage deliberately includes unicode, NULL, and edge inputs where alignment was historically
+ * in question (code-point length, ISO week/day-of-week, NULL propagation, empty-match regex).
  */
 object SemanticFixtures {
     /**
