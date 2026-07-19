@@ -22,11 +22,18 @@ internal class DuckBridgeDorisMetadata(
     @Suppress("unused") private val config: DuckBridgeConnectorConfig,
 ) : ConnectorMetadata {
 
+    // Listing NAMES stays honestly empty: the FE lists during catalog registration/refresh, and
+    // an empty catalog is a valid, healthy state (CREATE CATALOG must succeed — that's the
+    // SPI_READY_TYPES gate we smoke-test). Resolution BY NAME, however, cannot be answered
+    // truthfully before probe P4 (quack-jdbc metadata fidelity), so it fails loud below rather
+    // than returning a silent "does not exist".
     override fun listDatabaseNames(session: ConnectorSession?): List<String> = emptyList()
 
-    override fun databaseExists(session: ConnectorSession?, database: String): Boolean = false
+    override fun databaseExists(session: ConnectorSession?, database: String): Boolean =
+        throw unimplemented("databaseExists($database)")
 
-    override fun listTableNames(session: ConnectorSession?, database: String): List<String> = emptyList()
+    override fun listTableNames(session: ConnectorSession?, database: String): List<String> =
+        throw unimplemented("listTableNames($database)")
 
     override fun getTableHandle(
         session: ConnectorSession?,

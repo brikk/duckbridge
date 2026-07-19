@@ -79,3 +79,16 @@ First concrete work item: **P4** — stand up quack-jdbc metadata resolution beh
 `DuckBridgeDorisMetadata`, then **P1** (divergence audit) to seed the pushdown allowlist. The
 pushdown translator is a new FE over the ported `trino-duckbridge` discipline (per-conjunct partial
 pushdown, per-argument type gates, fixture-per-entry allowlist).
+
+## Live-stack findings (smoke, 2026-07-19)
+
+First full compose run (patched FE + patched BE + quack): plugin loads
+(`jarCount=4`, type `duckbridge` registered), `CREATE CATALOG type=duckbridge`
+passes (SPI whitelist gate), BE registers, teardown clean.
+
+**FE-side resolution shields the connector stubs:** the FE answers
+`Unknown database` from its own cached db map (built from our honestly-empty
+`listDatabaseNames`) without ever consulting `databaseExists`/`getTableHandle`.
+So the P4/P1–P6 fail-loud stubs are structurally unreachable via SQL until
+listing is implemented (post-P4). They stay as throws (fail loud if any FE call
+path reaches them); `smoke.sh` asserts the truthful current state instead.

@@ -78,7 +78,17 @@ fi
 # 1. Plugin zip — rebuild and unpack into the plugin volume.
 if [[ $DO_BUILD -eq 1 ]]; then
     log "Building plugin zip (:doris-duckbridge:pluginZip)…"
-    ( cd "${REPO_ROOT}" && ./gradlew :doris-duckbridge:pluginZip -q )
+    # The gradle build itself needs a JDK 25 runtime (build-logic targets 25; the module's
+    # JDK-17 toolchain is resolved by gradle). Probe ~/.gradle/jdks when the ambient java
+    # is older, fail loud otherwise.
+    gradle_java="${JAVA_HOME:-}"
+    if ! "${gradle_java:-/nonexistent}/bin/java" -version 2>&1 | grep -qE '"(2[5-9]|[3-9][0-9])' ; then
+        gradle_java="$(ls -d "${HOME}"/.gradle/jdks/*25*/ 2>/dev/null | head -n1 || true)"
+        gradle_java="${gradle_java%/}"
+    fi
+    [ -n "${gradle_java}" ] && [ -x "${gradle_java}/bin/java" ] ||
+        { log "ERROR: need a JDK 25+ for gradle (set JAVA_HOME); none found in ~/.gradle/jdks"; exit 1; }
+    ( cd "${REPO_ROOT}" && JAVA_HOME="${gradle_java}" ./gradlew :doris-duckbridge:pluginZip -q )
 fi
 zip_path=$(ls -t ${PLUGIN_ZIP_GLOB} 2>/dev/null | head -1 || true)
 if [[ -z "$zip_path" ]]; then
@@ -191,33 +201,40 @@ log "GATE OK: catalog created — SPI whitelist + provider registration both wor
 # DIFFERENT error is a real problem (silent bypass, or a wiring break).
 log "Exercising the fail-loud stub (metadata/scan attempt — expect the P1–P6 message)…"
 set +e
+# Listing is honestly EMPTY in the scaffold (and must not error — catalog health):
 probe_out=$(fe_sql -e "SHOW DATABASES FROM duckbridge_test;" 2>&1)
 probe_status=$?
-# If listing happened to return empty (metadata listing is honestly-empty in the scaffold),
-# force a scan path that must hit the stub.
-scan_out=$(fe_sql -e "
-    SWITCH duckbridge_test;
-    SELECT * FROM information_schema.tables WHERE table_schema='does_not_exist' LIMIT 1;
-" 2>&1)
+if [[ $probe_status -ne 0 ]]; then
+    log "WARN: SHOW DATABASES failed — empty listing should succeed; inspect:"
+    echo "${probe_out}"
+fi
+# Resolution BY NAME must hit the fail-loud stub (databaseExists/getTableHandle throw the
+# P4 probe message). information_schema is FE-internal and never reaches the connector —
+# a qualified reference is what exercises our metadata.
+scan_out=$(fe_sql -e "SHOW TABLES FROM duckbridge_test.probe_db;" 2>&1)
 set -e
 
 combined="${probe_out}
 ${scan_out}"
 echo "${combined}" | tail -20
 
-# The scaffold's stubs throw with these hallmarks (DuckBridgeDorisMetadata / ScanPlanProvider):
-#   - "probe P4" / "not implemented yet" (metadata resolution)
-#   - "P1" … "P6" / "planScan is not implemented" (scan)
-# Assert we saw a fail-loud stub message (truthful green state), NOT a silent success.
-if echo "${combined}" | grep -qiE "probe P[1-6]|planScan is not implemented|not implemented yet|WIP"; then
-    log "STUB GREEN: the connector failed loud with the expected P1–P6 probe message."
-    log "  This is the CORRECT scaffold state — behavior is gated until the probes are settled."
-elif echo "${combined}" | grep -qiE "error|exception|unsupported"; then
-    log "STUB CHECK: an error surfaced but not the expected P1–P6 stub text — inspect above."
-    log "  (Could be a wiring break, or the message drifted — reconcile with the connector source.)"
+# Truthful scaffold expectations (verified against a live stack 2026-07-19):
+#   (a) SHOW DATABASES lists only FE builtins (information_schema, mysql) — the connector's
+#       listing is honestly empty and must not error.
+#   (b) Qualified resolution gets the FE's OWN "Unknown database": the FE resolves against its
+#       cached db map (built from our empty listing) and answers BEFORE consulting the
+#       connector — so the connector's fail-loud stubs (probe P4 / P1–P6 messages) are
+#       structurally unreachable here until listing is implemented post-P4. If the stub text
+#       DOES appear (FE call path changed), that's equally green — it means the throw works.
+if echo "${combined}" | grep -qiE "probe P[1-6]|planScan is not implemented|not implemented yet"; then
+    log "RESOLUTION GREEN: the connector's fail-loud stub surfaced (FE call path reaches the connector)."
+elif echo "${combined}" | grep -qi "Unknown database 'probe_db'"; then
+    log "RESOLUTION GREEN: FE answered 'Unknown database' from the connector's honest empty listing."
+    log "  Connector stubs stay unreachable behind FE-side resolution until listing lands (post-P4)."
 else
-    log "STUB UNEXPECTED-SUCCESS: metadata/scan returned WITHOUT the fail-loud stub."
-    log "  At this scaffold stage that likely means the stub was bypassed — investigate before trusting."
+    log "RESOLUTION UNEXPECTED: neither the FE's 'Unknown database' nor the connector stub — inspect:"
+    echo "${combined}" | tail -5
+    log "  Possible wiring break (plugin jar stale? FE resolution path changed?) — investigate before trusting."
 fi
 
 # 9. Teardown.
