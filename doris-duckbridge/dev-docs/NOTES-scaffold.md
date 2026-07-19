@@ -76,7 +76,7 @@ them so the wiring can't be mistaken for a working connector:
 
 | # | Probe | Gates |
 |---|---|---|
-| P1 | Doris vs DuckDB built-in divergence audit on the fixture corpus | how many `doris_*` parity macros (if any) — **the next work item** |
+| ~~P1~~ ✅ | Doris vs DuckDB built-in divergence audit + wire the proven subset | **DONE 2026-07-19** — 38 audited (31 identical), 10 wired into `DuckBridgeQueryBuilder`, ZERO macros; `REPORT-doris-duckdb-function-divergence.md`. Grow entry-by-entry from here. |
 | ~~P2~~ ✅ | scan-range count / BE connection behavior vs the Quack 1.5.4 pool | **SETTLED 2026-07-19** — 1 range/query; 20 seq + 8 concurrent SELECTs, 0 pool failures; `NOTES-p5-p2-scan.md` |
 | P3 | quack-jdbc session-init / zone-explicit SQL rendering | any tz-sensitive pushdown (v1 default: gated off) |
 | ~~P4~~ ✅ | quack-jdbc `DatabaseMetaData` fidelity for the Doris type map | **SETTLED 2026-07-19** — metadata plane real; `REPORT-quack-jdbc-metadata-probe.md` |

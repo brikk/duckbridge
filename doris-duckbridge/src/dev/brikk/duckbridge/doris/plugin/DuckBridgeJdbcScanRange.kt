@@ -27,6 +27,19 @@ internal class DuckBridgeJdbcScanRange private constructor(
 
     override fun getProperties(): Map<String, String> = properties
 
+    /**
+     * REDACTED toString (Item 2): the properties map carries `jdbc_password` (the Quack token). The
+     * default class toString is object-identity (no leak), but any explicit range-rendering /
+     * debug dump would want the properties — so we provide a safe one that masks the secret key.
+     * `getProperties()` itself is unchanged (the BE needs the real value); only this rendering masks.
+     */
+    override fun toString(): String {
+        val masked = properties.entries.joinToString(", ") { (k, v) ->
+            "$k=${if (k in SECRET_KEYS) "***" else v}"
+        }
+        return "DuckBridgeJdbcScanRange{$masked}"
+    }
+
     class Builder {
         private val props = LinkedHashMap<String, String>()
 
@@ -49,5 +62,8 @@ internal class DuckBridgeJdbcScanRange private constructor(
 
         /** `table_type` value that selects the patched `DuckDbTypeHandler` (doris-patches/be). */
         const val TABLE_TYPE_DUCKDB: String = "DUCKDB"
+
+        /** Property keys whose values are secrets and must be masked in [toString]. */
+        private val SECRET_KEYS = setOf("jdbc_password")
     }
 }

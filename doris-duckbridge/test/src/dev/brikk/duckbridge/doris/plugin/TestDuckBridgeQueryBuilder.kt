@@ -154,9 +154,13 @@ class TestDuckBridgeQueryBuilder {
         // Fully-pushable filter → LIMIT pushes.
         assertThat(build(listOf(intCol("id")), eq(colRef("id"), ConnectorLiteral.ofLong(1)), 10))
             .endsWith(" LIMIT 10")
-        // A dropped conjunct (function call, out of scope) → LIMIT withheld (would under-return).
-        val fn = ConnectorFunctionCall("length", ConnectorType.of("INT"), listOf(colRef("name", ConnectorType.of("STRING"))))
-        val withFn = ConnectorAnd(listOf(eq(colRef("id"), ConnectorLiteral.ofLong(1)), fn))
+        // A dropped conjunct (a DIVERGENT function → unpushable) → LIMIT withheld (would under-return).
+        val divergent = ConnectorComparison(
+            ConnectorComparison.Operator.EQ,
+            ConnectorFunctionCall("upper", ConnectorType.of("STRING"), listOf(colRef("name", ConnectorType.of("STRING")))),
+            ConnectorLiteral.ofString("X"),
+        )
+        val withFn = ConnectorAnd(listOf(eq(colRef("id"), ConnectorLiteral.ofLong(1)), divergent))
         val sql = build(listOf(intCol("id")), withFn, 10)
         assertThat(sql).doesNotContain("LIMIT")
         // The renderable conjunct still pushes.
@@ -171,12 +175,135 @@ class TestDuckBridgeQueryBuilder {
             .isEqualTo("""SELECT "tags" FROM "memory"."sales"."customers"""")
     }
 
+    // ---- P1 function allowlist: DIVERGENT functions stay unpushed ----
+
+    private fun strColRef(name: String) = colRef(name, ConnectorType.of("STRING"))
+    private fun fn(name: String, ret: ConnectorType, vararg args: ConnectorExpression) =
+        ConnectorFunctionCall(name, ret, args.toList())
+    private fun fnEq(call: ConnectorFunctionCall, lit: ConnectorLiteral) =
+        ConnectorComparison(ConnectorComparison.Operator.EQ, call, lit)
+
     @Test
-    fun functionAndLikeAreNotPushed() {
-        // ConnectorFunctionCall is out of scope (P1) → dropped.
-        val fn = ConnectorFunctionCall("upper", ConnectorType.of("STRING"), listOf(colRef("name", ConnectorType.of("STRING"))))
-        val cmp = ConnectorComparison(ConnectorComparison.Operator.EQ, fn, ConnectorLiteral.ofString("X"))
-        assertThat(build(listOf(stringCol("name")), cmp))
-            .isEqualTo("""SELECT "name" FROM "memory"."sales"."customers"""")
+    fun divergentFunctionsStayUnpushed() {
+        // upper/lower/reverse/concat/power are DIVERGENT in the P1 audit → never pushed.
+        val nameRef = strColRef("name")
+        val cases = listOf(
+            fnEq(fn("upper", ConnectorType.of("STRING"), nameRef), ConnectorLiteral.ofString("X")),
+            fnEq(fn("lower", ConnectorType.of("STRING"), nameRef), ConnectorLiteral.ofString("x")),
+            fnEq(fn("reverse", ConnectorType.of("STRING"), nameRef), ConnectorLiteral.ofString("x")),
+            fnEq(
+                fn("concat", ConnectorType.of("STRING"), nameRef, ConnectorLiteral.ofString("y")),
+                ConnectorLiteral.ofString("xy"),
+            ),
+        )
+        for (c in cases) {
+            assertThat(build(listOf(stringCol("name")), c))
+                .describedAs("divergent fn dropped")
+                .isEqualTo("""SELECT "name" FROM "memory"."sales"."customers"""")
+        }
+    }
+
+    // ---- P1 function allowlist: IDENTICAL functions push with the audited rendering ----
+
+    private fun buildFnWhere(call: ConnectorFunctionCall, lit: ConnectorLiteral): String =
+        build(listOf(intCol("id")), fnEq(call, lit))
+
+    @Test
+    fun characterLengthRendersAsDuckDbLength() {
+        // Doris character_length (code points) → DuckDB length.
+        val sql = buildFnWhere(
+            fn("character_length", ConnectorType.of("INT"), strColRef("name")),
+            ConnectorLiteral.ofLong(6),
+        )
+        assertThat(sql).contains("""WHERE (length("name") = 6)""")
+    }
+
+    @Test
+    fun lengthRendersAsDuckDbStrlenBytes() {
+        // Doris length (BYTES) → DuckDB strlen — NOT DuckDB length (code points).
+        val sql = buildFnWhere(
+            fn("length", ConnectorType.of("INT"), strColRef("name")),
+            ConnectorLiteral.ofLong(7),
+        )
+        assertThat(sql).contains("""WHERE (strlen("name") = 7)""")
+        assertThat(sql).doesNotContain("length(") // must not use bare DuckDB length
+    }
+
+    @Test
+    fun locateSwapsArgsToStrpos() {
+        // Doris locate(needle, hay) → DuckDB strpos(hay, needle).
+        val call = fn(
+            "locate", ConnectorType.of("INT"),
+            ConnectorLiteral.ofString("lo"), strColRef("name"),
+        )
+        assertThat(buildFnWhere(call, ConnectorLiteral.ofLong(1)))
+            .contains("""WHERE (strpos("name", 'lo') = 1)""")
+    }
+
+    @Test
+    fun instrKeepsArgOrder() {
+        val call = fn(
+            "instr", ConnectorType.of("INT"),
+            strColRef("name"), ConnectorLiteral.ofString("lo"),
+        )
+        assertThat(buildFnWhere(call, ConnectorLiteral.ofLong(3)))
+            .contains("""WHERE (instr("name", 'lo') = 3)""")
+    }
+
+    @Test
+    fun startsWithPushes() {
+        val call = fn(
+            "starts_with", ConnectorType.of("BOOLEAN"),
+            strColRef("name"), ConnectorLiteral.ofString("δ"),
+        )
+        // starts_with is a boolean-returning conjunct on its own.
+        assertThat(build(listOf(intCol("id")), call))
+            .contains("""WHERE (starts_with("name", 'δ'))""")
+    }
+
+    @Test
+    fun dateExtractionAndAbsPush() {
+        assertThat(
+            buildFnWhere(
+                fn("year", ConnectorType.of("INT"), colRef("signup", ConnectorType.of("DATEV2"))),
+                ConnectorLiteral.ofLong(2020),
+            ),
+        ).contains("""WHERE (year("signup") = 2020)""")
+        assertThat(
+            buildFnWhere(fn("abs", ConnectorType.of("INT"), colRef("id")), ConnectorLiteral.ofLong(5)),
+        ).contains("""WHERE (abs("id") = 5)""")
+    }
+
+    @Test
+    fun substringPushesOnlyWithConstantStartNonZero() {
+        val nameRef = strColRef("name")
+        // start = 2 (constant, ≠ 0) → pushes.
+        assertThat(
+            build(
+                listOf(stringCol("name")),
+                fnEq(
+                    fn("substring", ConnectorType.of("STRING"), nameRef, ConnectorLiteral.ofLong(2), ConnectorLiteral.ofLong(3)),
+                    ConnectorLiteral.ofString("abc"),
+                ),
+            ),
+        ).contains("""substring("name", 2, 3)""")
+        // start = 0 → DIVERGENT (Doris NULL vs DuckDB 'he') → dropped.
+        assertThat(
+            build(
+                listOf(stringCol("name")),
+                fnEq(
+                    fn("substring", ConnectorType.of("STRING"), nameRef, ConnectorLiteral.ofLong(0), ConnectorLiteral.ofLong(3)),
+                    ConnectorLiteral.ofString("abc"),
+                ),
+            ),
+        ).isEqualTo("""SELECT "name" FROM "memory"."sales"."customers"""")
+    }
+
+    @Test
+    fun unAuditedFunctionIsDropped() {
+        // A function not in the allowlist (e.g. sqrt — float-returning, excluded) → dropped.
+        val call = fn("sqrt", ConnectorType.of("DOUBLE"), colRef("id"))
+        assertThat(build(listOf(intCol("id")), fnEq(call, ConnectorLiteral.ofDouble(2.0))))
+            .isEqualTo("""SELECT "id" FROM "memory"."sales"."customers"""")
     }
 }

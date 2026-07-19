@@ -27,7 +27,21 @@ data class DuckBridgeConnectorConfig(
     val password: String? = null,
     val enableTimestampTz: Boolean = false,
 ) {
+    /**
+     * REDACTED toString (Item 2): `password` carries the Quack auth token — the data-class default
+     * would print it verbatim into any log/exception/debug string that renders the config. We
+     * override to mask it (`***` when set, `null` when unset) while keeping the rest for
+     * debuggability. Note the field itself is unchanged — only its rendering.
+     */
+    override fun toString(): String =
+        "DuckBridgeConnectorConfig(jdbcUrl=$jdbcUrl, driverClass=$driverClass, " +
+            "driverUrl=$driverUrl, user=$user, password=${redact(password)}, " +
+            "enableTimestampTz=$enableTimestampTz)"
+
     companion object {
+        /** Mask a secret for toString: `***` if present, `null` if absent. */
+        private fun redact(secret: String?): String = if (secret == null) "null" else "***"
+
         /** quack-jdbc's driver class (`jdbc:quack://...`), verified against the shipped jar's
          *  `META-INF/services/java.sql.Driver`. */
         const val DEFAULT_DRIVER_CLASS: String = "com.gizmodata.quack.jdbc.sql.QuackDriver"

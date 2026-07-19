@@ -322,7 +322,7 @@ Pushdown you can't prove is pushdown you don't have. The Trino side's bar carrie
 
 | # | Probe | Gates | Status |
 |---|---|---|---|
-| P1 | Divergence audit: Doris vs DuckDB built-ins on the fixture corpus | Parity approach depth (how many `doris_*` macros, if any) | **OPEN** — domain floor only until settled |
+| P1 | Divergence audit: Doris vs DuckDB built-ins on the fixture corpus | Parity approach depth (how many `doris_*` macros, if any) | **RESOLVED 2026-07-19**: 38 audited live, 31 identical, 7 divergent (headline: Doris `length`=bytes vs DuckDB=code-points — aligned cross-name via `strlen`; `lower/upper/reverse/concat/power` divergent, not worth macros). 10-entry allowlist wired with a live drift canary; **zero `doris_*` macros needed** (`REPORT-doris-duckdb-function-divergence.md`) |
 | P2 | Scan-range count per query + BE connection behavior vs Quack 1.5.4 pool | Whether the pool gate applies to Route J | **RESOLVED 2026-07-19**: 1 range/query, BE Hikari pool per (catalog,params); 20 sequential + 8 concurrent SELECTs green — pool gate does NOT apply at this cardinality (`NOTES-p5-p2-scan.md`) |
 | P3 | Session-init capability of quack-jdbc / zone-explicit SQL rendering | Any tz-sensitive pushdown (v1 default: gated off) | **OPEN** |
 | P4 | quack-jdbc `DatabaseMetaData` fidelity for the Doris type map | FE metadata resolution trustworthiness | **RESOLVED 2026-07-19**: TYPE_NAME 100% faithful, JDBC codes lossy — map keys off the type string (`REPORT-quack-jdbc-metadata-probe.md`) |

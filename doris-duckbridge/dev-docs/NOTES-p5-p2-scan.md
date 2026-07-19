@@ -106,9 +106,30 @@ token** (*"Quack authentication token alias for tools that provide a password fi
 The BE maps `jdbc_password` → HikariCP `password` → quack-jdbc reads it as the token. **So
 the standard `jdbc_password` field carries the Quack token; no dedicated `token` param is
 needed.** We map the catalog `password` property to `jdbc_password`.
-⚠ **Token-in-plaintext:** `jdbc_params` (incl. `jdbc_password`) is visible in the scan
-range and can surface in verbose EXPLAIN / logs. This is the same exposure the stock JDBC
-catalog has; noted as a follow-up (redact in EXPLAIN) — not fixed in this milestone.
+### Token-leak audit (Item 2, resolved 2026-07-19)
+The token rides `jdbc_password`. Where does it ACTUALLY leak at our pin? Audited live:
+
+| Surface | Leaks token? | Owner |
+|---|---|---|
+| `EXPLAIN VERBOSE` of a scan | **No** — 0 occurrences of the token value | FE-core |
+| `SHOW CREATE CATALOG` | **No** — password rendered as `"*XXX"` | FE-core (already masks) |
+| FE `fe.log` / `fe.audit.log` | **No** — 0 occurrences | FE-core |
+| Our `DuckBridgeConnectorConfig.toString()` | **WAS yes** (data-class default prints `password=<token>`) | **OURS → redacted** |
+| Our `DuckBridgeJdbcScanRange.toString()` | default is object-identity (no leak), but any props-dump would | **OURS → redacted defensively** |
+
+**Redacted (ours):**
+- `DuckBridgeConnectorConfig.toString()` — overridden to mask `password=***` (`null` when unset)
+  while keeping url/user/driver for debuggability.
+- `DuckBridgeJdbcScanRange.toString()` — masks `jdbc_password=***`; `getProperties()` is unchanged
+  (the BE needs the real value — only the rendering masks).
+- Test: `TestDuckBridgeTokenRedaction` asserts neither toString contains the token, and that
+  `getProperties()` still carries it for the wire.
+
+**Documented, NOT patched (upstream / not ours):** FE-core already masks `password` in
+`SHOW CREATE CATALOG` (`*XXX`), EXPLAIN, and the audit log at our pin, so there is **no FE-core leak
+to patch**. If a future FE change ever surfaces `jdbc_password` in a plan/log, that is an upstream
+concern (the masking lives in fe-core's catalog-property rendering, not in our connector) — not
+something to patch Doris for from here.
 
 ## P2 — scan-range count + connection-pool behavior
 

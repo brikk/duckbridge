@@ -5,6 +5,7 @@ import org.apache.doris.connector.api.pushdown.ConnectorAnd
 import org.apache.doris.connector.api.pushdown.ConnectorColumnRef
 import org.apache.doris.connector.api.pushdown.ConnectorComparison
 import org.apache.doris.connector.api.pushdown.ConnectorExpression
+import org.apache.doris.connector.api.pushdown.ConnectorFunctionCall
 import org.apache.doris.connector.api.pushdown.ConnectorIn
 import org.apache.doris.connector.api.pushdown.ConnectorIsNull
 import org.apache.doris.connector.api.pushdown.ConnectorLiteral
@@ -20,11 +21,18 @@ import java.time.temporal.ChronoField
 /**
  * Composes the DuckDB `SELECT` that the BE's `JdbcJniScanner` runs over quack-jdbc.
  *
- * Scope = the **domain floor only** (probe P5 + P1-out-of-scope): projection + the predicate shapes
- * that map 1:1 to simple DuckDB SQL on scalar columns — comparisons (`= <> < <= > >=`), `IN`/`NOT
- * IN`, `IS [NOT] NULL`, and boolean `AND`/`OR`/`NOT` over those. **No function-shape pushdown**
- * (`ConnectorFunctionCall`, `LIKE`, `REGEXP`, `BETWEEN`, arithmetic) — that waits on P1's
- * divergence audit; those conjuncts are DROPPED here and re-evaluated by Doris above the scan.
+ * Scope = the **domain floor** (comparisons `= <> < <= > >=`, `IN`/`NOT IN`, `IS [NOT] NULL`, boolean
+ * `AND`/`OR`/`NOT`) **plus the P1-audited IDENTICAL scalar functions** — an explicit allowlist
+ * ([FUNCTION_ALLOWLIST]) of `ConnectorFunctionCall` shapes the Doris↔DuckDB divergence audit proved
+ * byte-exact (`dev-docs/REPORT-doris-duckdb-function-divergence.md`). Everything else
+ * (`LIKE`/`REGEXP`/`BETWEEN`/arithmetic, and every UN-audited or DIVERGENT function) is DROPPED and
+ * re-evaluated by Doris above the scan.
+ *
+ * The allowlist admits **nothing** the audit didn't prove, and bakes in the audit's cross-name
+ * mappings (Doris `character_length`→DuckDB `length`; Doris `length`(bytes)→DuckDB `strlen`; Doris
+ * `locate(needle,hay)`→DuckDB `strpos(hay,needle)`) and guards (`substring` only with a constant
+ * start ≠ 0). Float-**returning** functions are excluded even when audited-identical: a float result
+ * inside `WHERE f(x)=<literal>` is print-precision-fragile across the wire.
  *
  * Correctness contract (see NOTES-p5-p2-scan.md): the FE keeps every conjunct for BE-side
  * re-evaluation (we do not implement `applyFilter`), so a DROPPED conjunct is safe — Doris
@@ -145,22 +153,45 @@ internal object DuckBridgeQueryBuilder {
         is ConnectorNot -> render(expr.operand)?.let { "NOT ($it)" }
         is ConnectorColumnRef -> renderColumnRef(expr)
         is ConnectorLiteral -> renderLiteral(expr)
-        // Everything else (ConnectorFunctionCall, ConnectorLike, ConnectorBetween, …) is
-        // out of scope until P1 — drop it (Doris evaluates above the scan).
+        is ConnectorFunctionCall -> renderFunctionCall(expr)
+        // Everything else (ConnectorLike, ConnectorBetween, …) is out of scope — drop it
+        // (Doris evaluates above the scan).
         else -> null
     }
 
+    /**
+     * Render an audited-IDENTICAL scalar function per [FUNCTION_ALLOWLIST], or null (drop) for any
+     * function not in the allowlist or whose arity/guards don't match. The allowlist is the P1
+     * audit's authority — it admits nothing the audit didn't prove byte-exact.
+     */
+    private fun renderFunctionCall(fn: ConnectorFunctionCall): String? {
+        val entry = FUNCTION_ALLOWLIST[fn.functionName.lowercase()] ?: return null
+        val args = fn.arguments
+        if (args.size !in entry.arities) {
+            return null
+        }
+        val rendered = ArrayList<String>(args.size)
+        for (arg in args) {
+            val sql = render(arg) ?: return null // any un-renderable argument drops the whole call
+            rendered.add(sql)
+        }
+        return entry.render(rendered, args)
+    }
+
     private fun renderComparison(comp: ConnectorComparison): String? {
-        // Only column-op-literal / literal-op-column on a SCALAR column, with a supported operator.
         val symbol = comparisonSymbol(comp.operator) ?: return null
         val left = render(comp.left) ?: return null
         val right = render(comp.right) ?: return null
-        // Guard: at least one side must be a scalar column ref and the other a literal — the domain
-        // floor. (A column-column or literal-literal comparison is dropped: not our floor.)
-        val colLit = (comp.left is ConnectorColumnRef && comp.right is ConnectorLiteral) ||
-            (comp.left is ConnectorLiteral && comp.right is ConnectorColumnRef)
-        if (!colLit) {
-            return null
+        // Guard: exactly one side is a literal and the other is a renderable non-literal (a scalar
+        // column ref, or an allowlisted function call over one). This is the pushable shape:
+        // `<expr> <op> <literal>`. Column-column / literal-literal comparisons are dropped (not our
+        // floor; and both-literal is a constant the FE already folds). renderColumnRef /
+        // renderFunctionCall already enforce scalar columns + the audited function allowlist, so if
+        // both sides rendered non-null the non-literal side is provably pushable.
+        val leftLit = comp.left is ConnectorLiteral
+        val rightLit = comp.right is ConnectorLiteral
+        if (leftLit == rightLit) {
+            return null // both literals or neither literal → drop
         }
         return "$left $symbol $right"
     }
@@ -245,6 +276,69 @@ internal object DuckBridgeQueryBuilder {
 
     private fun isScalar(col: ConnectorColumnRef): Boolean =
         col.type.typeName.uppercase() !in NON_SCALAR_TYPE_NAMES
+
+    // ---- P1 function allowlist ----
+
+    /**
+     * One audited-IDENTICAL function: the accepted arities and how to render it in DuckDB, given the
+     * already-rendered argument SQL (`r`) and the raw argument expressions (`a`, for guard checks
+     * like "constant start ≠ 0"). Return null to drop (guard failed).
+     */
+    private class AllowedFunction(
+        val arities: Set<Int>,
+        val render: (r: List<String>, a: List<ConnectorExpression>) -> String?,
+    )
+
+    /**
+     * Doris function-name (lowercased, as the FE emits it — verified via `EXPLAIN VERBOSE`
+     * `PREDICATES:`) → DuckDB rendering. Every entry cites its verdict in
+     * `dev-docs/REPORT-doris-duckdb-function-divergence.md`. IDENTICAL, integer/string/boolean
+     * returns only (float-returning functions excluded — print-precision-fragile in `=`).
+     */
+    private val FUNCTION_ALLOWLIST: Map<String, AllowedFunction> = buildMap {
+        // Doris character_length (code points; FE normalizes char_length → character_length) ≡
+        // DuckDB length. IDENTICAL.
+        put("character_length", AllowedFunction(setOf(1)) { r, _ -> "length(${r[0]})" })
+        // Doris length (BYTES) ≡ DuckDB strlen — NOT DuckDB length (which is code points). IDENTICAL.
+        put("length", AllowedFunction(setOf(1)) { r, _ -> "strlen(${r[0]})" })
+        // substring: IDENTICAL for a constant start ≠ 0 (Doris returns NULL at 0, DuckDB clamps 0→1).
+        put(
+            "substring",
+            AllowedFunction(setOf(2, 3)) { r, a ->
+                if (constantStartIsNonZero(a)) r.joinToString(", ", "substring(", ")") else null
+            },
+        )
+        // Doris locate(needle, hay) ≡ DuckDB strpos(hay, needle) — ARG SWAP. IDENTICAL.
+        put("locate", AllowedFunction(setOf(2)) { r, _ -> "strpos(${r[1]}, ${r[0]})" })
+        // Doris instr(hay, needle) ≡ DuckDB instr(hay, needle). IDENTICAL.
+        put("instr", AllowedFunction(setOf(2)) { r, _ -> "instr(${r[0]}, ${r[1]})" })
+        // starts_with(x, prefix). IDENTICAL.
+        put("starts_with", AllowedFunction(setOf(2)) { r, _ -> "starts_with(${r[0]}, ${r[1]})" })
+        // abs — integer-exact for INT inputs. IDENTICAL.
+        put("abs", AllowedFunction(setOf(1)) { r, _ -> "abs(${r[0]})" })
+        // Date extraction (INT return). IDENTICAL.
+        for (dateFn in setOf("year", "month", "day", "hour", "minute", "second")) {
+            put(dateFn, AllowedFunction(setOf(1)) { r, _ -> "$dateFn(${r[0]})" })
+        }
+    }
+
+    /**
+     * Whether a `substring`'s start argument is a constant literal ≠ 0. DuckDB clamps a 0 start to 1
+     * while Doris returns NULL, so pushing `substring(x, 0, …)` would over-return remotely and (since
+     * the FE re-filters, and a remote extra row that Doris would NULL-out is then dropped) is unsafe
+     * only if the start could be 0 — a non-constant start can't be proven ≠ 0, so we require a
+     * constant. (Negative and ≥1 constants are audited-aligned.)
+     */
+    private fun constantStartIsNonZero(args: List<ConnectorExpression>): Boolean {
+        val start = args.getOrNull(1) as? ConnectorLiteral ?: return false
+        val v = start.value
+        return when (v) {
+            is Int -> v != 0
+            is Long -> v != 0L
+            is BigDecimal -> v.signum() != 0
+            else -> false
+        }
+    }
 
     /**
      * Quote a DuckDB identifier: wrap in `"`, escaping embedded `"` as `""`. Unicode-safe (DuckDB

@@ -116,8 +116,11 @@ BE_DRIVER_URL="file:///opt/duckbridge-drivers/quack-jdbc.jar"
 log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driver_url=${BE_DRIVER_URL})"
 
 # 2. Bring up the cluster (FE + BE + Quack).
+# --force-recreate so a stale BE from a prior `--up-only` (created before .be-drivers was staged)
+# is rebuilt with the driver-jar mount in place — otherwise `up -d` reuses the running container
+# and the BE never sees the driver (JdbcJniScanner then fails "Failed to load driver class").
 log "Starting Doris FE + BE + DuckDB/Quack…"
-"${DOCKER}" compose -f "${COMPOSE}" up -d
+"${DOCKER}" compose -f "${COMPOSE}" up -d --force-recreate
 
 # 3. Install the plugin into the FE plugin volume (unzipped → plugins/connector/duckbridge).
 # A named volume + docker cp (daemon-API streaming) rather than a bind mount, so Podman's
@@ -324,6 +327,31 @@ if [[ "${cnt}" == "3" ]]; then
     log "SCAN GREEN: count(*) = 3."
 else
     log "SCAN CHECK: count(*) = '${cnt}' (expected 3) — inspect above."
+fi
+
+# ── P1 function pushdown: an allowlisted, audited-IDENTICAL function must appear INSIDE the pushed
+# QUERY (not just re-filtered above), and return exact rows. character_length (code points) →
+# DuckDB length; 'straße' and 'δοκιμή' are both 6 code points, so char_length=6 → rows {2,3}.
+log "P1: WHERE character_length(name)=6 — allowlisted function pushdown (EXPLAIN QUERY + exact rows)…"
+set +e
+fn_explain=$(fe_sql -e "EXPLAIN VERBOSE SELECT id FROM duckbridge_test.sales.customers WHERE character_length(name)=6;" 2>&1)
+set -e
+fn_query=$(echo "${fn_explain}" | grep -iE "QUERY:" | head -1)
+echo "  ${fn_query}"
+if echo "${fn_query}" | grep -qiE "length\("; then
+    log "P1 GREEN: the allowlisted function is INSIDE the pushed QUERY (character_length→DuckDB length)."
+else
+    log "P1 CHECK: character_length not found in the pushed QUERY — the plugin may be stale (rebuild) or"
+    log "  the FE dropped it. Inspect the QUERY line above (a re-filtered-above result is still correct,"
+    log "  but the point of P1 is that it PUSHES)."
+fi
+set +e
+fn_ids=$(fe_sql -N -e "SELECT id FROM duckbridge_test.sales.customers WHERE character_length(name)=6 ORDER BY id;" 2>&1 | grep -oE "^[0-9]+" | tr '\n' ',' | sed 's/,$//')
+set -e
+if [[ "${fn_ids}" == "2,3" ]]; then
+    log "P1 GREEN: WHERE character_length(name)=6 returned exactly rows {2,3} (straße, δοκιμή)."
+else
+    log "P1 CHECK: char_length=6 returned ids=[${fn_ids}] (expected 2,3) — inspect above."
 fi
 
 # ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
