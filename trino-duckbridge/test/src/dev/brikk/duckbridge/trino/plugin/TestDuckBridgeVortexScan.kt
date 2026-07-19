@@ -40,7 +40,7 @@ class TestDuckBridgeVortexScan : AbstractTestQueryFramework() {
         vortexAvailable = writeVortexFixture()
         return DuckBridgeQueryRunner.create(
             DuckBridgeQueryRunner.freshDatabaseUrl(),
-            mapOf("duckbridge.vortex.enabled" to "true", "duckbridge.parity.enabled" to "false"),
+            mapOf("duckbridge.vortex.enabled" to "true", "duckbridge.string-pushdown.mode" to "GUARDED"),
         )
     }
 

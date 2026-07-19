@@ -38,7 +38,10 @@ class DuckBridgeExtensionConnectionFactory(
     override fun openConnection(session: ConnectorSession): Connection {
         val connection = delegate.openConnection(session)
         try {
-            parity.ensureInitialised(connection)
+            // Per-connection string-pushdown init: LOAD+probe the extension in PARITY mode, and run
+            // the byte-comparison canary at mode >= BINARY. The mode is resolved from the session
+            // (honoring the string_pushdown_mode override) with the catalog default as fallback.
+            parity.ensureInitialised(connection, session)
             scanExtensions.ensureLoaded(connection)
         } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
             runCatching { connection.close() }

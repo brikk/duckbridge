@@ -325,20 +325,37 @@ object DuckBridgeExpressionTranslator {
      * [aliasAvailable] tells the translator whether the `trino_parity` extension's `trino_<name>(...)`
      * layer is loaded on the target connection. When false, [Emission.Alias] entries are NOT pushed
      * (they'd resolve to a missing function on the remote DuckDB); the Bare/Rename/Operator/Inline
-     * classes push regardless — they never touch the extension.
+     * classes push regardless — they never touch the extension. This overload keeps string-comparison
+     * pushdown ON (used by rendering unit tests); production passes both trust axes via the mode.
      */
     fun translateConjuncts(
         expression: ConnectorExpression,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
         aliasAvailable: Boolean,
+    ): List<String> = translateConjuncts(expression, assignments, session, aliasAvailable, stringComparisonAllowed = true)
+
+    /**
+     * Full-trust-axis entry point. [aliasAvailable] gates the extension-backed [Emission.Alias]
+     * functions; [stringComparisonAllowed] gates conjuncts that COMPARE a string operand
+     * (`upper(x)='B'`, `x LIKE 'a%'`, string `=`/`</`/range) — false in NULL_ONLY/GUARDED, where such
+     * comparisons stay in Trino because a diverging string prefilter under-returns and no retained
+     * filter can repair it. Non-string-comparing conjuncts (`length(s)=5`, `abs(id)=3`,
+     * `year(d)=2000`) push in every mode.
+     */
+    fun translateConjuncts(
+        expression: ConnectorExpression,
+        assignments: Map<String, ColumnHandle>,
+        session: ConnectorSession?,
+        aliasAvailable: Boolean,
+        stringComparisonAllowed: Boolean,
     ): List<String> {
         val out: MutableList<String> = mutableListOf()
         for (conjunct in conjuncts(expression)) {
             if (isTautologyTrue(conjunct)) {
                 continue
             }
-            translate(conjunct, assignments, session, aliasAvailable)?.let(out::add)
+            translate(conjunct, assignments, session, aliasAvailable, stringComparisonAllowed)?.let(out::add)
         }
         return out.toList()
     }
@@ -372,24 +389,35 @@ object DuckBridgeExpressionTranslator {
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
         aliasAvailable: Boolean,
+    ): String? = translate(expression, assignments, session, aliasAvailable, stringComparisonAllowed = true)
+
+    fun translate(
+        expression: ConnectorExpression,
+        assignments: Map<String, ColumnHandle>,
+        session: ConnectorSession?,
+        aliasAvailable: Boolean,
+        stringComparisonAllowed: Boolean,
     ): String? =
         try {
-            translateOrNull(expression, assignments, session, aliasAvailable)
+            translateOrNull(expression, assignments, session, Ctx(aliasAvailable, stringComparisonAllowed))
         } catch (@Suppress("TooGenericExceptionCaught") ignored: RuntimeException) {
             // Defensive: any unexpected RuntimeException from a sub-translator => fail safe.
             null
         }
 
+    /** The two per-query trust axes threaded through the recursive translator. */
+    private data class Ctx(val aliasAvailable: Boolean, val stringComparisonAllowed: Boolean)
+
     private fun translateOrNull(
         expression: ConnectorExpression,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? =
         when (expression) {
             is Variable -> translateVariable(expression, assignments)
             is Constant -> translateConstant(expression)
-            is Call -> translateCall(expression, assignments, session, aliasAvailable)
+            is Call -> translateCall(expression, assignments, session, ctx)
             else -> null
         }
 
@@ -449,62 +477,78 @@ object DuckBridgeExpressionTranslator {
         call: Call,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         val name: FunctionName = call.functionName
         val args: List<ConnectorExpression> = call.arguments
 
         when {
-            name == StandardFunctions.AND_FUNCTION_NAME -> return joinBinary(args, " AND ", assignments, session, aliasAvailable)
-            name == StandardFunctions.OR_FUNCTION_NAME -> return joinBinary(args, " OR ", assignments, session, aliasAvailable)
+            name == StandardFunctions.AND_FUNCTION_NAME -> return joinBinary(args, " AND ", assignments, session, ctx)
+            name == StandardFunctions.OR_FUNCTION_NAME -> return joinBinary(args, " OR ", assignments, session, ctx)
             name == StandardFunctions.NOT_FUNCTION_NAME && args.size == 1 -> {
-                val inner = translateOrNull(args[0], assignments, session, aliasAvailable)
+                val inner = translateOrNull(args[0], assignments, session, ctx)
                 return if (inner == null) null else "(NOT $inner)"
             }
             name == StandardFunctions.IS_NULL_FUNCTION_NAME && args.size == 1 -> {
-                val inner = translateOrNull(args[0], assignments, session, aliasAvailable)
+                val inner = translateOrNull(args[0], assignments, session, ctx)
                 return if (inner == null) null else "($inner IS NULL)"
             }
-            name == StandardFunctions.LIKE_FUNCTION_NAME && args.size == 2 ->
-                return translateLike(args[0], args[1], assignments, session, aliasAvailable)
+            name == StandardFunctions.LIKE_FUNCTION_NAME && args.size == 2 -> {
+                // LIKE is inherently a string comparison — requires >= BINARY string-comparison trust.
+                if (!ctx.stringComparisonAllowed) {
+                    return null
+                }
+                return translateLike(args[0], args[1], assignments, session, ctx)
+            }
         }
 
         comparisonOperator(name)?.let { operator ->
             if (args.size == 2) {
-                val left = translateOrNull(args[0], assignments, session, aliasAvailable)
-                val right = translateOrNull(args[1], assignments, session, aliasAvailable)
+                // A comparison whose operands are string-typed needs >= BINARY string-comparison trust:
+                // in NULL_ONLY/GUARDED a diverging string prefilter under-returns, unfixable by a
+                // retained filter, so the whole conjunct stays in Trino. Non-string comparisons
+                // (length(s)=5, abs(id)=3, year(d)=2000) push in every mode.
+                if (comparesStringOperand(args) && !ctx.stringComparisonAllowed) {
+                    return null
+                }
+                val left = translateOrNull(args[0], assignments, session, ctx)
+                val right = translateOrNull(args[1], assignments, session, ctx)
                 return if (left == null || right == null) null else "($left $operator $right)"
             }
         }
         arithmeticOperator(name)?.let { arithmetic ->
             if (args.size == 2) {
-                val left = translateOrNull(args[0], assignments, session, aliasAvailable)
-                val right = translateOrNull(args[1], assignments, session, aliasAvailable)
+                val left = translateOrNull(args[0], assignments, session, ctx)
+                val right = translateOrNull(args[1], assignments, session, ctx)
                 return if (left == null || right == null) null else "($left $arithmetic $right)"
             }
         }
 
         when {
             name == StandardFunctions.IDENTICAL_OPERATOR_FUNCTION_NAME && args.size == 2 -> {
-                val left = translateOrNull(args[0], assignments, session, aliasAvailable)
-                val right = translateOrNull(args[1], assignments, session, aliasAvailable)
+                // IS NOT DISTINCT FROM over strings is a string comparison — same gate as `=`.
+                if (comparesStringOperand(args) && !ctx.stringComparisonAllowed) {
+                    return null
+                }
+                val left = translateOrNull(args[0], assignments, session, ctx)
+                val right = translateOrNull(args[1], assignments, session, ctx)
                 return if (left == null || right == null) null else "($left IS NOT DISTINCT FROM $right)"
             }
             name == StandardFunctions.COALESCE_FUNCTION_NAME && args.isNotEmpty() ->
-                return translateVariadic("coalesce", args, assignments, session, aliasAvailable)
+                return translateVariadic("coalesce", args, assignments, session, ctx)
             name == StandardFunctions.NULLIF_FUNCTION_NAME && args.size == 2 -> {
-                val left = translateOrNull(args[0], assignments, session, aliasAvailable)
-                val right = translateOrNull(args[1], assignments, session, aliasAvailable)
+                val left = translateOrNull(args[0], assignments, session, ctx)
+                val right = translateOrNull(args[1], assignments, session, ctx)
                 return if (left == null || right == null) null else "nullif($left, $right)"
             }
             name == StandardFunctions.NEGATE_FUNCTION_NAME && args.size == 1 -> {
-                val inner = translateOrNull(args[0], assignments, session, aliasAvailable)
+                val inner = translateOrNull(args[0], assignments, session, ctx)
                 return if (inner == null) null else "(-$inner)"
             }
             name == StandardFunctions.CAST_FUNCTION_NAME && args.size == 1 ->
-                return translateCast(call, args[0], "CAST", assignments, session, aliasAvailable)
+                return translateCast(call, args[0], "CAST", assignments, session, ctx)
             name == StandardFunctions.TRY_CAST_FUNCTION_NAME && args.size == 1 ->
-                return translateCast(call, args[0], "TRY_CAST", assignments, session, aliasAvailable)
+                return translateCast(call, args[0], "TRY_CAST", assignments, session, ctx)
         }
 
         // String concat is a translator rewrite (NOT a macro): Trino's concat(a,b,c) NULL-propagates,
@@ -512,7 +556,7 @@ object DuckBridgeExpressionTranslator {
         // engines, so rewrite to (a || b || c). Gated on VARCHAR return type to avoid Trino's array
         // overload (different NULL semantics).
         if (isVarcharConcat(name, args, call)) {
-            return translateStringConcat(args, assignments, session, aliasAvailable)
+            return translateStringConcat(args, assignments, session, ctx)
         }
 
         // Trino built-in functions: only push if (name, arity) is in our brain AND the optional
@@ -523,14 +567,14 @@ object DuckBridgeExpressionTranslator {
         if (name.catalogSchema.isEmpty) {
             val key = NameArity(name.name, args.size)
             val emission = EMISSION_STRATEGIES[key] ?: return null
-            if (emission is Emission.Alias && !aliasAvailable) {
+            if (emission is Emission.Alias && !ctx.aliasAvailable) {
                 return null
             }
             val gate = TYPE_GATES[key]
             if (gate != null && !gate.accepts(args, session)) {
                 return null
             }
-            return emitFunction(emission, name.name, args, assignments, session, aliasAvailable)
+            return emitFunction(emission, name.name, args, assignments, session, ctx)
         }
         return null
     }
@@ -542,11 +586,11 @@ object DuckBridgeExpressionTranslator {
         args: List<ConnectorExpression>,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         val rendered = ArrayList<String>(args.size)
         for (arg in args) {
-            rendered.add(translateOrNull(arg, assignments, session, aliasAvailable) ?: return null)
+            rendered.add(translateOrNull(arg, assignments, session, ctx) ?: return null)
         }
         return when (emission) {
             is Emission.Bare -> call(trinoName, rendered)
@@ -559,6 +603,14 @@ object DuckBridgeExpressionTranslator {
 
     private fun call(name: String, args: List<String>): String = args.joinToString(", ", "$name(", ")")
 
+    /**
+     * True iff either operand of a 2-arg comparison is a string type (VARCHAR or CHAR). Such
+     * comparisons carry the collation/byte-ordering trust question the mode dial gates; everything
+     * else (numeric, date, boolean) is byte-exact across engines and pushes in every mode.
+     */
+    private fun comparesStringOperand(args: List<ConnectorExpression>): Boolean =
+        args.any { it.type is VarcharType || it.type is io.trino.spi.type.CharType }
+
     private fun isIntegerFamily(type: Type): Boolean =
         type is BigintType || type is IntegerType || type is SmallintType || type is TinyintType
 
@@ -570,14 +622,14 @@ object DuckBridgeExpressionTranslator {
         args: List<ConnectorExpression>,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         val sql = StringBuilder(sqlName).append('(')
         for (i in args.indices) {
             if (i > 0) {
                 sql.append(", ")
             }
-            val arg = translateOrNull(args[i], assignments, session, aliasAvailable) ?: return null
+            val arg = translateOrNull(args[i], assignments, session, ctx) ?: return null
             sql.append(arg)
         }
         sql.append(')')
@@ -588,14 +640,14 @@ object DuckBridgeExpressionTranslator {
         args: List<ConnectorExpression>,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         val out = StringBuilder("(")
         for (i in args.indices) {
             if (i > 0) {
                 out.append(" || ")
             }
-            val inner = translateOrNull(args[i], assignments, session, aliasAvailable) ?: return null
+            val inner = translateOrNull(args[i], assignments, session, ctx) ?: return null
             out.append(inner)
         }
         out.append(')')
@@ -614,14 +666,14 @@ object DuckBridgeExpressionTranslator {
         patternArg: ConnectorExpression,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         if (patternArg !is Constant) {
             return null
         }
         val patternValue: Any = patternArg.value ?: return null
         val extracted = LikePatternAccessor.extract(patternValue) ?: return null
-        val translatedValue = translateOrNull(value, assignments, session, aliasAvailable) ?: return null
+        val translatedValue = translateOrNull(value, assignments, session, ctx) ?: return null
         val out =
             StringBuilder("(")
                 .append(translatedValue)
@@ -648,10 +700,10 @@ object DuckBridgeExpressionTranslator {
         castKeyword: String,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         val targetType = duckdbTypeName(call.type) ?: return null
-        val inner = translateOrNull(operand, assignments, session, aliasAvailable)
+        val inner = translateOrNull(operand, assignments, session, ctx)
         return if (inner == null) null else "$castKeyword($inner AS $targetType)"
     }
 
@@ -704,7 +756,7 @@ object DuckBridgeExpressionTranslator {
         separator: String,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
-        aliasAvailable: Boolean,
+        ctx: Ctx,
     ): String? {
         if (args.isEmpty()) {
             return null
@@ -714,7 +766,7 @@ object DuckBridgeExpressionTranslator {
             if (i > 0) {
                 out.append(separator)
             }
-            val inner = translateOrNull(args[i], assignments, session, aliasAvailable) ?: return null
+            val inner = translateOrNull(args[i], assignments, session, ctx) ?: return null
             out.append(inner)
         }
         out.append(')')

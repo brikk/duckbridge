@@ -49,7 +49,7 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
             } else {
                 // No matching binary for the container arch: run without parity so the transport
                 // tests still exercise the wire path (domain/limit pushdown, round-trip, metadata).
-                put("duckbridge.parity.enabled", "false")
+                put("duckbridge.string-pushdown.mode", "GUARDED")
             }
         }
         val runner = DuckBridgeQueryRunner.create(server.connectionUrl(), extra)

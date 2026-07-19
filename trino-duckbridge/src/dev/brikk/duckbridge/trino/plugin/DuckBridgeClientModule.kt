@@ -91,18 +91,17 @@ class DuckBridgeClientModule : AbstractConfigurationAwareModule() {
      * jdbc builder (rather than `new ConnectorExpressionRewriter(...)`) keeps us on the supported seam
      * and the [ParameterizedExpression] result type base-jdbc's `convertPredicate` expects.
      *
-     * The rule is ALWAYS registered. When parity is disabled (`aliasAvailable=false`) the translator
-     * still pushes the Bare/Rename/Operator/Inline emission classes — they emit plain DuckDB SQL and
-     * never touch the extension, and their correctness is fixture-proven against a bare DuckDB — and
-     * only the extension-backed [DuckBridgeExpressionTranslator.Emission.Alias] entries drop out.
-     * (Before the "alias only what diverges" rework, disabling parity turned off ALL function
-     * pushdown; now only the ~10 native-C++ divergence-fixers are affected.)
+     * The rule is ALWAYS registered; the trust axes are resolved per-session from the string-pushdown
+     * mode inside the rule (so the `string_pushdown_mode` session override applies). The
+     * Bare/Rename/Operator/Inline emission classes push in every mode when they don't compare a string
+     * operand; only PARITY mode unlocks the extension-backed ALIAS functions, and only modes >= BINARY
+     * unlock string-comparing conjuncts.
      */
     @Provides
     @Singleton
-    fun connectorExpressionRewriter(config: DuckBridgeConfig): ConnectorExpressionRewriter<ParameterizedExpression> =
+    fun connectorExpressionRewriter(): ConnectorExpressionRewriter<ParameterizedExpression> =
         JdbcConnectorExpressionRewriterBuilder.newBuilder()
-            .add(DuckBridgeParityExpressionRule(aliasAvailable = config.isParityEnabled))
+            .add(DuckBridgeParityExpressionRule())
             .build()
 
     /** Transport is fully determined by the connection-url prefix (see [DuckBridgeTransport]). */

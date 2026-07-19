@@ -57,7 +57,7 @@ class DuckBridgeExecutorFactory
 
         /** Local extension path for the in-process T2 engine — null disables parity for that engine. */
         private fun localParityPathOrNull(): String? {
-            if (!config.isParityEnabled) {
+            if (!config.stringPushdownMode.requiresParityExtension) {
                 return null
             }
             return config.parityExtensionPath
@@ -65,24 +65,25 @@ class DuckBridgeExecutorFactory
                 ?: throw TrinoException(
                     CONFIGURATION_INVALID,
                     "trino_parity extension required for the DUCKDB_LOCAL engine but not bundled for this platform; " +
-                        "set duckbridge.parity-extension-path or disable pushdown with duckbridge.parity.enabled=false.",
+                        "set duckbridge.parity-extension-path, or select a non-PARITY duckbridge.string-pushdown.mode " +
+                        "(e.g. GUARDED) to run without the extension.",
                 )
         }
 
         /**
          * Server-side extension path for the QUACK T2 engine. The worker's bundled binary can't be
-         * read by the remote server, so this MUST be an explicit server-side path (or parity off).
+         * read by the remote server, so this MUST be an explicit server-side path (or a non-PARITY mode).
          */
         private fun serverSideParityPathOrNull(): String? {
-            if (!config.isParityEnabled) {
+            if (!config.stringPushdownMode.requiresParityExtension) {
                 return null
             }
             return config.parityExtensionPath
                 ?: throw TrinoException(
                     CONFIGURATION_INVALID,
-                    "trino_parity extension required for the QUACK engine: set duckbridge.parity-extension-path to the " +
-                        "SERVER-SIDE path of trino_parity.duckdb_extension inside the Quack DuckDB process, or disable " +
-                        "pushdown with duckbridge.parity.enabled=false.",
+                    "trino_parity extension required for the QUACK engine in PARITY mode: set duckbridge.parity-extension-path " +
+                        "to the SERVER-SIDE path of trino_parity.duckdb_extension inside the Quack DuckDB process, or select " +
+                        "a non-PARITY duckbridge.string-pushdown.mode (e.g. GUARDED).",
                 )
         }
     }

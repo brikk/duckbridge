@@ -42,15 +42,49 @@ the 10 ALIAS entries drop out. See
 
 ---
 
+## 0. String-pushdown mode
+
+String comparison/ordering pushdown is dialed by `duckbridge.string-pushdown.mode`
+(catalog default) / `string_pushdown_mode` (per-query session override), default
+`PARITY`. It gates the string-touching rows of §1–§3 below on two trust axes
+(comparison-byte-alignment and extension-backed functions). **Non-string** predicates
+(`length(s)=5`, `id > 3`, `year(d)=2000`) are byte-exact cross-engine and push in every
+mode. Grounded in a live probe: `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md`
+(design + probe methodology borrowed from the sibling trino-doris connector).
+
+| mode | VARCHAR domains (`=`/range/IN) | retained filter | string `LIKE` | string TopN | ALIAS fns | extension |
+|---|---|---|---|---|---|---|
+| `NULL_ONLY` | `IS [NOT] NULL` only | — | no | no | no | no |
+| `GUARDED` | superset pre-filter, **kept locally**; `0x00`-bearing domains skipped | yes | no† | no | no | **no** |
+| `BINARY` | full (probe-verified byte semantics) | no | yes | yes | no | no |
+| `FULL` | full (caller-asserted, no probe) | no | yes | yes | no | no |
+| `PARITY` *(default)* | full (probe-verified) | no | yes | yes | **yes** | required |
+
+† `LIKE 'foo%'` still pre-filters in `GUARDED`: Trino's `DomainTranslator` folds the
+wildcard prefix into a range domain (`'foo' <= name AND name < 'fop'`) that rides the
+domain path in §1 for free; only the residual `$like` stays retained. No custom
+LIKE-to-range converter exists — this is stock engine behavior, verified in the suite.
+
+- **Init probe (fail loud).** `BINARY`/`PARITY` verify per connection that DuckDB's
+  `default_collation` is binary and a comparison/ordering canary (case pairs, trailing
+  space, NFC≠NFD, astral order, zero-width, NUL, `ORDER BY` incl. NULLS) matches Trino.
+  On divergence they throw with instructions to drop to `GUARDED`. `PARITY` additionally
+  LOADs + probes the extension. `GUARDED`/`NULL_ONLY`/`FULL` skip the probe.
+- **TopN guarantee.** `isTopNGuaranteed` is true only at `BINARY`/`FULL`/`PARITY` (byte
+  ordering probe-verified); string sort keys are only pushed at those modes. Non-string
+  sort keys push the bound in every mode but Trino re-applies TopN below `BINARY`.
+- **CHAR.** DuckDB has no CHAR padding (CHAR ≡ VARCHAR) and the read mappings never
+  produce `CharType`, so there is no CHAR trailing-space read hazard (unlike doris).
+
 ## 1. Predicate / value pushdown
 
 These don't need the expression translator.
 
 | Surface | Notes |
 |---|---|
-| **TupleDomain on `WHERE`** | Range/equality/`IN`/`IS NULL` constraints on all supported column types. |
+| **TupleDomain on `WHERE`** | Range/equality/`IN`/`IS NULL` constraints on all supported column types. String columns are gated by the string-pushdown mode (§0); non-string columns always push. |
 | **LIMIT** | Pushed and final — Trino drops its own limit. |
-| **TopN (`ORDER BY ... LIMIT`)** | Pushed into the remote query (with explicit `NULLS FIRST/LAST`); Trino keeps its own TopN above for ordering guarantees. |
+| **TopN (`ORDER BY ... LIMIT`)** | Pushed into the remote query (with explicit `NULLS FIRST/LAST`). Guaranteed (Trino drops its own TopN) only at string-pushdown mode ≥ `BINARY`; string sort keys require ≥ `BINARY` (§0). |
 
 ## 2. Operators & transforms
 

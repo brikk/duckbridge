@@ -669,7 +669,7 @@ class TestDuckBridgeExpressionTranslator {
 
         private fun sessionWithTierC(value: Boolean): ConnectorSession =
             TestingConnectorSession.builder()
-                .setPropertyMetadata(DuckBridgeSessionProperties().getSessionProperties())
+                .setPropertyMetadata(DuckBridgeSessionProperties(DuckBridgeConfig()).getSessionProperties())
                 .setPropertyValues(
                     java.util.Map.of<String, Any>(DuckBridgeSessionProperties.PUSHDOWN_TIMESTAMP_WITH_TIME_ZONE, value),
                 )

@@ -44,18 +44,26 @@ class DuckBridgeConfig {
     }
 
     /**
-     * Master switch for parity-backed function-shape expression pushdown. When true (default), the
-     * connector LOADs and probes the trino_parity extension on first connection and pushes
-     * `trino_*(...)` predicates to DuckDB. When false, function-shape pushdown is OFF entirely
-     * (the expression rewriter has no parity rules); domain and LIMIT/TopN pushdown still apply.
+     * String predicate pushdown mode (catalog default; per-query override via the
+     * `string_pushdown_mode` session property). Encodes both the string-comparison trust axis
+     * (NULL_ONLY < GUARDED < BINARY = FULL = PARITY) and the function-semantics trust axis (only
+     * PARITY unlocks the extension-backed ALIAS functions). Default [DuckBridgeStringPushdownMode.PARITY]
+     * — full comparison pushdown plus the trino_parity extension, the connector's historical posture.
+     *
+     * This dial REPLACES the former `duckbridge.parity.enabled` boolean. To run without the
+     * extension (formerly `parity.enabled=false`) use `GUARDED` (extension-free exact pushdown with
+     * a retained filter) or a higher non-PARITY mode.
      */
-    var isParityEnabled: Boolean = true
+    var stringPushdownMode: DuckBridgeStringPushdownMode = DuckBridgeStringPushdownMode.PARITY
         private set
 
-    @Config("duckbridge.parity.enabled")
-    @ConfigDescription("Enable parity-backed function-shape expression pushdown via the trino_parity extension")
-    fun setParityEnabled(parityEnabled: Boolean): DuckBridgeConfig {
-        this.isParityEnabled = parityEnabled
+    @Config("duckbridge.string-pushdown.mode")
+    @ConfigDescription(
+        "String predicate pushdown mode: NULL_ONLY, GUARDED, BINARY, FULL, or PARITY (default). " +
+            "Only PARITY enables the trino_parity extension's ALIAS functions.",
+    )
+    fun setStringPushdownMode(mode: DuckBridgeStringPushdownMode): DuckBridgeConfig {
+        this.stringPushdownMode = mode
         return this
     }
 

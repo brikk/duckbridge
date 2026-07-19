@@ -54,6 +54,28 @@ managed on the server by the connector.
   `pushdown_timestamp_with_timezone` session property is on (default on); the connector
   aligns DuckDB's session `TimeZone` with Trino's.
 
+### String pushdown mode dial
+
+String comparison and ordering carry a collation trust question that numeric/date
+predicates don't. `duckbridge.string-pushdown.mode` (per-query override:
+`string_pushdown_mode`) dials how much string pushdown you trust; the default is
+`PARITY`. Non-string predicates (`length(s)=5`, `id>3`, `year(d)=2000`) push in every
+mode.
+
+| mode | string `=`/range/IN/TopN | retained filter | string LIKE | ALIAS fns (ICU/hash) | extension |
+|---|---|---|---|---|---|
+| `NULL_ONLY` | not pushed (only `IS [NOT] NULL`) | — | no | no | not needed |
+| `GUARDED` | pushed remotely **and kept** locally (exact pre-filter; `LIKE 'foo%'` still gets its prefix range for free) | yes | no | no | **not needed** |
+| `BINARY` | fully pushed (probe-verified byte semantics) | no | yes | no | not needed |
+| `FULL` | fully pushed (caller-asserted; no probe) | no | yes | no | not needed |
+| `PARITY` *(default)* | fully pushed (probe-verified) | no | yes | **yes** | required |
+
+`GUARDED` is the extension-free exact mode for plain OLAP filters: it pre-filters
+remotely but re-checks every row in Trino, so results are identical to `NULL_ONLY` even
+if DuckDB's collation were ever non-binary. `BINARY`/`PARITY` verify DuckDB's byte
+semantics with a live comparison probe on first connection and fail loud on divergence
+(e.g. a Quack server with a `nocase` collation) — telling you to drop to `GUARDED`.
+
 ### The `trino_parity` extension — only the functions DuckDB can't match
 
 The [`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-parity-extension)
@@ -64,9 +86,10 @@ folding / trim / `normalize` (`lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtr
 plain DuckDB SQL that DuckDB already evaluates identically to Trino, verified by
 per-function cross-engine fixtures.
 
-When the planner promises pushdown the extension can't back, results could be wrong, so
-for those 10 a missing extension is a hard, clearly-worded error — never a quiet
-fallback.
+The extension is required only in the default `PARITY` string-pushdown mode (above), and
+only for those 10 functions. When `PARITY` promises pushdown the extension can't back,
+results could be wrong, so a missing extension is a hard, clearly-worded error — never a
+quiet fallback.
 
 - **Embedded** (`jdbc:duckdb:`): nothing to do. The extension binary is bundled in the
   plugin jar and loaded automatically on every connection.
@@ -74,11 +97,11 @@ fallback.
   pre-loaded there, or reachable at a server-side path named by
   `duckbridge.parity-extension-path`. The connector probes for it on first use and fails
   with install instructions if it's absent.
-- **Opting out**: set `duckbridge.parity.enabled=false` to run without the extension.
-  This no longer disables *all* function pushdown — only the 10 extension-backed
-  functions drop out; the ~85 natively-emitted functions still push, alongside
-  projection, predicate (domain), and LIMIT/TopN pushdown. All queries remain correct —
-  the 10 are simply evaluated by Trino above the scan.
+- **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or
+  any non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~85
+  natively-emitted functions still push, alongside projection, predicate (domain), and
+  LIMIT/TopN pushdown. All queries remain correct — the 10 are simply evaluated by Trino
+  above the scan. (This replaces the former `duckbridge.parity.enabled=false`.)
 
 ## Lance and Vortex (experimental)
 

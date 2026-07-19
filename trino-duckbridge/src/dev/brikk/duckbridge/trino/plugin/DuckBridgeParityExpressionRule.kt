@@ -27,11 +27,12 @@ import java.util.Optional
  * [DuckBridgeExpressionTranslator], preserving the translator's hard-won semantics verbatim rather
  * than re-deriving them as a pile of `GenericRewrite` string patterns.
  *
- * [aliasAvailable] mirrors whether the `trino_parity` extension's `trino_<name>(...)` layer is
- * available on the target connection (i.e. parity is enabled). When false, the translator refuses to
- * push [DuckBridgeExpressionTranslator.Emission.Alias] entries — but the Bare/Rename/Operator/Inline
- * classes still push, because they never touch the extension and their correctness is fixture-proven
- * against a bare DuckDB. This is why the rule is ALWAYS registered, even when parity is disabled.
+ * Both trust axes come from the per-session [DuckBridgeStringPushdownMode] (read at rewrite time, so
+ * the `string_pushdown_mode` session override is honored): only PARITY makes the extension-backed
+ * [DuckBridgeExpressionTranslator.Emission.Alias] entries pushable, and only modes >= BINARY allow
+ * conjuncts that COMPARE a string operand. The Bare/Rename/Operator/Inline classes push in every
+ * mode when they don't compare a string (their correctness is fixture-proven against a bare DuckDB).
+ * This is why the rule is ALWAYS registered.
  *
  * Why one whole-expression rule instead of `addStandardRules(...)` + per-function rules:
  *
@@ -53,9 +54,7 @@ import java.util.Optional
  * Call (comparison, AND, IS NULL, LIKE, ...), so matching `Call` covers the pushable shapes. Bare
  * Variable/Constant conjuncts are not independently pushable predicates and are correctly skipped.
  */
-class DuckBridgeParityExpressionRule(
-    private val aliasAvailable: Boolean,
-) : ConnectorExpressionRule<Call, ParameterizedExpression> {
+class DuckBridgeParityExpressionRule : ConnectorExpressionRule<Call, ParameterizedExpression> {
     override fun getPattern(): Pattern<Call> = PATTERN
 
     override fun rewrite(
@@ -63,9 +62,15 @@ class DuckBridgeParityExpressionRule(
         captures: Captures,
         context: ConnectorExpressionRule.RewriteContext<ParameterizedExpression>,
     ): Optional<ParameterizedExpression> {
+        val mode = DuckBridgeSessionProperties.getStringPushdownMode(context.session)
         val sql =
-            DuckBridgeExpressionTranslator.translate(call, context.assignments, context.session, aliasAvailable)
-                ?: return Optional.empty()
+            DuckBridgeExpressionTranslator.translate(
+                call,
+                context.assignments,
+                context.session,
+                mode.aliasAvailable,
+                mode.allowsFullStringComparison,
+            ) ?: return Optional.empty()
         return Optional.of(ParameterizedExpression(sql, emptyList<QueryParameter>()))
     }
 

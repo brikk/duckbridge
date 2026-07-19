@@ -19,17 +19,19 @@ import io.trino.plugin.base.session.SessionPropertiesProvider
 import io.trino.spi.connector.ConnectorSession
 import io.trino.spi.session.PropertyMetadata
 import io.trino.spi.session.PropertyMetadata.booleanProperty
+import io.trino.spi.session.PropertyMetadata.enumProperty
 
 /**
  * Connector session properties for DuckBridge. Ported from the DuckLake connector's
- * `DucklakeSessionProperties`, trimmed to the single property the pushdown translator
- * consults: [PUSHDOWN_TIMESTAMP_WITH_TIME_ZONE]. The DuckLake read/write knobs
+ * `DucklakeSessionProperties`, trimmed to the properties the pushdown paths consult:
+ * [PUSHDOWN_TIMESTAMP_WITH_TIME_ZONE] (date/time WTZ pushdown) and [STRING_PUSHDOWN_MODE] (the
+ * per-query override of `duckbridge.string-pushdown.mode`). The DuckLake read/write knobs
  * (snapshot pinning, file format, writer/read mode, deletion vectors, row lineage) are
  * DuckLake-table specific and stay behind in that module.
  */
 class DuckBridgeSessionProperties
     @Inject
-    constructor() : SessionPropertiesProvider {
+    constructor(config: DuckBridgeConfig) : SessionPropertiesProvider {
         private val sessionProperties: List<PropertyMetadata<*>> =
             ImmutableList.of(
                 booleanProperty(
@@ -42,12 +44,33 @@ class DuckBridgeSessionProperties
                     true,
                     false,
                 ),
+                enumProperty(
+                    STRING_PUSHDOWN_MODE,
+                    "String predicate pushdown mode (NULL_ONLY, GUARDED, BINARY, FULL, PARITY) — per-query " +
+                        "override of duckbridge.string-pushdown.mode.",
+                    DuckBridgeStringPushdownMode::class.java,
+                    config.stringPushdownMode,
+                    false,
+                ),
             )
 
         override fun getSessionProperties(): List<PropertyMetadata<*>> = sessionProperties
 
         companion object {
             const val PUSHDOWN_TIMESTAMP_WITH_TIME_ZONE: String = "pushdown_timestamp_with_timezone"
+            const val STRING_PUSHDOWN_MODE: String = "string_pushdown_mode"
+
+            /**
+             * @return the effective string-pushdown mode for this session. A null session (the unit-test
+             * translator overload with no session) reads as the safest posture — NULL_ONLY comparison
+             * trust, no ALIAS — so synthesized calls don't assume byte alignment or the extension.
+             */
+            fun getStringPushdownMode(session: ConnectorSession?): DuckBridgeStringPushdownMode {
+                if (session == null) {
+                    return DuckBridgeStringPushdownMode.NULL_ONLY
+                }
+                return session.getProperty(STRING_PUSHDOWN_MODE, DuckBridgeStringPushdownMode::class.java)
+            }
 
             /**
              * @return true iff this session has opted into Tier C pushdown (date/time predicates

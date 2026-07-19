@@ -17,6 +17,7 @@ import com.google.inject.Inject
 import io.airlift.log.Logger
 import io.trino.spi.StandardErrorCode.NOT_SUPPORTED
 import io.trino.spi.TrinoException
+import io.trino.spi.connector.ConnectorSession
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -44,7 +45,7 @@ class DuckBridgeParity
         private val config: DuckBridgeConfig,
         private val transport: DuckBridgeTransport,
     ) {
-        val isEnabled: Boolean get() = config.isParityEnabled
+        val isEnabled: Boolean get() = config.stringPushdownMode.requiresParityExtension
 
         /**
          * Resolved LOCAL extension path for the embedded transport (explicit override or bundled
@@ -52,27 +53,44 @@ class DuckBridgeParity
          * worker-local binary can't be LOADed into a remote server.
          */
         private val resolvedLocalPath: String? by lazy {
-            if (!config.isParityEnabled) {
-                null
-            } else {
-                config.parityExtensionPath ?: TrinoParityExtensionResolver.resolveBundledExtensionPath()
-            }
+            config.parityExtensionPath ?: TrinoParityExtensionResolver.resolveBundledExtensionPath()
         }
 
         /**
-         * LOAD (where applicable) + probe the parity extension on [connection] each time it is handed
-         * out. Idempotent: DuckDB LOAD of an already-loaded extension is a no-op and the `trino_meta()`
-         * probe is a tiny table scan. No-op when parity is disabled.
-         *
-         * @throws TrinoException if parity is enabled but the extension can't be loaded or probed.
+         * Resolve the effective string-pushdown mode for this connection: the session override when
+         * present, else the catalog default. base-jdbc's internal metadata sessions may not carry the
+         * property, in which case we fall back to the configured default.
          */
-        fun ensureInitialised(connection: Connection) {
-            if (!config.isParityEnabled) {
-                return
+        private fun effectiveMode(session: ConnectorSession): DuckBridgeStringPushdownMode =
+            try {
+                DuckBridgeSessionProperties.getStringPushdownMode(session)
+            } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") ignored: RuntimeException) {
+                config.stringPushdownMode
             }
-            when (transport) {
-                DuckBridgeTransport.EMBEDDED -> initialiseEmbedded(connection)
-                DuckBridgeTransport.QUACK -> initialiseQuack(connection)
+
+        /**
+         * Per-connection string-pushdown init, keyed off the effective mode:
+         *  - PARITY: LOAD (where applicable) + probe the trino_parity extension AND run the
+         *    byte-comparison canary. Fail loud if the extension is missing.
+         *  - BINARY: run the byte-comparison canary only (no extension). Fail loud if DuckDB's string
+         *    comparison/ordering or `default_collation` diverges from Trino.
+         *  - FULL/GUARDED/NULL_ONLY: no probe (FULL is caller-asserted; GUARDED/NULL_ONLY don't need
+         *    byte alignment).
+         *
+         * Idempotent: LOAD of an already-loaded extension is a no-op; the probes are tiny scans.
+         *
+         * @throws TrinoException if a required extension or comparison guarantee is unavailable.
+         */
+        fun ensureInitialised(connection: Connection, session: ConnectorSession) {
+            val mode = effectiveMode(session)
+            if (mode.requiresParityExtension) {
+                when (transport) {
+                    DuckBridgeTransport.EMBEDDED -> initialiseEmbedded(connection)
+                    DuckBridgeTransport.QUACK -> initialiseQuack(connection)
+                }
+            }
+            if (mode.requiresComparisonProbe) {
+                DuckBridgeStringComparisonProbe.verifyOrThrow(connection, mode)
             }
         }
 
@@ -140,8 +158,9 @@ class DuckBridgeParity
                 }
             return TrinoException(
                 NOT_SUPPORTED,
-                "DuckBridge parity pushdown is enabled but unavailable: $reason. " +
-                    "$fix, or disable pushdown with duckbridge.parity.enabled=false.",
+                "DuckBridge PARITY string-pushdown mode requires the trino_parity extension, but it is unavailable: " +
+                    "$reason. $fix, or select a non-PARITY duckbridge.string-pushdown.mode (e.g. GUARDED) / set " +
+                    "session property string_pushdown_mode.",
                 cause,
             )
         }

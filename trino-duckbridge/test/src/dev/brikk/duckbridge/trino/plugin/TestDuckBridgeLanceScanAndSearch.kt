@@ -47,7 +47,7 @@ class TestDuckBridgeLanceScanAndSearch : AbstractTestQueryFramework() {
         // only one under test here). connection-url is embedded T1.
         return DuckBridgeQueryRunner.create(
             DuckBridgeQueryRunner.freshDatabaseUrl(),
-            mapOf("duckbridge.lance.enabled" to "true", "duckbridge.parity.enabled" to "false"),
+            mapOf("duckbridge.lance.enabled" to "true", "duckbridge.string-pushdown.mode" to "GUARDED"),
         )
     }
 
@@ -169,7 +169,7 @@ class TestDuckBridgeLanceScanAndSearch : AbstractTestQueryFramework() {
         // A second catalog with lance disabled must fail loud (not silently return empty).
         DuckBridgeQueryRunner.create(
             DuckBridgeQueryRunner.freshDatabaseUrl(),
-            mapOf("duckbridge.lance.enabled" to "false", "duckbridge.parity.enabled" to "false"),
+            mapOf("duckbridge.lance.enabled" to "false", "duckbridge.string-pushdown.mode" to "GUARDED"),
         ).use { runner ->
             runner.installPlugin(io.trino.plugin.tpch.TpchPlugin())
             val ex =

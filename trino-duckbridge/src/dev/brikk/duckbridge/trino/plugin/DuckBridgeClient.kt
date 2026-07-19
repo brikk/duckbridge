@@ -51,7 +51,7 @@ import io.trino.plugin.jdbc.StandardColumnMappings.timestampColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.timestampWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.tinyintColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.tinyintWriteFunction
-import io.trino.plugin.jdbc.StandardColumnMappings.varcharColumnMapping
+import io.trino.plugin.jdbc.StandardColumnMappings.varcharReadFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.varcharWriteFunction
 import io.trino.plugin.jdbc.TypeHandlingJdbcSessionProperties.getUnsupportedTypeHandling
 import io.trino.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR
@@ -294,7 +294,17 @@ class DuckBridgeClient
                 }
                 Types.VARCHAR ->
                     // CHAR is an alias of VARCHAR in DuckDB https://duckdb.org/docs/sql/data_types/text
-                    return Optional.of(varcharColumnMapping(VarcharType.VARCHAR, true))
+                    // The predicate-pushdown controller is mode-aware: the string-pushdown mode dial
+                    // (NULL_ONLY/GUARDED/BINARY/FULL/PARITY) decides how string domains split between
+                    // the remote WHERE and Trino's retained filter (DuckBridgeStringPredicatePushdown).
+                    return Optional.of(
+                        ColumnMapping.sliceMapping(
+                            VarcharType.VARCHAR,
+                            varcharReadFunction(VarcharType.VARCHAR),
+                            varcharWriteFunction(),
+                            DuckBridgeStringPredicatePushdown.VARCHAR_PUSHDOWN,
+                        ),
+                    )
                 Types.DATE ->
                     return Optional.of(
                         ColumnMapping.longMapping(
@@ -371,8 +381,10 @@ class DuckBridgeClient
 
         /**
          * base-jdbc calls this per top-level conjunct (see `DefaultJdbcMetadata.applyFilter`).
-         * Delegates to the parity rewriter. When parity is disabled, function-shape pushdown is off
-         * entirely (the rewriter has no rules) — domain and LIMIT/TopN pushdown are unaffected.
+         * Delegates to the expression rewriter, which resolves the per-session string-pushdown mode:
+         * ALIAS functions push only in PARITY, string-comparing conjuncts only at mode >= BINARY, and
+         * the extension-free non-string emissions push in every mode. Domain and LIMIT/TopN pushdown
+         * are handled separately (column-mapping controller + supportsTopN).
          */
         override fun convertPredicate(
             session: ConnectorSession,
@@ -394,11 +406,35 @@ class DuckBridgeClient
         override fun limitFunction(): Optional<BiFunction<String, Long, String>> =
             Optional.of(BiFunction { sql, limit -> "$sql LIMIT $limit" })
 
-        override fun supportsTopN(session: ConnectorSession, handle: JdbcTableHandle, sortOrder: List<JdbcSortItem>): Boolean = true
+        /**
+         * TopN is pushable when every sort key is safe to order remotely. Non-string keys
+         * (numeric/date/boolean) are byte-exact across engines in every mode. String (VARCHAR/CHAR)
+         * sort keys are only safe at string-pushdown mode >= BINARY, where the init probe has proven
+         * DuckDB's ORDER BY is pure UTF-8 byte order (== Trino's VARCHAR codepoint order) including
+         * NULLS placement (REPORT-string-comparison-probe-duckdb-1.5.4.md "ORDER BY"). Below BINARY a
+         * string sort key blocks the whole TopN push (base-jdbc has no per-key partial TopN).
+         */
+        override fun supportsTopN(session: ConnectorSession, handle: JdbcTableHandle, sortOrder: List<JdbcSortItem>): Boolean =
+            sortOrder.all { isPushableSortKey(session, it.column.columnType) }
 
-        // ORDER BY ... LIMIT n IS a total order on the sort keys, but ties on the sort keys make the
-        // tail non-deterministic, so TopN is not guaranteed and Trino re-applies its TopNOperator.
-        override fun isTopNGuaranteed(session: ConnectorSession): Boolean = false
+        private fun isPushableSortKey(session: ConnectorSession, type: Type): Boolean =
+            when (type) {
+                is VarcharType, is CharType ->
+                    DuckBridgeSessionProperties.getStringPushdownMode(session).allowsFullStringComparison
+                else -> true
+            }
+
+        /**
+         * Guaranteed (Trino drops its own TopN) ONLY at mode >= BINARY: the string-comparison probe
+         * has verified DuckDB's ORDER BY byte-ordering and NULLS placement match Trino, so a pushed
+         * `ORDER BY ... LIMIT n` is a faithful TopN. Below BINARY (and for the tie-nondeterminism
+         * caution that predates the dial) it stays false so Trino re-applies its TopNOperator. Note
+         * `supportsTopN` already blocks string sort keys below BINARY, so at mode < BINARY a
+         * guaranteed=true would only ever apply to non-string keys — but we keep the whole guarantee
+         * probe-gated for a single, auditable rule.
+         */
+        override fun isTopNGuaranteed(session: ConnectorSession): Boolean =
+            DuckBridgeSessionProperties.getStringPushdownMode(session).allowsFullStringComparison
 
         override fun topNFunction(): Optional<TopNFunction> =
             Optional.of(
