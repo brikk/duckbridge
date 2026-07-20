@@ -47,9 +47,34 @@ class DuckBridgeExecutorFactory
         }
 
         private fun createQuackExecutor(tuning: DuckDbTuning): QuackDuckBridgeExecutor {
-            val host = requiredConfig(config.quackHost, "duckbridge.quack.host")
             val token = requiredConfig(config.quackToken, "duckbridge.quack.token")
-            return QuackDuckBridgeExecutor(host, config.quackPort, token, tuning, serverSideParityPathOrNull())
+            // Prefer explicit duckbridge.quack.host/port; otherwise reuse the jdbc:quack://host:port
+            // connection-url base-jdbc already uses for metadata, so the address isn't configured twice.
+            val explicitHost = config.quackHost
+            val (host, port) =
+                if (explicitHost != null) {
+                    explicitHost to config.quackPort
+                } else {
+                    parseQuackHostPort(baseJdbcConfig.connectionUrl)
+                        ?: throw TrinoException(
+                            CONFIGURATION_INVALID,
+                            "The QUACK execution engine needs a server address: set duckbridge.quack.host " +
+                                "(and duckbridge.quack.port), or use a jdbc:quack://host:port connection-url.",
+                        )
+                }
+            return QuackDuckBridgeExecutor(host, port, token, tuning, serverSideParityPathOrNull())
+        }
+
+        /** Extract host/port from a `jdbc:quack://host:port[/...]` connection-url; null if not a quack URL. */
+        private fun parseQuackHostPort(connectionUrl: String): Pair<String, Int>? {
+            val prefix = "jdbc:quack://"
+            if (!connectionUrl.startsWith(prefix)) {
+                return null
+            }
+            val authority = connectionUrl.removePrefix(prefix).substringBefore('/')
+            val host = authority.substringBefore(':').takeIf { it.isNotBlank() } ?: return null
+            val port = authority.substringAfter(':', "").toIntOrNull() ?: config.quackPort
+            return host to port
         }
 
         private fun requiredConfig(value: String?, key: String): String =

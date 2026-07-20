@@ -26,9 +26,11 @@ import io.trino.plugin.jdbc.ConnectionFactory
 import io.trino.plugin.jdbc.JdbcColumnHandle
 import io.trino.plugin.jdbc.JdbcOutputTableHandle
 import io.trino.plugin.jdbc.JdbcSortItem
+import io.trino.plugin.jdbc.JdbcSplit
 import io.trino.plugin.jdbc.JdbcTableHandle
 import io.trino.plugin.jdbc.JdbcTypeHandle
 import io.trino.plugin.jdbc.LongWriteFunction
+import io.trino.plugin.jdbc.PreparedQuery
 import io.trino.plugin.jdbc.QueryBuilder
 import io.trino.plugin.jdbc.expression.ParameterizedExpression
 import io.trino.plugin.jdbc.StandardColumnMappings.bigintColumnMapping
@@ -144,6 +146,27 @@ class DuckBridgeClient
             }
             return connection
         }
+
+        /**
+         * Render a split's read query to base-jdbc's [PreparedQuery] — the exact SQL (with `?`
+         * placeholders) and typed parameters the default JDBC path would execute, including the
+         * split's additional predicate and this table handle's pushed-down constraint/projection.
+         *
+         * Used by the T2 QUACK page source: `quack_query_by_name` takes a literal SQL string, so the
+         * provider inlines these parameters ([QuackParameterInliner]) before shipping the query
+         * server-side. Mirrors `BaseJdbcClient.buildSql`, but returns the un-prepared query instead
+         * of binding it to a live `PreparedStatement`. Opens a short-lived connection for identifier
+         * quoting exactly as base-jdbc's public `prepareQuery` does.
+         */
+        fun renderSplitQuery(
+            session: ConnectorSession,
+            split: JdbcSplit,
+            table: JdbcTableHandle,
+            columns: List<JdbcColumnHandle>,
+        ): PreparedQuery =
+            connectionFactory.openConnection(session).use { connection ->
+                prepareQuery(session, connection, table, Optional.empty(), columns, emptyMap(), Optional.of(split))
+            }
 
         private fun applySessionTimeZone(connection: Connection, session: ConnectorSession) {
             val trinoZone = session.timeZoneKey.id

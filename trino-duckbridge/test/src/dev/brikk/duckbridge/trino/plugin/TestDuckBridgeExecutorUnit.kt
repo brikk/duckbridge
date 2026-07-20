@@ -111,13 +111,11 @@ class TestDuckBridgeExecutorUnit {
     }
 
     @Test
-    fun quackExecutionEngineIsRejectedByConfigValidation() {
-        // Fail loud, never a config that lies: the QUACK T2 engine is gated on the upstream Quack
-        // pool rework; airlift bootstrap enforces this bean-validation property at startup.
-        assertThat(DuckBridgeConfig().setExecutionEngine(DuckBridgeExecutionEngine.QUACK).isExecutionEngineOperational)
-            .isFalse()
-        assertThat(DuckBridgeConfig().setExecutionEngine(DuckBridgeExecutionEngine.DUCKDB_LOCAL).isExecutionEngineOperational)
-            .isTrue()
-        assertThat(DuckBridgeConfig().isExecutionEngineOperational).isTrue()
+    fun executionEngineDefaultsToJdbc() {
+        // QUACK is no longer rejected at config time — it is wired (experimental) through the
+        // quack_query_by_name pushdown path. JDBC remains the default production engine.
+        assertThat(DuckBridgeConfig().executionEngine).isEqualTo(DuckBridgeExecutionEngine.JDBC)
+        assertThat(DuckBridgeConfig().setExecutionEngine(DuckBridgeExecutionEngine.QUACK).executionEngine)
+            .isEqualTo(DuckBridgeExecutionEngine.QUACK)
     }
 }

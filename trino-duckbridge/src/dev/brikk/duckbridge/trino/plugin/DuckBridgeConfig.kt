@@ -16,7 +16,6 @@ package dev.brikk.duckbridge.trino.plugin
 import io.airlift.configuration.Config
 import io.airlift.configuration.ConfigDescription
 import io.airlift.units.DataSize
-import jakarta.validation.constraints.AssertTrue
 
 /**
  * Connector-level configuration for the DuckBridge connector.
@@ -167,10 +166,20 @@ class DuckBridgeConfig {
 
     /**
      * Data-plane read strategy. Default [DuckBridgeExecutionEngine.JDBC] (the plain base-jdbc
-     * row-by-row path). [DuckBridgeExecutionEngine.DUCKDB_LOCAL] / [DuckBridgeExecutionEngine.QUACK]
-     * select the T2 Arrow page source — a BENCHMARK CHANNEL, not the default: Quack 1.5.4's fixed
-     * server-side connection pool exhausts under per-split churn, so QUACK is gated until the pool
-     * rework lands.
+     * row-by-row path, production). [DuckBridgeExecutionEngine.DUCKDB_LOCAL] /
+     * [DuckBridgeExecutionEngine.QUACK] select the T2 Arrow page source — an EXPERIMENTAL/BENCHMARK
+     * channel, never the default.
+     *
+     * QUACK is WIRED (experimental): [DuckBridgePageSourceProvider] renders base-jdbc's split query
+     * to a literal SQL string (parameters inlined by [QuackParameterInliner]) and ships it through
+     * `quack_query_by_name` via [QuackDuckBridgeExecutor]. Two INHERITED cautions from trino-ducklake
+     * do NOT obviously apply here and remain UNVERIFIED — treat as "measure, don't assume":
+     *   1. Server pool exhaustion — seen under DuckLake's per-file parallel splits; duckbridge uses
+     *      base-jdbc's single-split-per-query model, so that churn generator is absent.
+     *   2. "Multiple streaming scans" (duckdb-quack#150) — that is an ATTACH-mode local-optimizer
+     *      limit; both duckbridge remote paths run server-side (T3 quack-jdbc; T2 via
+     *      `quack_query_by_name`) and base-jdbc never pushes joins to the source, so the wall is
+     *      not on our read path.
      */
     var executionEngine: DuckBridgeExecutionEngine = DuckBridgeExecutionEngine.JDBC
         private set
@@ -181,22 +190,6 @@ class DuckBridgeConfig {
         this.executionEngine = executionEngine
         return this
     }
-
-    /**
-     * Fail loud, never silently degrade: the QUACK T2 Arrow engine is gated on the upstream Quack
-     * server pool rework (1.5.4's fixed server-side connection pool exhausts under per-split
-     * churn) and `buildSql` cannot yet emit the `quack_query_by_name`-wrapped SQL it needs.
-     * Accepting the setting and quietly serving the JDBC path instead would be a config that lies,
-     * so it is rejected at startup until the gate lifts. Remote Quack is served by the T3
-     * quack-jdbc transport (`connection-url=jdbc:quack://...`) in the interim.
-     */
-    @get:AssertTrue(
-        message = "duckbridge.execution-engine=QUACK is gated on the Quack server pool rework (1.5.4 pool " +
-            "exhaustion under per-split churn) and is not yet operational. Use the T3 quack-jdbc transport " +
-            "(connection-url=jdbc:quack://host:port) for remote Quack, or DUCKDB_LOCAL/JDBC engines.",
-    )
-    val isExecutionEngineOperational: Boolean
-        get() = executionEngine != DuckBridgeExecutionEngine.QUACK
 
     /** Quack server host for the T2 QUACK engine (the T3 quack-jdbc transport reads host from the URL). */
     var quackHost: String? = null

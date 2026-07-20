@@ -64,12 +64,35 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
   `InProcessDuckBridgeExecutor`, decoding `arrowExportStream` batches via
   `DuckBridgeArrowToPageConverter`. Integration-tested end-to-end (`TestDuckBridgeArrowEngine`:
   full scan, projection, domain + parity pushdown, count(*)).
-- **QUACK T2: GATED.** `QuackDuckBridgeExecutor` is ported and unit-tested, but the page-source provider
-  does NOT divert to it — selecting `execution-engine=QUACK` falls back to the JDBC record-set path with
-  a one-shot warning. **Known upstream gate (do not fight it): Quack 1.5.4's fixed server-side connection
-  pool exhausts under per-split churn, so T2-over-Quack is a benchmark channel, not the default, until
-  the pool rework lands.** Also, `buildSql` can't produce the `quack_query_by_name`-wrapped SQL the Quack
-  executor needs, so live wiring requires a small SQL-string extraction step deferred with the pool gate.
+- **QUACK T2: WIRED (experimental), green end-to-end.** `execution-engine=QUACK` now diverts to the
+  `QuackDuckBridgeExecutor` in `DuckBridgePageSourceProvider.createQuackArrowPageSource`. The startup
+  rejection (`isExecutionEngineOperational`) is gone. Flow: `DuckBridgeClient.renderSplitQuery` produces
+  base-jdbc's `PreparedQuery` (SQL + typed params) for the split → `QuackParameterInliner` renders the
+  params to DuckDB literals (fail loud on any type it can't render exactly) → the executor ships the
+  literal SQL server-side via `quack_query_by_name` and streams Arrow back through
+  `DuckBridgeExecutorPageSource`. The executor's host/port come from the `jdbc:quack://host:port`
+  connection-url (or explicit `duckbridge.quack.host/port`). Proven by `TestDuckBridgeQuackArrowEngine`
+  (full scan, projection, count(*), bigint/varchar/date predicate inlining, and `upper→trino_upper`
+  parity pushdown — all server-side over the wire). `QuackParameterInliner` inlines
+  bigint/int/smallint/tinyint, boolean, double, date, varchar/char today; other predicate-param types
+  throw `NOT_SUPPORTED` (fall back to `execution-engine=JDBC`) rather than risk a wrong literal. JDBC
+  stays the default.
+  - **Inherited cautions — UNVERIFIED here, measure don't assume.** Both came from trino-ducklake's
+    ATTACH-mode, per-file parallel-split usage, which duckbridge does not replicate:
+    - *Server pool exhaustion.* DuckLake opened many concurrent server connections via per-file streaming
+      scans (170+ files across 4 tables). duckbridge uses base-jdbc's DEFAULT single-split-per-query model
+      (no custom split manager) → one server-side query per scan. Measure with `quack_active_connections`
+      when wired; don't assume a ceiling. (Server pool is a hardcoded httplib `ThreadPool(128)` +
+      `keep_alive_max_count(128)`, `keep_alive_timeout(10)`; unchanged on the 1.5.5-bound branch and not
+      operator-configurable via `quack_serve`.)
+    - *"Multiple streaming scans ... not currently supported" (duckdb-quack#150).* This is an ATTACH-mode
+      LOCAL-optimizer check (`quack_optimizer.cpp` throws when a local plan has >1 quack streaming scan or
+      scan+insert against one connection). It does NOT fire in pushdown mode: T2 ships the whole query via
+      `quack_query_by_name` (server-side, single local TF scan) and T3 quack-jdbc executes server-side with
+      no local optimizer. base-jdbc also never pushes joins to the source. So this wall is off our read
+      path; it would only surface under a direct ATTACH-and-query-remote-tables model (we don't use one).
+      The `rctruta/sql-benchmarks-dagster#10` benchmark confirms: "quack attach" DNFs multi-table joins,
+      "quack pushdown" (the wrapper) completes.
 - Default is `execution-engine=JDBC` (production).
 
 ## Dropped from the ported executor surface

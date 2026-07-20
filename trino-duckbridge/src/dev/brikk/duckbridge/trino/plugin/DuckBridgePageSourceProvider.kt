@@ -41,11 +41,11 @@ import java.util.Optional
  * connection, so projection/predicate/limit/parity pushdown are exactly what the default path emits
  * — the T2 path only swaps how rows come back (columnar Arrow vs row-by-row record set).
  *
- * QUACK T2 is intentionally NOT wired here: it needs `quack_query_by_name` SQL-wrapping (which
- * `buildSql` can't produce) AND is gated behind Quack 1.5.4's server-side pool-exhaustion issue.
- * Selecting QUACK is rejected at startup by [DuckBridgeConfig.isExecutionEngineOperational]
- * (fail loud, never a config that lies); the [QuackDuckBridgeExecutor] machinery is ported and
- * unit-tested for when the gate lifts. See dev-docs/P3-NOTES.md.
+ * QUACK T2 is wired (experimental) via [createQuackArrowPageSource]: base-jdbc's split query is
+ * rendered to a literal SQL string ([DuckBridgeClient.renderSplitQuery] + [QuackParameterInliner])
+ * and shipped server-side through `quack_query_by_name` by the [QuackDuckBridgeExecutor]. The
+ * inherited pool-exhaustion and "multiple streaming scans" cautions are UNVERIFIED under this
+ * connector's single-split-per-query, pushdown model — measure, don't assume. See dev-docs/P3-NOTES.md.
  */
 class DuckBridgePageSourceProvider
     @Inject
@@ -65,12 +65,14 @@ class DuckBridgePageSourceProvider
             columns: List<ColumnHandle>,
             dynamicFilter: DynamicFilter,
         ): ConnectorPageSource {
-            if (config.executionEngine != DuckBridgeExecutionEngine.DUCKDB_LOCAL) {
-                // QUACK is rejected at config time (DuckBridgeConfig.isExecutionEngineOperational),
-                // so the only non-Arrow engine reaching here is the default JDBC path.
-                return delegate.createPageSource(transaction, session, split, table, credentials, columns, dynamicFilter)
+            return when (config.executionEngine) {
+                DuckBridgeExecutionEngine.JDBC ->
+                    delegate.createPageSource(transaction, session, split, table, credentials, columns, dynamicFilter)
+                DuckBridgeExecutionEngine.DUCKDB_LOCAL ->
+                    createArrowPageSource(session, split as JdbcSplit, table as JdbcTableHandle, columns)
+                DuckBridgeExecutionEngine.QUACK ->
+                    createQuackArrowPageSource(session, split as JdbcSplit, table as JdbcTableHandle, columns)
             }
-            return createArrowPageSource(session, split as JdbcSplit, table as JdbcTableHandle, columns)
         }
 
         private fun createArrowPageSource(
@@ -98,5 +100,37 @@ class DuckBridgePageSourceProvider
             }
         }
 
+        /**
+         * T2 QUACK data plane. base-jdbc's split query is rendered to a literal SQL string (its `?`
+         * parameters inlined by [QuackParameterInliner]) and shipped server-side through
+         * `quack_query_by_name` by the [QuackDuckBridgeExecutor], which returns the result as an
+         * Arrow stream. Projection/predicate/limit/parity pushdown are exactly what the default JDBC
+         * path emits — only the transport + data plane differ.
+         */
+        private fun createQuackArrowPageSource(
+            session: ConnectorSession,
+            split: JdbcSplit,
+            table: JdbcTableHandle,
+            columns: List<ColumnHandle>,
+        ): ConnectorPageSource {
+            val jdbcColumns = columns.map { it as JdbcColumnHandle }
+            val columnTypes: List<Type> = jdbcColumns.map { it.columnType }
+            val duckDbZone = TrinoTimeZoneNormaliser.normalise(session.timeZoneKey.id)
 
+            val client = jdbcClient as? DuckBridgeClient
+                ?: error("QUACK page source requires the DuckBridgeClient (@ForBaseJdbc)")
+            val prepared = client.renderSplitQuery(session, split, table, jdbcColumns)
+            val sql = QuackParameterInliner.inline(prepared)
+
+            val executor = executorFactory.create()
+            var context: DuckBridgeExecutor.ExecutionContext? = null
+            try {
+                context = executor.execute(DuckBridgeExecutor.ExecutionRequest(sql, duckDbZone))
+                val converter = DuckBridgeArrowToPageConverter(columnTypes)
+                return DuckBridgeExecutorPageSource(context, converter, jdbcColumns.size)
+            } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
+                runCatching { context?.close() }
+                throw t
+            }
+        }
     }

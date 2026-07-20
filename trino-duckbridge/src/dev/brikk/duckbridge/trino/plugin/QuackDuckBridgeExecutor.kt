@@ -34,8 +34,13 @@ import java.util.concurrent.ConcurrentHashMap
  * We use the DuckDB driver here — not quack-jdbc — precisely because only the DuckDB driver exposes
  * `DuckDBResultSet.arrowExportStream`, the Arrow surface this data plane needs.
  *
- * **Known gate (do not fight it):** Quack 1.5.4's fixed server-side connection pool exhausts under
- * per-split churn, so this is a benchmark channel, not the default, until the pool rework lands.
+ * **Status: experimental/benchmark channel, never the default.** This executor runs in Quack
+ * PUSHDOWN mode — the whole query is shipped server-side via `quack_query_by_name` — so it does NOT
+ * hit the ATTACH-mode "multiple streaming scans" wall (duckdb-quack#150). Two inherited cautions
+ * from trino-ducklake are UNVERIFIED under duckbridge's single-split-per-query, pushdown model and
+ * should be MEASURED, not assumed: (1) fixed server-side pool exhaustion under per-split churn
+ * (seen with DuckLake's per-file parallel splits), (2) the streaming-scans limit (attach-mode only).
+ * See dev-docs/P3-NOTES.md.
  */
 class QuackDuckBridgeExecutor(
     private val host: String,
