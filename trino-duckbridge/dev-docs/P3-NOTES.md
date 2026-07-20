@@ -118,7 +118,9 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
         carries its child/element type — so the full `LIST<INTEGER>` type IS on the wire. quack-jdbc
         drops it: `getColumnTypeName` returns bare `LIST` and values come back as a plain
         `java.util.ArrayList` (not a typed `java.sql.Array` with a base type). So the fix belongs in
-        **gizmodata's quack-jdbc**, not duckdb/duckdb-quack.
+        **gizmodata's quack-jdbc**, not duckdb/duckdb-quack. Filed:
+        [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6); tracked in
+        [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md).
       - Our `toColumnMapping` is correct — it can't invent the element type the driver discarded — and
         failing loud is right (never wrong data). It affects declared ARRAY columns too (not just
         computed `list()`) *over the Quack transport*. Pinned by `bareListResultTypeFailsLoud`;
