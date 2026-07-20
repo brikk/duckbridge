@@ -96,6 +96,17 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
       path; it would only surface under a direct ATTACH-and-query-remote-tables model (we don't use one).
       The `rctruta/sql-benchmarks-dagster#10` benchmark confirms: "quack attach" DNFs multi-table joins,
       "quack pushdown" (the wrapper) completes.
+  - **`query()` pass-through over QUACK works, incl. joins.** The base-jdbc `query()` PTF (user-authored
+    raw DuckDB SQL) flows through the same QUACK page source, so it is executed server-side via
+    `quack_query_by_name`. `TestDuckBridgeQuackPassThroughQuery` proves: simple select, quote+unicode
+    round-trip through the extra `quack_query_by_name` quoting layer, a DuckDB-native scalar (`printf`),
+    and a **self-join** — the join *completes* because pushdown mode runs it server-side as a single
+    local TF scan (exactly the attach-mode DNF from #150 that pushdown avoids).
+    - *KNOWN LIMITATION (fail-loud, pinned):* a bare DuckDB `LIST` result column (e.g. from `list()`)
+      is described over quack-jdbc with no element type, so `DuckBridgeClient.toColumnMapping` can't
+      resolve it and the query fails loud at analysis ("Unsupported type ... LIST"). Not a data-plane
+      bug — it needs array-element-type inference from the describe path (separate task). Pinned by
+      `bareListResultTypeFailsLoud`. Declared ARRAY *columns* are unaffected (they carry element type).
 - Default is `execution-engine=JDBC` (production).
 
 ## Dropped from the ported executor surface
