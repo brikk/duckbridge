@@ -102,11 +102,30 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
     round-trip through the extra `quack_query_by_name` quoting layer, a DuckDB-native scalar (`printf`),
     and a **self-join** — the join *completes* because pushdown mode runs it server-side as a single
     local TF scan (exactly the attach-mode DNF from #150 that pushdown avoids).
-    - *KNOWN LIMITATION (fail-loud, pinned):* a bare DuckDB `LIST` result column (e.g. from `list()`)
-      is described over quack-jdbc with no element type, so `DuckBridgeClient.toColumnMapping` can't
-      resolve it and the query fails loud at analysis ("Unsupported type ... LIST"). Not a data-plane
-      bug — it needs array-element-type inference from the describe path (separate task). Pinned by
-      `bareListResultTypeFailsLoud`. Declared ARRAY *columns* are unaffected (they carry element type).
+    - *KNOWN LIMITATION — quack-jdbc metadata bug (UPSTREAM, not ours):* a LIST/array result column is
+      described over quack-jdbc with **no element type**, so `DuckBridgeClient.toColumnMapping` can't
+      resolve it and the query fails loud at analysis ("Unsupported type ... LIST"). Probed both drivers
+      on the same queries (`arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs`):
+      | query | duckdb-jdbc `getColumnTypeName` | quack-jdbc |
+      |---|---|---|
+      | `CAST([1,2] AS BIGINT[])` | `BIGINT[]` | `LIST` |
+      | `list(x)` / `list(x ORDER BY x)` | `INTEGER[]` | `LIST` |
+      DuckDB's own JDBC preserves the element type; **quack-jdbc collapses every list/array to bare
+      `LIST`**, dropping it. So this is a quack-jdbc fidelity bug to report upstream, not a duckbridge or
+      DuckDB-core bug, and it affects declared ARRAY columns too (not just computed `list()`) *over the
+      Quack transport*. Our fail-loud behavior is correct (never wrong data). Pinned by
+      `bareListResultTypeFailsLoud`; `arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs` is the
+      watch-canary that flips green→red when upstream starts reporting `...[]`. (Declared ARRAY columns
+      over the embedded/DUCKDB_LOCAL path are unaffected — that path uses duckdb-jdbc, which is faithful.)
+- **QUACK parameter inlining covers the full pushdown surface (tstz is moot).** The expression-pushdown
+  path (`DuckBridgeExpressionTranslator.translateConstant`) renders constants INLINE as SQL text, not as
+  `?` params. So the only source of bound parameters is base-jdbc's domain pushdown via `toColumnMapping`,
+  whose pushable types are exactly boolean / tinyint / smallint / integer / bigint / real / double /
+  decimal / date / timestamp / varchar·char — precisely what `QuackParameterInliner` renders. TIMESTAMP
+  WITH TIME ZONE has NO `toColumnMapping` branch (no domain pushdown), so it never arrives as a `?`
+  param; a tstz constant inside a pushed expression is either inlined as literal SQL or the expression is
+  retained by Trino. The inliner's `NOT_SUPPORTED` throw is therefore a defense-in-depth net, not an
+  expected path.
 - Default is `execution-engine=JDBC` (production).
 
 ## Dropped from the ported executor surface

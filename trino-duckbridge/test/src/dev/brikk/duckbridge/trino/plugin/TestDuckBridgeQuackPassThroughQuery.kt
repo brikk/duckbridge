@@ -13,6 +13,7 @@
  */
 package dev.brikk.duckbridge.trino.plugin
 
+import com.gizmodata.quack.jdbc.sql.QuackDriver
 import io.trino.testing.AbstractTestQueryFramework
 import io.trino.testing.QueryRunner
 import org.assertj.core.api.Assertions.assertThat
@@ -21,6 +22,8 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import java.sql.DriverManager
+import java.util.Properties
 
 /**
  * The Trino base-jdbc `query()` pass-through table function over the T2 QUACK engine
@@ -99,6 +102,36 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
                 .materializedRows
                 .map { it.getField(0) as String }
         assertThat(labels).containsExactly("1=Alice", "2=bob", "3=straße", "4=δοκιμή")
+    }
+
+    /**
+     * WATCH CANARY for the upstream fix. The `bareListResultTypeFailsLoud` failure is a **quack-jdbc
+     * metadata bug**, not ours: for a LIST/array result column, DuckDB's own JDBC driver reports the
+     * element type in the column type name (`INTEGER[]`), but quack-jdbc collapses every list/array to
+     * bare `LIST` — dropping the element type our `toColumnMapping` needs. This test pins both sides;
+     * when quack-jdbc starts reporting `...[]`, the quack-jdbc assertion here flips and prompts us to
+     * enable array support over the Quack transport. Reproduction for an upstream bug report.
+     */
+    @Test
+    fun arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs() {
+        val listQuery = "SELECT list(x) AS a FROM (VALUES (1),(2)) t(x)"
+        DriverManager.getConnection("jdbc:duckdb:").use { conn ->
+            conn.createStatement().use { st ->
+                st.executeQuery(listQuery).use { rs ->
+                    // DuckDB-JDBC preserves the element type.
+                    assertThat(rs.metaData.getColumnTypeName(1)).isEqualTo("INTEGER[]")
+                }
+            }
+        }
+        val props = Properties().apply { setProperty("token", server.token) }
+        QuackDriver().connect(server.connectionUrl(), props).use { conn ->
+            conn.createStatement().use { st ->
+                st.executeQuery(listQuery).use { rs ->
+                    // quack-jdbc drops it to bare LIST — the bug. Flip this when upstream fixes it.
+                    assertThat(rs.metaData.getColumnTypeName(1)).isEqualTo("LIST")
+                }
+            }
+        }
     }
 
     @Test
