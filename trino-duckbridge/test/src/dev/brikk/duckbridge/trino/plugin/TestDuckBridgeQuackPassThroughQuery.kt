@@ -106,11 +106,14 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
 
     /**
      * WATCH CANARY for the upstream fix. The `bareListResultTypeFailsLoud` failure is a **quack-jdbc
-     * metadata bug**, not ours: for a LIST/array result column, DuckDB's own JDBC driver reports the
-     * element type in the column type name (`INTEGER[]`), but quack-jdbc collapses every list/array to
-     * bare `LIST` — dropping the element type our `toColumnMapping` needs. This test pins both sides;
-     * when quack-jdbc starts reporting `...[]`, the quack-jdbc assertion here flips and prompts us to
-     * enable array support over the Quack transport. Reproduction for an upstream bug report.
+     * client-driver bug**, not ours: for a LIST/array result column, DuckDB's own JDBC driver reports
+     * the element type in the column type name (`INTEGER[]`), but quack-jdbc collapses every list/array
+     * to bare `LIST`. It is NOT the protocol/server — the Quack RPC `PrepareResponse` serializes a full
+     * DuckDB `LogicalType` (which carries the LIST child type), so the element type is on the wire;
+     * quack-jdbc simply doesn't surface it (`getColumnTypeName` = `LIST`; values arrive as a plain
+     * `java.util.ArrayList`, not a typed `java.sql.Array`). This test pins both sides; when quack-jdbc
+     * starts reporting `...[]`, the quack-jdbc assertion here flips and prompts us to enable array
+     * support over the Quack transport. Reproduction for a gizmodata/quack-jdbc bug report.
      */
     @Test
     fun arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs() {

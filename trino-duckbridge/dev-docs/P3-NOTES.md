@@ -111,12 +111,20 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
       | `CAST([1,2] AS BIGINT[])` | `BIGINT[]` | `LIST` |
       | `list(x)` / `list(x ORDER BY x)` | `INTEGER[]` | `LIST` |
       DuckDB's own JDBC preserves the element type; **quack-jdbc collapses every list/array to bare
-      `LIST`**, dropping it. So this is a quack-jdbc fidelity bug to report upstream, not a duckbridge or
-      DuckDB-core bug, and it affects declared ARRAY columns too (not just computed `list()`) *over the
-      Quack transport*. Our fail-loud behavior is correct (never wrong data). Pinned by
-      `bareListResultTypeFailsLoud`; `arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs` is the
-      watch-canary that flips green→red when upstream starts reporting `...[]`. (Declared ARRAY columns
-      over the embedded/DUCKDB_LOCAL path are unaffected — that path uses duckdb-jdbc, which is faithful.)
+      `LIST`**, dropping it.
+      - *Isolated to the quack-jdbc CLIENT DRIVER — not the protocol, server, or DuckDB core.* The Quack
+        RPC `PrepareResponse` serializes `vector<LogicalType> result_types`
+        (`duckdb-quack/src/serialize_quack_message.cpp:123`), and a DuckDB `LogicalType` for a LIST
+        carries its child/element type — so the full `LIST<INTEGER>` type IS on the wire. quack-jdbc
+        drops it: `getColumnTypeName` returns bare `LIST` and values come back as a plain
+        `java.util.ArrayList` (not a typed `java.sql.Array` with a base type). So the fix belongs in
+        **gizmodata's quack-jdbc**, not duckdb/duckdb-quack.
+      - Our `toColumnMapping` is correct — it can't invent the element type the driver discarded — and
+        failing loud is right (never wrong data). It affects declared ARRAY columns too (not just
+        computed `list()`) *over the Quack transport*. Pinned by `bareListResultTypeFailsLoud`;
+        `arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs` is the watch-canary that flips green→red
+        when quack-jdbc starts reporting `...[]`. (Declared ARRAY columns over the embedded/DUCKDB_LOCAL
+        path are unaffected — that path uses duckdb-jdbc, which is faithful.)
 - **QUACK parameter inlining covers the full pushdown surface (tstz is moot).** The expression-pushdown
   path (`DuckBridgeExpressionTranslator.translateConstant`) renders constants INLINE as SQL text, not as
   `?` params. So the only source of bound parameters is base-jdbc's domain pushdown via `toColumnMapping`,
