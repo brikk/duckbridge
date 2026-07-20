@@ -13,12 +13,14 @@
  */
 package dev.brikk.duckbridge.trino.plugin
 
+import com.gizmodata.quack.jdbc.sql.QuackDriver
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.images.builder.ImageFromDockerfile
 import org.testcontainers.utility.MountableFile
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Properties
 
 /**
  * A real out-of-process DuckDB hosting a Quack RPC listener — the remote server the T3
@@ -66,6 +68,24 @@ internal class TestingQuackServer : AutoCloseable {
         }
         container.copyFileToContainer(MountableFile.forHostPath(binary), IN_CONTAINER_PARITY_PATH)
         return true
+    }
+
+    /**
+     * Server-side count of currently-active Quack connections, read via `quack_active_connections()`
+     * over a short-lived quack-jdbc connection. Lets a test replace the inherited "pool exhaustion"
+     * fear with an actual number: how many server threads the connector's per-query churn holds.
+     * Note the reading connection itself counts as one while open.
+     */
+    fun activeConnectionCount(): Int {
+        val props = Properties().apply { setProperty("token", token) }
+        QuackDriver().connect(connectionUrl(), props).use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT count(*) FROM quack_active_connections()").use { rs ->
+                    check(rs.next()) { "quack_active_connections() returned no rows" }
+                    return rs.getInt(1)
+                }
+            }
+        }
     }
 
     private fun containerPlatform(): String =

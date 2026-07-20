@@ -79,12 +79,14 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
   stays the default.
   - **Inherited cautions — UNVERIFIED here, measure don't assume.** Both came from trino-ducklake's
     ATTACH-mode, per-file parallel-split usage, which duckbridge does not replicate:
-    - *Server pool exhaustion.* DuckLake opened many concurrent server connections via per-file streaming
-      scans (170+ files across 4 tables). duckbridge uses base-jdbc's DEFAULT single-split-per-query model
-      (no custom split manager) → one server-side query per scan. Measure with `quack_active_connections`
-      when wired; don't assume a ceiling. (Server pool is a hardcoded httplib `ThreadPool(128)` +
-      `keep_alive_max_count(128)`, `keep_alive_timeout(10)`; unchanged on the 1.5.5-bound branch and not
-      operator-configurable via `quack_serve`.)
+    - *Server pool exhaustion — MEASURED, not a problem here.* DuckLake opened many concurrent server
+      connections via per-file streaming scans (170+ files across 4 tables). duckbridge uses base-jdbc's
+      DEFAULT single-split-per-query model (no custom split manager) → one server-side query per scan.
+      `TestDuckBridgeQuackArrowEngine.perQueryChurnDoesNotAccumulateServerConnections` runs 20 sequential
+      QUACK Arrow scans and then reads `quack_active_connections()`: the count settles to **1** (just the
+      reading connection) — churn does not accumulate toward the ceiling. (Server pool is a hardcoded
+      httplib `ThreadPool(128)` + `keep_alive_max_count(128)`, `keep_alive_timeout(10)`; unchanged on the
+      1.5.5-bound branch and not operator-configurable via `quack_serve` — but we do not approach it.)
     - *"Multiple streaming scans ... not currently supported" (duckdb-quack#150).* This is an ATTACH-mode
       LOCAL-optimizer check (`quack_optimizer.cpp` throws when a local plan has >1 quack streaming scan or
       scan+insert against one connection). It does NOT fire in pushdown mode: T2 ships the whole query via

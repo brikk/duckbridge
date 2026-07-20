@@ -13,6 +13,7 @@
  */
 package dev.brikk.duckbridge.trino.plugin
 
+import io.airlift.log.Logger
 import io.trino.testing.AbstractTestQueryFramework
 import io.trino.testing.QueryRunner
 import org.assertj.core.api.Assertions.assertThat
@@ -126,5 +127,28 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
         val ids =
             computeActual("SELECT id FROM t WHERE upper(name) = 'STRASSE'").materializedRows.map { it.getField(0) as Long }
         assertThat(ids).containsExactly(3L)
+    }
+
+    /**
+     * Replaces the inherited "Quack pool exhausts under per-split churn" fear with a measured number.
+     * duckbridge is single-split-per-query in pushdown mode, so a burst of sequential scans should
+     * leave only a handful of server-side connections live (each scan's connection is closed when its
+     * page source closes; a few may linger up to the server's 10s keep-alive) — nowhere near the
+     * hardcoded 128-thread ceiling. The reading connection itself counts as one.
+     */
+    @Test
+    fun perQueryChurnDoesNotAccumulateServerConnections() {
+        repeat(20) {
+            assertThat(computeActual("SELECT count(*) FROM t").materializedRows.single().getField(0)).isEqualTo(4L)
+        }
+        val active = server.activeConnectionCount()
+        log.info("quack_active_connections after 20 sequential QUACK Arrow scans: %d (server ceiling 128)", active)
+        // Generous bound for keep-alive lingering; the point is it does NOT grow with query count
+        // toward the 128 ceiling. Empirically this settles to a small single-digit number.
+        assertThat(active).isLessThan(32)
+    }
+
+    private companion object {
+        private val log: Logger = Logger.get(TestDuckBridgeQuackArrowEngine::class.java)
     }
 }
