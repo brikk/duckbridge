@@ -22,13 +22,21 @@ import io.trino.spi.type.BigintType.BIGINT
 import io.trino.spi.type.BooleanType.BOOLEAN
 import io.trino.spi.type.CharType
 import io.trino.spi.type.DateType.DATE
+import io.trino.spi.type.DecimalType
 import io.trino.spi.type.DoubleType.DOUBLE
+import io.trino.spi.type.Int128
 import io.trino.spi.type.IntegerType.INTEGER
+import io.trino.spi.type.RealType.REAL
 import io.trino.spi.type.SmallintType.SMALLINT
+import io.trino.spi.type.TimestampType
 import io.trino.spi.type.TinyintType.TINYINT
 import io.trino.spi.type.Type
 import io.trino.spi.type.VarcharType
+import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /**
  * Inlines base-jdbc's [PreparedQuery] parameters into a literal SQL string for the T2 QUACK engine.
@@ -60,10 +68,55 @@ object QuackParameterInliner {
             type == BIGINT || type == INTEGER || type == SMALLINT || type == TINYINT -> (value as Long).toString()
             type == BOOLEAN -> if (value as Boolean) "TRUE" else "FALSE"
             type == DOUBLE -> renderDouble(value as Double)
+            type == REAL -> renderReal(value as Long)
             type == DATE -> "DATE '" + LocalDate.ofEpochDay(value as Long).toString() + "'"
+            type is DecimalType -> renderDecimal(type, value)
+            type is TimestampType -> renderTimestamp(type, value)
             type is VarcharType || type is CharType -> renderString(value)
             else -> throw unsupported(type)
         }
+    }
+
+    /** REAL native value is the float's int bits packed in a long (Trino's REAL javaType). */
+    private fun renderReal(intBits: Long): String {
+        val f = java.lang.Float.intBitsToFloat(intBits.toInt())
+        if (f.isNaN() || f.isInfinite()) {
+            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a non-finite REAL parameter ($f)")
+        }
+        return "CAST('$f' AS REAL)"
+    }
+
+    /** Short decimals arrive as an unscaled long; long decimals as an [Int128]. */
+    private fun renderDecimal(type: DecimalType, value: Any): String {
+        val decimal =
+            if (type.isShort) {
+                BigDecimal.valueOf(value as Long, type.scale)
+            } else {
+                BigDecimal((value as Int128).toBigInteger(), type.scale)
+            }
+        return "CAST('${decimal.toPlainString()}' AS DECIMAL(${type.precision}, ${type.scale}))"
+    }
+
+    /**
+     * Short TIMESTAMP (precision ≤ 6) arrives as epoch-microseconds of the session-independent wall
+     * clock; render it as a zone-free DuckDB `TIMESTAMP` literal. Sub-microsecond precision (> 6)
+     * arrives as a `LongTimestamp` object and is not inlined (fail loud).
+     */
+    private fun renderTimestamp(type: TimestampType, value: Any): String {
+        if (!type.isShort) {
+            throw TrinoException(
+                NOT_SUPPORTED,
+                "QUACK T2: cannot inline a TIMESTAMP($type) parameter with sub-microsecond precision",
+            )
+        }
+        val micros = value as Long
+        val seconds = Math.floorDiv(micros, MICROS_PER_SECOND)
+        val microOfSecond = Math.floorMod(micros, MICROS_PER_SECOND)
+        val wallClock = LocalDateTime.ofEpochSecond(seconds, (microOfSecond * NANOS_PER_MICRO).toInt(), ZoneOffset.UTC)
+        val base = wallClock.format(TIMESTAMP_FORMAT)
+        // Explicit seconds always (LocalDateTime.toString drops :00); micros only when present.
+        val text = if (microOfSecond == 0L) base else "$base." + microOfSecond.toString().padStart(6, '0').trimEnd('0')
+        return "TIMESTAMP '$text'"
     }
 
     private fun renderString(value: Any): String {
@@ -127,4 +180,8 @@ object QuackParameterInliner {
         }
         return sb.toString()
     }
+
+    private const val MICROS_PER_SECOND = 1_000_000L
+    private const val NANOS_PER_MICRO = 1_000L
+    private val TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 }

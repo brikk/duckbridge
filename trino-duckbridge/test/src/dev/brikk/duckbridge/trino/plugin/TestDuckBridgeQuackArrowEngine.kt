@@ -63,11 +63,13 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
 
     @BeforeAll
     fun createData() {
-        computeActual("CREATE TABLE t (id bigint, name varchar, birth date)")
+        computeActual("CREATE TABLE t (id bigint, name varchar, birth date, price decimal(10,2), score real, ts timestamp)")
         computeActual(
             "INSERT INTO t VALUES " +
-                "(1, 'Alice', DATE '1990-05-01'), (2, 'bob', DATE '1985-12-30'), " +
-                "(3, 'straße', DATE '2000-02-29'), (4, 'δοκιμή', DATE '1970-01-01')",
+                "(1, 'Alice', DATE '1990-05-01', DECIMAL '10.50', REAL '1.5', TIMESTAMP '1990-05-01 12:30:00'), " +
+                "(2, 'bob', DATE '1985-12-30', DECIMAL '20.00', REAL '2.5', TIMESTAMP '1985-12-30 00:00:00'), " +
+                "(3, 'straße', DATE '2000-02-29', DECIMAL '30.25', REAL '3.5', TIMESTAMP '2000-02-29 01:02:03'), " +
+                "(4, 'δοκιμή', DATE '1970-01-01', DECIMAL '40.00', REAL '4.5', TIMESTAMP '1970-01-01 00:00:00')",
         )
     }
 
@@ -119,6 +121,33 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
                 .materializedRows
                 .map { it.getField(0) as Long }
         assertThat(ids).containsExactly(1L, 3L)
+    }
+
+    @Test
+    fun decimalPredicateInlinedOverQuackArrow() {
+        val ids =
+            computeActual("SELECT id FROM t WHERE price >= DECIMAL '30.00' ORDER BY id")
+                .materializedRows
+                .map { it.getField(0) as Long }
+        assertThat(ids).containsExactly(3L, 4L)
+    }
+
+    @Test
+    fun realPredicateInlinedOverQuackArrow() {
+        val ids =
+            computeActual("SELECT id FROM t WHERE score >= REAL '3.0' ORDER BY id")
+                .materializedRows
+                .map { it.getField(0) as Long }
+        assertThat(ids).containsExactly(3L, 4L)
+    }
+
+    @Test
+    fun timestampPredicateInlinedOverQuackArrow() {
+        val ids =
+            computeActual("SELECT id FROM t WHERE ts >= TIMESTAMP '1995-01-01 00:00:00' ORDER BY id")
+                .materializedRows
+                .map { it.getField(0) as Long }
+        assertThat(ids).containsExactly(3L)
     }
 
     @Test

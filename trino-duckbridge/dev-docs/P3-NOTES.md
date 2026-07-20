@@ -74,9 +74,10 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
   connection-url (or explicit `duckbridge.quack.host/port`). Proven by `TestDuckBridgeQuackArrowEngine`
   (full scan, projection, count(*), bigint/varchar/date predicate inlining, and `upper→trino_upper`
   parity pushdown — all server-side over the wire). `QuackParameterInliner` inlines
-  bigint/int/smallint/tinyint, boolean, double, date, varchar/char today; other predicate-param types
-  throw `NOT_SUPPORTED` (fall back to `execution-engine=JDBC`) rather than risk a wrong literal. JDBC
-  stays the default.
+  bigint/int/smallint/tinyint, boolean, double, real, decimal (short + long/Int128), date, timestamp
+  (≤ µs, zone-free wall clock), and varchar/char; TIMESTAMP WITH TIME ZONE, sub-µs timestamps, and any
+  other predicate-param type throw `NOT_SUPPORTED` (fall back to `execution-engine=JDBC`) rather than
+  risk a wrong literal. JDBC stays the default.
   - **Inherited cautions — UNVERIFIED here, measure don't assume.** Both came from trino-ducklake's
     ATTACH-mode, per-file parallel-split usage, which duckbridge does not replicate:
     - *Server pool exhaustion — MEASURED, not a problem here.* DuckLake opened many concurrent server

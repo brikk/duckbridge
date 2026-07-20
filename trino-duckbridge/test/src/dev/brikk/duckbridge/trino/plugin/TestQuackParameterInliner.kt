@@ -20,12 +20,19 @@ import io.trino.spi.TrinoException
 import io.trino.spi.type.BigintType.BIGINT
 import io.trino.spi.type.BooleanType.BOOLEAN
 import io.trino.spi.type.DateType.DATE
+import io.trino.spi.type.DecimalType.createDecimalType
+import io.trino.spi.type.Int128
+import io.trino.spi.type.RealType.REAL
 import io.trino.spi.type.TimestampType.TIMESTAMP_MICROS
+import io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MICROS
 import io.trino.spi.type.VarcharType.VARCHAR
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.math.BigInteger
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.Optional
 
 class TestQuackParameterInliner {
@@ -77,8 +84,44 @@ class TestQuackParameterInliner {
     }
 
     @Test
+    fun inlinesRealAsCast() {
+        val q = PreparedQuery("SELECT * FROM t WHERE r = ?", listOf(param(REAL, java.lang.Float.floatToIntBits(2.5f).toLong())))
+        assertThat(QuackParameterInliner.inline(q)).isEqualTo("SELECT * FROM t WHERE r = CAST('2.5' AS REAL)")
+    }
+
+    @Test
+    fun inlinesShortDecimalAsCast() {
+        // DECIMAL(5,2) unscaled 12345 = 123.45
+        val q = PreparedQuery("SELECT * FROM t WHERE d = ?", listOf(param(createDecimalType(5, 2), 12345L)))
+        assertThat(QuackParameterInliner.inline(q)).isEqualTo("SELECT * FROM t WHERE d = CAST('123.45' AS DECIMAL(5, 2))")
+    }
+
+    @Test
+    fun inlinesLongDecimalAsCast() {
+        val unscaled = Int128.valueOf(BigInteger("123456789012345678901234"))
+        val q = PreparedQuery("SELECT * FROM t WHERE d = ?", listOf(param(createDecimalType(38, 4), unscaled)))
+        assertThat(QuackParameterInliner.inline(q))
+            .isEqualTo("SELECT * FROM t WHERE d = CAST('12345678901234567890.1234' AS DECIMAL(38, 4))")
+    }
+
+    @Test
+    fun inlinesTimestampAsZoneFreeLiteral() {
+        val micros = LocalDateTime.of(1990, 5, 1, 12, 30, 0).toEpochSecond(ZoneOffset.UTC) * 1_000_000L
+        val q = PreparedQuery("SELECT * FROM t WHERE ts = ?", listOf(param(TIMESTAMP_MICROS, micros)))
+        assertThat(QuackParameterInliner.inline(q)).isEqualTo("SELECT * FROM t WHERE ts = TIMESTAMP '1990-05-01 12:30:00'")
+    }
+
+    @Test
+    fun inlinesTimestampWithMicroseconds() {
+        val micros = LocalDateTime.of(2000, 2, 29, 1, 2, 3).toEpochSecond(ZoneOffset.UTC) * 1_000_000L + 456_000L
+        val q = PreparedQuery("SELECT * FROM t WHERE ts = ?", listOf(param(TIMESTAMP_MICROS, micros)))
+        assertThat(QuackParameterInliner.inline(q)).isEqualTo("SELECT * FROM t WHERE ts = TIMESTAMP '2000-02-29 01:02:03.456'")
+    }
+
+    @Test
     fun unsupportedTypeFailsLoud() {
-        val q = PreparedQuery("SELECT * FROM t WHERE ts = ?", listOf(param(TIMESTAMP_MICROS, 0L)))
+        // TIMESTAMP WITH TIME ZONE is deliberately not inlined (zone-rendering hazard).
+        val q = PreparedQuery("SELECT * FROM t WHERE ts = ?", listOf(param(TIMESTAMP_TZ_MICROS, 0L)))
         assertThatThrownBy { QuackParameterInliner.inline(q) }
             .isInstanceOf(TrinoException::class.java)
             .hasMessageContaining("cannot yet inline")
