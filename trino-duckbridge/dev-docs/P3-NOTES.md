@@ -105,11 +105,12 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
     - *RESOLVED via the brikk quack-jdbc fork (was an upstream quack-jdbc metadata bug).* A LIST/array
       result column was described over quack-jdbc with **no element type**, so
       `DuckBridgeClient.toColumnMapping` couldn't resolve it and the query failed loud ("Unsupported
-      type ... LIST"). Fixed in `dev.brikk.duckdb:quack-jdbc:0.3.0-brikk-SNAPSHOT` (recurse into the
-      LIST/ARRAY child type in `JdbcTypeMap.typeName`); duckbridge now depends on that snapshot, so
-      arrays work over QUACK. See [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md) (Q1) and
-      [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6); revert to upstream once
-      released. Original probe of both drivers on the same queries:
+      type ... LIST"). Fixed in `dev.brikk.duckdb:quack-jdbc:0.3.0` (Maven Central) — our maintained fork
+      of gizmodata's driver — which recurses into the LIST/ARRAY child type in `JdbcTypeMap.typeName`;
+      duckbridge depends on it, so arrays work over QUACK. See
+      [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md) (Q1) and
+      [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6). Original probe of both
+      drivers on the same queries:
       | query | duckdb-jdbc `getColumnTypeName` | quack-jdbc |
       |---|---|---|
       | `CAST([1,2] AS BIGINT[])` | `BIGINT[]` | `LIST` |
@@ -128,8 +129,7 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
       - The fix belonged in **gizmodata's quack-jdbc**, not duckdb/duckdb-quack — the element type is on
         the wire; the driver just wasn't surfacing it. Now fixed in the brikk snapshot (see above).
         Verified by `arrayElementTypePreservedByQuackJdbc` (quack-jdbc reports `INTEGER[]`, parity with
-        duckdb-jdbc) and `listAggregateThroughPassThroughReturnsArray`. When upstream releases the fix,
-        revert `libs.versions.toml` to the upstream coordinate and drop the `centralSnapshots` repo.
+        duckdb-jdbc) and `listAggregateThroughPassThroughReturnsArray`.
 - **QUACK parameter inlining covers the full pushdown surface (tstz is moot).** The expression-pushdown
   path (`DuckBridgeExpressionTranslator.translateConstant`) renders constants INLINE as SQL text, not as
   `?` params. So the only source of bound parameters is base-jdbc's domain pushdown via `toColumnMapping`,

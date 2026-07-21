@@ -16,13 +16,6 @@ detekt {
 }
 
 repositories {
-    // Brikk's patched quack-jdbc (dev.brikk.duckdb:quack-jdbc) with the LIST/ARRAY element-type fix
-    // (gizmodata/quack-jdbc PR), published as a snapshot until upstream cuts a release.
-    maven {
-        name = "centralSnapshots"
-        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-        mavenContent { snapshotsOnly() }
-    }
     mavenCentral()
 }
 
@@ -52,9 +45,10 @@ dependencies {
     implementation("io.trino:trino-plugin-toolkit")
     implementation("jakarta.validation:jakarta.validation-api")
     implementation(libs.duckdb.jdbc)
-    // Quack remote transport (T3): gizmo's pure-JVM JDBC driver for DuckDB's Quack RPC protocol.
-    // No runtime deps of its own (uses JDK 17 HttpClient). Selected by connection-url prefix
-    // (jdbc:quack://...) alongside the embedded DuckDB driver.
+    // Quack remote transport (T3): brikk's pure-JVM JDBC driver for DuckDB's Quack RPC protocol
+    // (dev.brikk.duckdb:quack-jdbc — a fixed fork of gizmodata's driver, incl. the LIST/ARRAY
+    // element-type fix). No runtime deps of its own (uses JDK 17 HttpClient). Selected by
+    // connection-url prefix (jdbc:quack://...) alongside the embedded DuckDB driver.
     implementation(libs.quack.jdbc)
     // Arrow — the T2 (execution-engine) data plane decodes DuckDB's arrowExportStream batches to
     // Trino Pages via DuckBridgeArrowToPageConverter. Also feeds P5's lance PTFs later. Copied from

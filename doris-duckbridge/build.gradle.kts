@@ -54,13 +54,6 @@ repositories {
         forRepository { maven { url = uri(dorisLocalRepo) } }
         filter { includeGroup("org.apache.doris") }
     }
-    // Brikk's patched quack-jdbc (dev.brikk.duckdb:quack-jdbc) with the LIST/ARRAY element-type fix
-    // (gizmodata/quack-jdbc PR), published as a snapshot until upstream cuts a release.
-    maven {
-        name = "centralSnapshots"
-        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-        mavenContent { snapshotsOnly() }
-    }
     mavenCentral()
 }
 
@@ -103,7 +96,8 @@ dependencies {
     compileOnly("org.apache.doris:fe-connector-spi:$dorisVersion")
     compileOnly("org.apache.doris:fe-thrift:$dorisVersion")
 
-    // quack-jdbc: gizmo's pure-JVM DuckDB/Quack driver (jdbc:quack://...). The FE resolves
+    // quack-jdbc: brikk's pure-JVM DuckDB/Quack driver (dev.brikk.duckdb:quack-jdbc, a fixed fork of
+    // gizmodata's) (jdbc:quack://...). The FE resolves
     // schemas/tables/columns through it at plan time; the BE loads it in its own JVM to run the
     // scan. Version from the repo-wide catalog. Bundled in the plugin zip (the FE classloader has
     // no such driver of its own).

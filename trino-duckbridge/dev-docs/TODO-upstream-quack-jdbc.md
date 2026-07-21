@@ -8,16 +8,15 @@ duckbridge canary that flips when it's fixed.
 
 ## Q1 — array/LIST result columns lose their element type
 
-**Status:** FIXED in our fork, PENDING upstream — filed
+**Status:** FIXED and RELEASED — filed
 **[gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6)** (2026-07-20), fixed on
-branch `fix/list-element-type-name` of `brikk/fork-quack-jdbc` and published as
-`dev.brikk.duckdb:quack-jdbc:0.3.0-brikk-SNAPSHOT` (Central snapshots). duckbridge now depends on that
-brikk snapshot (`gradle/libs.versions.toml` + the `centralSnapshots` repo in
-`trino-duckbridge/build.gradle.kts`), so arrays work over the Quack transport today. **Revert to the
-upstream coordinate/version once gizmodata cuts a release with the fix** (they have been inactive on the
-repo since filing, hence the interim fork). The `JdbcTypeMap.typeName` fix recurses LIST/ARRAY into the
-already-parsed `ListInfo.childType` / `ArrayInfo.childType` so `getColumnTypeName` reports `INTEGER[]`,
-`DOUBLE[2]`, etc., matching duckdb-jdbc.
+branch `fix/list-element-type-name` of `brikk/fork-quack-jdbc` and released as
+**`dev.brikk.duckdb:quack-jdbc:0.3.0` on Maven Central** — a maintained fork that replaces gizmodata's
+driver and carries this plus other fixes. duckbridge now depends on it (`gradle/libs.versions.toml`,
+resolved from `mavenCentral()`), so arrays work over the Quack transport. The `JdbcTypeMap.typeName` fix
+recurses LIST/ARRAY into the already-parsed `ListInfo.childType` / `ArrayInfo.childType` so
+`getColumnTypeName` reports `INTEGER[]`, `DOUBLE[2]`, etc., matching duckdb-jdbc. gizmodata upstream has
+been inactive since the issue was filed; we track our fork as the driver going forward.
 
 **Verified in duckbridge:** `TestDuckBridgeQuackPassThroughQuery.arrayElementTypePreservedByQuackJdbc`
 (quack-jdbc now reports `INTEGER[]`, parity with duckdb-jdbc) and `listAggregateThroughPassThroughReturnsArray`
@@ -56,7 +55,7 @@ Arrow engine which resolves columns via the same describe path). The embedded /
 DUCKDB_LOCAL path is unaffected (uses duckdb-jdbc, which is faithful). Pass-through
 `query()` with a scalar result is fine; only array results are blocked.
 
-**When upstream cuts a release with the fix.** Point `gradle/libs.versions.toml` back at
-`com.gizmodata:quack-jdbc:<new-version>`, drop the `centralSnapshots` repo from
-`trino-duckbridge/build.gradle.kts`, and re-run — `arrayElementTypePreservedByQuackJdbc` and
-`listAggregateThroughPassThroughReturnsArray` must stay green.
+**If gizmodata ever ships an equivalent fix upstream** and we want to switch back, point
+`gradle/libs.versions.toml` at their coordinate/version and re-run — `arrayElementTypePreservedByQuackJdbc`
+and `listAggregateThroughPassThroughReturnsArray` must stay green. Not planned: `dev.brikk.duckdb:quack-jdbc`
+is the maintained driver now.
