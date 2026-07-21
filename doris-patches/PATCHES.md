@@ -27,9 +27,9 @@ here (it's a write/DDL gate) — see the plan's Deploy shape.
 > `branch-catalog-spi` **rebases constantly**; upstream SHAs get GC'd. **Never build from a blind
 > branch tip.** Always build from the pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `5f009592035262029c66e31f40fd0390fc15ab2c`
-> - **subject** = `[fix](catalog) iceberg system-table scan: restore #65262 positional JNI read + order-preserving projection`
-> - **fork branch** = `duckbridge/baseline-20260719` on `https://github.com/brikk/doris.git`
+> - **`PIN_SHA`** = `568c4bb4571e23836a9ff659e6c4ef2fc7508f83`
+> - **subject** = `[perf](catalog) two-level cross-query cache for external partition derived views (#65829)`
+> - **fork branch** = `duckbridge/baseline-20260721` on `https://github.com/brikk/doris.git`
 >
 > The pin survives upstream GC because it's pushed to the fork as an **immutable dated baseline
 > branch**. If you ever see the SHA missing from *upstream*, that's expected — fetch it from the
@@ -153,6 +153,31 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-07-21 — re-vendor to `568c4bb457`** (subject: *"[perf](catalog) two-level cross-query
+  cache for external partition derived views (#65829)"*), pushed to the fork as
+  `duckbridge/baseline-20260721`. **Pure rebase — nothing in our patch surface moved.**
+  - **Old pin `5f009592035` was rebased away** (`git merge-base --is-ancestor` → false): upstream
+    `branch-catalog-spi` rebased and our old pin's twin is now `11f4deaa50` (identical subject).
+    The old `duckbridge/baseline-20260719` fork branch still holds `5f009592035` alive; the new
+    branch holds `568c4bb457`.
+  - **Four new commits** sit on top of the old pin's twin (newest first): `568c4bb457`
+    *[perf] two-level cross-query cache for external partition derived views (#65829)*;
+    `777a61671a` *[perf] fe-connector-iceberg hot-path caching + fe-core per-statement metadata
+    funnel*; `1ea735ff0a` *[fix] port #65676 iceberg deletion-vector metadata validation*;
+    `e697837760` *[fix] port #65548 external COUNT(\*)/COUNT(col) semantics*. **None touch our two
+    patched files** (`CatalogFactory.java`, `jdbc-scanner`); they're iceberg-scan / caching /
+    `PluginDrivenScanNode` count-gating changes. The count(\*) one flips the `countPushdown` signal
+    `PluginDrivenScanNode` hands `planScan()` from any-COUNT to `isTableLevelCountStarPushdown()`
+    (COUNT(\*)-only) — duckbridge doesn't consume that signal today (we override only 4-arg/5-arg
+    `planScan`, no `streamingSplitEstimate`), so it's a no-op for us; see the count-pushdown note.
+  - **Patch anchors UNCHANGED at the new pin** (re-verified `git apply --3way --check`, clean for
+    both): `SPI_READY_TYPES` is still `{jdbc, es, trino-connector, max_compute, paimon, iceberg,
+    hms}` (append adds `"duckbridge"`); `JdbcTypeHandlerFactory` still has `case "CLICKHOUSE"` at
+    :44 / `case "SQLSERVER"` at :46 (we insert `case "DUCKDB"` between). Byte-identical context to
+    the 2026-07-19 pin — the rebase only moved the SHA.
+  - **SPI jars rebuilt** from this pin into `doris-duckbridge/doris-m2/` via
+    `tools/doris-baseline.sh --install-spi-jars` (FE compile plane refreshed).
 
 - **2026-07-19 — initial baseline at `5f009592035`** (subject: *"[fix](catalog) iceberg
   system-table scan: restore #65262 positional JNI read + order-preserving projection"*), the
