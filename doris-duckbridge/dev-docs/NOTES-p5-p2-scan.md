@@ -18,8 +18,10 @@ the only `abstract` one. The in-tree JDBC connector overrides **4-arg and 5-arg*
 4-arg delegates to `planScan(…, limit = -1)`. **We do the same: override 4-arg + 5-arg.**
 
 - **columns**: `List<ConnectorColumnHandle>` — the PROJECTED columns (already pruned by
-  the FE's `applyProjection` fixed-point, in output order). Empty ⇒ `SELECT *`. These are
-  our `DuckBridgeColumnHandle`s (carry `columnName`, mapped Doris type, raw DuckDB type).
+  the FE's `applyProjection` fixed-point, in output order). Empty ⇒ `SELECT 1` (a row-count-only
+  scan, e.g. no-grouping `COUNT(*)` — NOT `SELECT *`, which would marshal every column per row to
+  be discarded; see the friction doc's COUNT(*) entry). These are our `DuckBridgeColumnHandle`s
+  (carry `columnName`, mapped Doris type, raw DuckDB type).
 - **filter**: `Optional<ConnectorExpression>` — a fully-typed expression tree, NOT raw
   Doris `Expr`. Node types available (fe-connector-api `pushdown` package):
   `ConnectorColumnRef(name,type)`, `ConnectorLiteral(type,value; isNull; ofString/ofLong/…)`,

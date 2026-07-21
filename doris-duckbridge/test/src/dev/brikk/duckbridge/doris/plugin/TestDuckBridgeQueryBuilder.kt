@@ -60,8 +60,11 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun projectionAndTableQualification() {
+        // Empty projection (e.g. no-grouping COUNT(*)) ⇒ `SELECT 1`, never `SELECT *`: same row
+        // cardinality, but DuckDB reads no columns and quack-jdbc marshals a constant instead of every
+        // column of every row. Row-count hygiene only — NOT true COUNT(*) pushdown (see friction doc).
         assertThat(build(emptyList()))
-            .isEqualTo("""SELECT * FROM "memory"."sales"."customers"""")
+            .isEqualTo("""SELECT 1 FROM "memory"."sales"."customers"""")
         assertThat(build(listOf(intCol("id"), stringCol("name"))))
             .isEqualTo("""SELECT "id", "name" FROM "memory"."sales"."customers"""")
     }

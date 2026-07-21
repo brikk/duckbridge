@@ -37,6 +37,71 @@ deleted and `BASELINE` points at the release tag.**
 
 ---
 
+## 2026-07-21 · COUNT(*) rides the row-by-row JDBC path — no precomputed-count pushdown for a JDBC-riding connector
+
+**Symptom.** Not a crash — wasted work. `SELECT COUNT(*) FROM t` hands `planScan`
+an **empty** projected-column list; the BE then reads one row per table row over
+the JDBC/JNI transport just to count them. On our side we've taken the patch-free
+win — emit `SELECT 1 FROM t` instead of `SELECT *` for an empty projection
+(`DuckBridgeQueryBuilder`), so DuckDB reads no columns and quack-jdbc marshals a
+constant instead of every column of every row (`TestDuckBridgeQueryBuilder`
+`projectionAndTableQualification`). But we **still drag N rows across the JNI
+boundary** for a count that DuckDB could answer with a single number.
+
+**Root cause.** The SPI's count-star pushdown (`FileScanNode.isTableLevelCountStarPushdown()`
+→ `PluginDrivenScanNode` `countPushdown` → `ConnectorScanRange.getPushDownRowCount()`)
+is a **file-metadata** mechanism: a connector returns a range carrying a precomputed
+row count and the BE emits it without reading data (iceberg reads the snapshot
+`total-records`; paimon a merged count). Two facts make it unreachable for a
+JDBC-riding connector at the pin:
+
+1. **The BE JDBC scanner has no push-down-agg path.** `be/src/exec/scan/jdbc_scanner.cpp`
+   and `jdbc_scan_operator.cpp` carry **zero** `TPushAggOp` / count handling — the
+   reader just runs `query_sql` and returns rows. A precomputed `getPushDownRowCount()`
+   on our range would be dropped on the floor (nothing on the JDBC path consumes it;
+   only the native ORC/Parquet readers honor the metadata count).
+2. **The reference `fe-connector-jdbc` doesn't implement it either** — `JdbcScanPlanProvider`
+   overrides only the 4-arg/5-arg `planScan`, no `countPushdown` overload, no count-SQL
+   rewrite. So there is no in-tree pattern for a JDBC-family connector to push a count.
+
+(Note the rebase commit `e697837760`, port of upstream #65548, correctly gates this to
+`COUNT(*)` only: `COUNT(col)` keeps all splits and the BE reads the column and counts
+non-nulls. So there is nothing to do for `COUNT(col)` — and nothing the SPI even
+offers for it, since a table-level row count ≠ a per-column non-null count.)
+
+**Workaround.** `SELECT 1` row-count hygiene (above). Correct and cheap, but O(rows)
+on the wire — not the O(1) a real count pushdown gives.
+
+**Fix (pickable upstream changes — a genuine improvement we'd like Doris to make).**
+Give a JDBC-riding connector a way to answer `COUNT(*)` without materializing rows.
+Two shapes, either of which we'd adopt (and which would delete a chunk of transport
+cost for **every** JDBC-family connector, not just duckbridge):
+- **BE:** teach the JDBC scanner to honor `push_down_agg_type_opt == COUNT` with an
+  empty `push_down_count_slot_ids` — run a `SELECT COUNT(*)` form of `query_sql` (or
+  emit the count as the single pushed-down aggregate row the plan already expects),
+  the JDBC analogue of the native readers' metadata-count path. Then a connector needs
+  no precomputed FE count at all.
+- **SPI/FE:** let a connector that opts into `countPushdown` return a precomputed count
+  that is honored on the JDBC path too (today `getPushDownRowCount()` is consumed only
+  for the file-metadata/native path). The connector would compute it FE-side with a
+  `SELECT COUNT(*)` over its own driver — **but only when the ENTIRE predicate was
+  pushed** (a dropped conjunct means the count would over-count, since a precomputed
+  count leaves no above-scan re-filter; same gate as our LIMIT pushdown,
+  [`NOTES-p5-p2-scan.md`](./NOTES-p5-p2-scan.md#limit)). When the connector can't push
+  safely it declines and the BE counts by reading — already a first-class path
+  (`PluginDrivenScanNode.resolvePushDownRowCount` returns the `-1` sentinel).
+
+**Opinion (design).** For a columnar engine like DuckDB/Quack, `COUNT(*)` is the
+canonical O(1)-from-metadata query, and forcing it through a row-by-row JDBC scan is
+the starkest example of the Route-J transport tax (see the 2026-07-20 ceiling entry).
+The BE-side fix is the cleaner one — it needs no FE-side blocking query at plan time
+and benefits the in-tree JDBC connector too. We are **not** taking it now because it
+would mean a *third* BE patch (against the goal of shedding patches, not adding them);
+`SELECT 1` is the honest patch-free interim. Revisit if count-heavy workloads land, or
+bundle it with the generic `plugin_driven` BE work from the 2026-07-20 ceiling entry.
+
+---
+
 ## 2026-07-20 · No BE transport for a plugin's OWN scanner (ADBC/Arrow, or direct-Quack→Arrow) — the Route-J ceiling
 
 **Symptom.** Not a crash — a wall. Route J ships rows FE→BE by reporting

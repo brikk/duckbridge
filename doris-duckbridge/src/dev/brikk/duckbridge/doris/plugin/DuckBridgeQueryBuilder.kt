@@ -87,7 +87,7 @@ internal object DuckBridgeQueryBuilder {
      * @param catalog DuckDB catalog (main catalog from P4).
      * @param database DuckDB schema (Doris database).
      * @param table table name.
-     * @param columns projected columns (empty ⇒ SELECT *), in output order.
+     * @param columns projected columns (empty ⇒ `SELECT 1`, a row-count-only scan), in output order.
      * @param filter optional pushed-down predicate tree.
      * @param limit row limit, or < 0 for none.
      * @param columnDuckdbTypes columnName → raw DuckDB `TYPE_NAME` for EVERY resolvable column (not
@@ -110,7 +110,16 @@ internal object DuckBridgeQueryBuilder {
         val sb = StringBuilder("SELECT ")
 
         if (columns.isEmpty()) {
-            sb.append('*')
+            // Empty projection ⇒ a row-shape-only scan (the common case is a no-grouping COUNT(*),
+            // whose scan needs zero column VALUES — the BE builds required_fields/columns_types from
+            // the scan slots, which are empty here, so it reads no columns and just counts rows).
+            // Emit `SELECT 1`, NOT `SELECT *`: `*` makes DuckDB materialize + quack-jdbc marshal every
+            // column of every row only to be discarded, whereas `1` scans the table for its row COUNT
+            // with no column read. Same row cardinality either way, so correctness is unchanged.
+            // NOTE: this is only row-count hygiene, NOT true COUNT(*) pushdown — we still drag one row
+            // per table row across the JNI boundary. A real precomputed-count pushdown needs BE work;
+            // see duckbridge-doris-friction.md "COUNT(*) rides the row-by-row JDBC path".
+            sb.append('1')
         } else {
             sb.append(
                 columns.joinToString(", ") { col ->
