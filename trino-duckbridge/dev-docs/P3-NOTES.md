@@ -102,10 +102,14 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
     round-trip through the extra `quack_query_by_name` quoting layer, a DuckDB-native scalar (`printf`),
     and a **self-join** — the join *completes* because pushdown mode runs it server-side as a single
     local TF scan (exactly the attach-mode DNF from #150 that pushdown avoids).
-    - *KNOWN LIMITATION — quack-jdbc metadata bug (UPSTREAM, not ours):* a LIST/array result column is
-      described over quack-jdbc with **no element type**, so `DuckBridgeClient.toColumnMapping` can't
-      resolve it and the query fails loud at analysis ("Unsupported type ... LIST"). Probed both drivers
-      on the same queries (`arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs`):
+    - *RESOLVED via the brikk quack-jdbc fork (was an upstream quack-jdbc metadata bug).* A LIST/array
+      result column was described over quack-jdbc with **no element type**, so
+      `DuckBridgeClient.toColumnMapping` couldn't resolve it and the query failed loud ("Unsupported
+      type ... LIST"). Fixed in `dev.brikk.duckdb:quack-jdbc:0.3.0-brikk-SNAPSHOT` (recurse into the
+      LIST/ARRAY child type in `JdbcTypeMap.typeName`); duckbridge now depends on that snapshot, so
+      arrays work over QUACK. See [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md) (Q1) and
+      [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6); revert to upstream once
+      released. Original probe of both drivers on the same queries:
       | query | duckdb-jdbc `getColumnTypeName` | quack-jdbc |
       |---|---|---|
       | `CAST([1,2] AS BIGINT[])` | `BIGINT[]` | `LIST` |
@@ -121,12 +125,11 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
         **gizmodata's quack-jdbc**, not duckdb/duckdb-quack. Filed:
         [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6); tracked in
         [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md).
-      - Our `toColumnMapping` is correct — it can't invent the element type the driver discarded — and
-        failing loud is right (never wrong data). It affects declared ARRAY columns too (not just
-        computed `list()`) *over the Quack transport*. Pinned by `bareListResultTypeFailsLoud`;
-        `arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs` is the watch-canary that flips green→red
-        when quack-jdbc starts reporting `...[]`. (Declared ARRAY columns over the embedded/DUCKDB_LOCAL
-        path are unaffected — that path uses duckdb-jdbc, which is faithful.)
+      - The fix belonged in **gizmodata's quack-jdbc**, not duckdb/duckdb-quack — the element type is on
+        the wire; the driver just wasn't surfacing it. Now fixed in the brikk snapshot (see above).
+        Verified by `arrayElementTypePreservedByQuackJdbc` (quack-jdbc reports `INTEGER[]`, parity with
+        duckdb-jdbc) and `listAggregateThroughPassThroughReturnsArray`. When upstream releases the fix,
+        revert `libs.versions.toml` to the upstream coordinate and drop the `centralSnapshots` repo.
 - **QUACK parameter inlining covers the full pushdown surface (tstz is moot).** The expression-pushdown
   path (`DuckBridgeExpressionTranslator.translateConstant`) renders constants INLINE as SQL text, not as
   `?` params. So the only source of bound parameters is base-jdbc's domain pushdown via `toColumnMapping`,

@@ -17,7 +17,6 @@ import com.gizmodata.quack.jdbc.sql.QuackDriver
 import io.trino.testing.AbstractTestQueryFramework
 import io.trino.testing.QueryRunner
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -104,24 +103,12 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
         assertThat(labels).containsExactly("1=Alice", "2=bob", "3=straße", "4=δοκιμή")
     }
 
-    /**
-     * WATCH CANARY for the upstream fix. The `bareListResultTypeFailsLoud` failure is a **quack-jdbc
-     * client-driver bug**, not ours: for a LIST/array result column, DuckDB's own JDBC driver reports
-     * the element type in the column type name (`INTEGER[]`), but quack-jdbc collapses every list/array
-     * to bare `LIST`. It is NOT the protocol/server — the Quack RPC `PrepareResponse` serializes a full
-     * DuckDB `LogicalType` (which carries the LIST child type), so the element type is on the wire;
-     * quack-jdbc simply doesn't surface it (`getColumnTypeName` = `LIST`; values arrive as a plain
-     * `java.util.ArrayList`, not a typed `java.sql.Array`). This test pins both sides; when quack-jdbc
-     * starts reporting `...[]`, the quack-jdbc assertion here flips and prompts us to enable array
-     * support over the Quack transport. Reproduction for a gizmodata/quack-jdbc bug report.
-     */
     @Test
-    fun arrayElementTypeDroppedByQuackJdbc_upstreamNotOurs() {
+    fun arrayElementTypePreservedByQuackJdbc() {
         val listQuery = "SELECT list(x) AS a FROM (VALUES (1),(2)) t(x)"
         DriverManager.getConnection("jdbc:duckdb:").use { conn ->
             conn.createStatement().use { st ->
                 st.executeQuery(listQuery).use { rs ->
-                    // DuckDB-JDBC preserves the element type.
                     assertThat(rs.metaData.getColumnTypeName(1)).isEqualTo("INTEGER[]")
                 }
             }
@@ -130,22 +117,21 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
         QuackDriver().connect(server.connectionUrl(), props).use { conn ->
             conn.createStatement().use { st ->
                 st.executeQuery(listQuery).use { rs ->
-                    // quack-jdbc drops it to bare LIST — the bug. Flip this when upstream fixes it.
-                    assertThat(rs.metaData.getColumnTypeName(1)).isEqualTo("LIST")
+                    assertThat(rs.metaData.getColumnTypeName(1)).isEqualTo("INTEGER[]")
                 }
             }
         }
     }
 
     @Test
-    fun bareListResultTypeFailsLoud() {
-        // KNOWN LIMITATION: a bare DuckDB LIST result column (e.g. from list()) is described over
-        // quack-jdbc with no element type, so base-jdbc's column mapping can't resolve it. This must
-        // fail loud at analysis (never silently drop/mis-type the column). Resolving it needs
-        // array-element-type inference from the describe path — a separate task. See P3-NOTES.
-        assertThatThrownBy { computeActual(passThrough("SELECT list(id) AS ids FROM $schema.t")) }
-            .hasMessageContaining("Unsupported type")
-            .hasMessageContaining("LIST")
+    fun listAggregateThroughPassThroughReturnsArray() {
+        @Suppress("UNCHECKED_CAST")
+        val ids =
+            computeActual(passThrough("SELECT list(id ORDER BY id) AS ids FROM $schema.t"))
+                .materializedRows
+                .single()
+                .getField(0) as List<Long>
+        assertThat(ids).containsExactly(1L, 2L, 3L, 4L)
     }
 
     @Test

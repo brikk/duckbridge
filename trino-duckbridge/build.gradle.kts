@@ -16,6 +16,13 @@ detekt {
 }
 
 repositories {
+    // Brikk's patched quack-jdbc (dev.brikk.duckdb:quack-jdbc) with the LIST/ARRAY element-type fix
+    // (gizmodata/quack-jdbc PR), published as a snapshot until upstream cuts a release.
+    maven {
+        name = "centralSnapshots"
+        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+        mavenContent { snapshotsOnly() }
+    }
     mavenCentral()
 }
 
