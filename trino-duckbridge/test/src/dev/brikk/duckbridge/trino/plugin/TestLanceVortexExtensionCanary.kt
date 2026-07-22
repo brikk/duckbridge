@@ -116,7 +116,7 @@ class TestLanceVortexExtensionCanary {
         }
 
     private companion object {
-        /** The lance-duckdb build this connector's surface was last verified against (DuckDB v1.5.4). */
-        private const val PINNED_LANCE_VERSION = "3500606"
+        /** The lance-duckdb build this connector's surface was last verified against (DuckDB v1.5.5). */
+        private const val PINNED_LANCE_VERSION = "2f167ea"
     }
 }

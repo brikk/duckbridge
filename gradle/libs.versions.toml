@@ -1,6 +1,6 @@
 [versions]
 kotlin = "2.3.10"
-duckdb = "1.5.4.0"
+duckdb = "1.5.5.0"
 quack-jdbc = "0.3.0"
 arrow = "18.3.0"
 junit = "5.12.2"

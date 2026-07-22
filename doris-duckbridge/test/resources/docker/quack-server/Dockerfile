@@ -6,12 +6,12 @@
 # runtime. Lean — no parity extension (the P4 probe is pure metadata; parity is P1's output).
 #
 # Base trixie-slim (GLIBC 2.41): matches the trino fixture. duckdb pinned to the repo-wide
-# duckdb version (libs.versions.toml: duckdb = 1.5.4.0) so the server matches the quack-jdbc
+# duckdb version (libs.versions.toml: duckdb = 1.5.5.0) so the server matches the quack-jdbc
 # client's dialect.
 
 FROM debian:trixie-slim
 
-ARG DUCKDB_VERSION=v1.5.4
+ARG DUCKDB_VERSION=v1.5.5
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip \

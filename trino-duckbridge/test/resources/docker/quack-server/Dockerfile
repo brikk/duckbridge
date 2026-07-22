@@ -6,12 +6,12 @@
 # Base image: debian:trixie-slim (GLIBC 2.41). The DuckLake test image uses
 # bookworm (GLIBC 2.36), but the locally-built trino_parity.duckdb_extension
 # links against GLIBC 2.38, so it fails to LOAD on bookworm ("GLIBC_2.38 not
-# found"). trixie's 2.41 satisfies it. Pin duckdb to match duckdb_jdbc:1.5.4.0
+# found"). trixie's 2.41 satisfies it. Pin duckdb to match duckdb_jdbc:1.5.5.0
 # on the client side.
 
 FROM debian:trixie-slim
 
-ARG DUCKDB_VERSION=v1.5.4
+ARG DUCKDB_VERSION=v1.5.5
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip \

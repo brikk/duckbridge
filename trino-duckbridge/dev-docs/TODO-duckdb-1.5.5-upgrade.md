@@ -9,20 +9,36 @@ change — the bump is net-positive (better pushdown pruning correctness, fewer
 concurrency crashes, friendlier Quack HTTP timeout). This file is the checklist to
 run once the tag actually lands.
 
-## 0. Mechanical bump (required — do first)
+## 0. Mechanical bump (required — do first)  — DONE 2026-07-22 (except rebuild)
 
-- [ ] Confirm the v1.5.5 tag exists on `duckdb/duckdb` and that the JDBC artifact
-      `org.duckdb:duckdb_jdbc:1.5.5.0` is published to Maven Central.
-- [ ] Bump `gradle/libs.versions.toml`: `duckdb = "1.5.5.0"`.
-- [ ] Re-vendor `duckdb-trino-parity-extension/duckdb` submodule to the v1.5.5 tag
-      and **rebuild the parity extension** against it. This is NOT optional: the
-      extension is C++-API (`duckdb.hpp`, `namespace duckdb`), hard version-pinned —
-      a v1.5.4 build refuses to load on a v1.5.5 engine. Makefile derives the target
-      from the vendored submodule's `git describe`.
-- [ ] Rebuild the CI matrix binaries (linux amd64/arm64, macos amd64/arm64, windows,
-      wasm) — `make linux-arm64` / `linux-amd64` etc.
-- [ ] Check whether `extension-ci-tools` needs its branch checked out to `v1.5.5`
-      (see `duckdb-trino-parity-extension/docs/UPDATING.md`).
+- [x] Confirm the v1.5.5 tag exists on `duckdb/duckdb` (`d8cdaa33f`, = the branch tip
+      scanned; release "DuckDB v1.5.5 Bugfix Release" published 2026-07-22) and that
+      `org.duckdb:duckdb_jdbc:1.5.5.0` is on Maven Central (verified, HTTP 200).
+- [x] Bump `gradle/libs.versions.toml`: `duckdb = "1.5.5.0"`.
+- [x] Bump `quack-jdbc = "0.3.0"` (dropped the stale `0.3.0-brikk-SNAPSHOT` pin;
+      `0.3.0` is the released fork on Maven Central, resolves from `mavenCentral()`).
+      Only brikk-* dependency we carry.
+- [x] Re-vendor `duckdb-trino-parity-extension/duckdb` submodule to the v1.5.5 tag
+      (`d8cdaa33f`). `extension-ci-tools` submodule kept on rolling `v1.5-variegata`
+      tip (`72e76e9`) to match the prior pattern + the CI workflow's `ci_tools_version`.
+- [x] Bump CI workflow `duckdb_version: v1.5.4 -> v1.5.5`
+      (`.github/workflows/MainDistributionPipeline.yml`, both jobs) + Makefile fallback
+      + `TODO.md` doc string.
+- [x] **Rebuild the parity extension** against v1.5.5 — DONE. Canonical repo commit
+      `1c820622` ("ci: build against DuckDB v1.5.5"); prebuilt binaries pulled from its
+      CI run `29960575850` via `scripts/fetch-from-ci-artifacts.sh --run 29960575850`
+      (linux-amd64/arm64, darwin-amd64/arm64, windows-amd64). Host path
+      `build/release/extension/...` refreshed with the linux-amd64 build. Verified: the
+      v1.5.5 binary LOADs on the 1.5.5.0 driver, `trino_meta()` lists all 10 natives.
+- [x] **Bump the Quack test server to v1.5.5** — the out-of-process Quack server
+      (`test/resources/docker/quack-server/Dockerfile`, `ARG DUCKDB_VERSION`) was still
+      v1.5.4, so the v1.5.5 parity binary refused to load server-side (hard version
+      pin). Bumped trino + doris fixtures to v1.5.5.
+- [x] `:trino-duckbridge:test` fully green (271 tests) on 1.5.5.0 / quack-jdbc 0.3.0.
+- [x] Lance version-pin canary bumped `3500606 -> 2f167ea` (surface checks passed;
+      served build drifted with the DuckDB bump — the tripwire behaved as designed).
+- [ ] Rebuild the CI matrix binaries for release (already built by CI run 29960575850;
+      publish/tag as needed).
 
 ## 1. Pushdown-correctness canaries (our #1 concern — never over/under-return)
 
