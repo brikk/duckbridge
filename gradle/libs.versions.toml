@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.3.10"
 duckdb = "1.5.5.0"
-quack-jdbc = "0.4.0"
+quack-jdbc = "0.5.0"
 arrow = "18.3.0"
 junit = "5.12.2"
 assertj = "3.27.3"
