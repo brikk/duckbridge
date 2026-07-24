@@ -341,10 +341,14 @@ class DuckBridgeClient
                 Types.TIMESTAMP ->
                     // DuckDB TIMESTAMP is microsecond precision.
                     return Optional.of(timestampColumnMapping(TIMESTAMP_MICROS))
-                Types.ARRAY -> {
-                    // DuckDB list/array (e.g. lance embedding FLOAT[3], VARCHAR[] tags). The element
-                    // type is only in the type name; the array mapping parses it. Unsupported element
-                    // types fall through to CONVERT_TO_VARCHAR / empty like any other type.
+                Types.ARRAY, Types.OTHER -> {
+                    // DuckDB list/array (e.g. lance embedding FLOAT[3], VARCHAR[] tags, DECIMAL(5,2)[]).
+                    // The element type is only in the type name; the array mapping parses it. Result-set
+                    // describe reports arrays as Types.ARRAY (2003), but the DatabaseMetaData.getColumns
+                    // metadata path reports them as Types.OTHER (1111) with the element type still in the
+                    // type name — this matches the reference duckdb-jdbc driver, not a quack-jdbc quirk —
+                    // so declared array *table* columns only resolve when OTHER is handled here too.
+                    // Unsupported element types fall through to CONVERT_TO_VARCHAR / empty like any other.
                     val arrayMapping = typeHandle.jdbcTypeName().orElse(null)?.let(DuckBridgeArrayColumnMapping::fromTypeName)
                     if (arrayMapping != null) {
                         return Optional.of(arrayMapping)
@@ -434,7 +438,7 @@ class DuckBridgeClient
          * (numeric/date/boolean) are byte-exact across engines in every mode. String (VARCHAR/CHAR)
          * sort keys are only safe at string-pushdown mode >= BINARY, where the init probe has proven
          * DuckDB's ORDER BY is pure UTF-8 byte order (== Trino's VARCHAR codepoint order) including
-         * NULLS placement (REPORT-string-comparison-probe-duckdb-1.5.4.md "ORDER BY"). Below BINARY a
+         * NULLS placement (REPORT-string-comparison-probe-duckdb-1.5.5.md "ORDER BY"). Below BINARY a
          * string sort key blocks the whole TopN push (base-jdbc has no per-key partial TopN).
          */
         override fun supportsTopN(session: ConnectorSession, handle: JdbcTableHandle, sortOrder: List<JdbcSortItem>): Boolean =

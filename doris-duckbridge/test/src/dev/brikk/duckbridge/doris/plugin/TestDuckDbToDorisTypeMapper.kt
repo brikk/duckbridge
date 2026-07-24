@@ -87,6 +87,14 @@ class TestDuckDbToDorisTypeMapper {
         assertThat(map("VARCHAR[]").children.single().typeName).isEqualTo("STRING")
         // Nested list of largeint (HUGEINT[]).
         assertThat(map("HUGEINT[]").children.single().typeName).isEqualTo("LARGEINT")
+        // Parametric element type: DECIMAL(5,2)[] → ARRAY<DECIMALV3(5,2)> (element precision/scale
+        // survive the recursion, the quack-jdbc array follow-up for parametric elements).
+        val decs = map("DECIMAL(5,2)[]")
+        assertThat(decs.typeName).isEqualTo("ARRAY")
+        val element = decs.children.single()
+        assertThat(element.typeName).isEqualTo("DECIMALV3")
+        assertThat(element.precision).isEqualTo(5)
+        assertThat(element.scale).isEqualTo(2)
     }
 
     @Test

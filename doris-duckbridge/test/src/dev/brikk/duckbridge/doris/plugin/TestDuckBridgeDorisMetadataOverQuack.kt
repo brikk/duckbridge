@@ -65,6 +65,7 @@ class TestDuckBridgeDorisMetadataOverQuack {
                 c_json         JSON,
                 c_list_int     INTEGER[],
                 c_list_varchar VARCHAR[],
+                c_list_dec     DECIMAL(5,2)[],
                 c_struct       STRUCT(a INTEGER, b VARCHAR),
                 c_map          MAP(VARCHAR, INTEGER),
                 c_enum         mood,
@@ -165,6 +166,13 @@ class TestDuckBridgeDorisMetadataOverQuack {
         assertThat(type("c_list_int").children.single().typeName).isEqualTo("INT")
         assertType("c_list_varchar", "ARRAY")
         assertThat(type("c_list_varchar").children.single().typeName).isEqualTo("STRING")
+        // Parametric element type over the getColumns path: DECIMAL(5,2)[] → ARRAY<DECIMALV3(5,2)>.
+        assertType("c_list_dec", "ARRAY")
+        type("c_list_dec").children.single().let { el ->
+            assertThat(el.typeName).isEqualTo("DECIMALV3")
+            assertThat(el.precision).isEqualTo(5)
+            assertThat(el.scale).isEqualTo(2)
+        }
         // STRUCT / MAP / ENUM → STRING (v1).
         assertType("c_struct", "STRING")
         assertType("c_map", "STRING")

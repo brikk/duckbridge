@@ -22,12 +22,20 @@ been inactive since the issue was filed; we track our fork as the driver going f
 (quack-jdbc now reports `INTEGER[]`, parity with duckdb-jdbc) and `listAggregateThroughPassThroughReturnsArray`
 (`list(id ORDER BY id)` pass-through returns `[1,2,3,4]` over QUACK). Full module suite green (289).
 
-**Remaining follow-ups (duckbridge-side, separate from #6):**
-- `DuckBridgeArrayColumnMapping.trinoElementType` only maps scalar element names, so an array with a
-  parametric element (e.g. `DECIMAL(5,2)[]`) still won't resolve even with the driver fix. Extend the
-  element-name parser if we need decimal/complex-element arrays over QUACK.
-- Declared array **table** columns over T3 go through `DatabaseMetaData.getColumns` (a different path than
-  the query/result describe #6 fixed); confirm they resolve now, or track separately.
+**Remaining follow-ups (duckbridge-side, separate from #6) — BOTH RESOLVED 2026-07-24:**
+- ✅ **Parametric element types** (`DECIMAL(5,2)[]`): `DuckBridgeArrayColumnMapping.trinoElementType`
+  now parses `DECIMAL(p,s)` (→ `createDecimalType`) and `appendElement` writes short/long decimals via
+  `Decimals.encode*ScaledValue`. Doris was already fine (`DuckDbToDorisTypeMapper` recurses arrays off
+  the faithful `TYPE_NAME`). Covered by `TestDuckBridgeQuackArrayColumns.parametricDecimalArrayElementResolvesOverQuack`
+  (trino) + `TestDuckDbToDorisTypeMapper.arrays` / `TestDuckBridgeDorisMetadataOverQuack` `c_list_dec` (doris).
+- ✅ **Declared array table columns via `getColumns`**: root-caused — over the `DatabaseMetaData.getColumns`
+  path BOTH quack-jdbc AND the reference **duckdb-jdbc** report arrays as `DATA_TYPE=1111` (`Types.OTHER`)
+  with the element type still in `TYPE_NAME` (verified against duckdb_jdbc 1.5.5.0). So this was never a
+  quack-jdbc bug: the connector's `toColumnMapping` keyed only on `Types.ARRAY` (2003) and dropped them.
+  Fixed by handling `Types.OTHER` (array-shaped names) in `DuckBridgeClient.toColumnMapping`. This also
+  fixes the in-process path (the earlier "in-process unaffected" note held only for result-set describe,
+  which reports `2003`; the getColumns metadata path was affected on both transports). Covered by
+  `TestDuckBridgeQuackArrayColumns.scalarArrayTableColumnsResolveViaGetColumns`.
 
 **Historical (pre-fix) symptom.** Over the Quack transport, any LIST/array result column was reported by
 

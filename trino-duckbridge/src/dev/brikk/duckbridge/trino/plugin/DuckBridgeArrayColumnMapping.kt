@@ -26,11 +26,15 @@ import io.trino.spi.block.BlockBuilder
 import io.trino.spi.type.ArrayType
 import io.trino.spi.type.BigintType.BIGINT
 import io.trino.spi.type.BooleanType.BOOLEAN
+import io.trino.spi.type.DecimalType
+import io.trino.spi.type.DecimalType.createDecimalType
+import io.trino.spi.type.Decimals
 import io.trino.spi.type.DoubleType.DOUBLE
 import io.trino.spi.type.IntegerType.INTEGER
 import io.trino.spi.type.RealType.REAL
 import io.trino.spi.type.Type
 import io.trino.spi.type.VarcharType
+import java.math.BigDecimal
 
 /**
  * Read-only `ARRAY` column mapping for DuckDB list/array columns (`FLOAT[3]`, `DOUBLE[]`,
@@ -72,8 +76,11 @@ object DuckBridgeArrayColumnMapping {
         return typeName.substring(0, open).trim()
     }
 
-    private fun trinoElementType(elementTypeName: String): Type? =
-        when (elementTypeName.uppercase()) {
+    private fun trinoElementType(elementTypeName: String): Type? {
+        DECIMAL_ELEMENT.matchEntire(elementTypeName.trim())?.let { m ->
+            return createDecimalType(m.groupValues[1].toInt(), m.groupValues[2].toInt())
+        }
+        return when (elementTypeName.uppercase()) {
             "BOOLEAN" -> BOOLEAN
             "TINYINT", "SMALLINT", "INTEGER", "INT" -> INTEGER
             "BIGINT", "HUGEINT" -> BIGINT
@@ -82,6 +89,7 @@ object DuckBridgeArrayColumnMapping {
             "VARCHAR", "TEXT" -> VarcharType.VARCHAR
             else -> null
         }
+    }
 
     private fun buildArrayBlock(arrayType: ArrayType, elementType: Type, elements: Array<*>?): Block {
         val builder = arrayType.createBlockBuilder(null, 1) as ArrayBlockBuilder
@@ -111,7 +119,17 @@ object DuckBridgeArrayColumnMapping {
             REAL -> REAL.writeLong(builder, java.lang.Float.floatToRawIntBits((element as Number).toFloat()).toLong())
             DOUBLE -> DOUBLE.writeDouble(builder, (element as Number).toDouble())
             is VarcharType -> elementType.writeSlice(builder, Slices.utf8Slice(element.toString()))
+            is DecimalType -> {
+                val value = (element as BigDecimal).setScale(elementType.scale)
+                if (elementType.isShort) {
+                    elementType.writeLong(builder, Decimals.encodeShortScaledValue(value, elementType.scale))
+                } else {
+                    elementType.writeObject(builder, Decimals.encodeScaledValue(value, elementType.scale))
+                }
+            }
             else -> throw TrinoException(NOT_SUPPORTED, "Unsupported array element type: $elementType")
         }
     }
+
+    private val DECIMAL_ELEMENT = Regex("""DECIMAL\((\d+),\s*(\d+)\)""", RegexOption.IGNORE_CASE)
 }
