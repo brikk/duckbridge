@@ -177,6 +177,11 @@ INSTALL trino_parity FROM community;
 LOAD trino_parity;
 ```
 
+`INSTALL` only downloads the binary (once per machine, to `~/.duckdb/extensions/…`); `LOAD` is what
+registers the functions — and it is scoped to the **database instance**, not the connection. So a
+single `LOAD` covers every connection on that instance, current and future; you never `LOAD`
+per connection.
+
 How the connector gets it, per transport:
 
 - **Embedded** (`jdbc:duckdb:`): on **Linux amd64/arm64** the signed binary is bundled in the
@@ -188,11 +193,22 @@ How the connector gets it, per transport:
   `GUARDED` mode. (`duckbridge.allow-unsigned-extensions` defaults to `true` so a `LOAD` by path
   works; a signed community binary loads either way.)
 - **Remote** (`jdbc:quack://`): the extension is a **server-side** concern — the connector never
-  installs on the server. Make it available on the Quack/DuckDB server (e.g.
-  `INSTALL trino_parity FROM community; LOAD trino_parity;`, or enable DuckDB autoloading), or point
-  `duckbridge.parity-extension-path` at a path the *server* can read (the connector then issues the
-  server-side `LOAD`). The connector probes `trino_meta()` on first use and fails with install
-  instructions if it's absent.
+  installs on the server. Because `quack_serve` serves one shared DuckDB instance and `LOAD` is
+  instance-scoped, load it **once at server startup** and every client connection is covered — run
+  the `LOAD` in the same session that starts the server:
+
+  ```sql
+  INSTALL trino_parity FROM community;   -- once per machine
+  LOAD   trino_parity;                   -- once per instance; covers all connections
+  CALL   quack_serve(...);
+  ```
+
+  Don't rely on autoloading here: DuckDB autoloads *core* extensions on first use, but a community
+  extension's functions aren't in that map, so `INSTALL` without an explicit `LOAD` leaves
+  `trino_meta()` unresolved. Alternatively, set `duckbridge.parity-extension-path` to a path the
+  *server* can read — then the connector issues the (instance-wide, idempotent) `LOAD` itself on
+  first connection. Either way the connector probes `trino_meta()` on first use and fails with
+  install instructions if it's absent — it does **not** `LOAD` per connection.
 - **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or any
   non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~85 natively-emitted
   functions still push, alongside projection, predicate (domain), and LIMIT/TopN pushdown. All
