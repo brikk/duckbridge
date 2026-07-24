@@ -1,0 +1,77 @@
+# Build + test gate for the trino-duckbridge connector (this repo's release target).
+#
+# Scope: :trino-duckbridge ONLY. The sibling :doris-duckbridge module is NOT built here — it
+# needs the Doris FE SPI jars bootstrapped from a pinned baseline (doris-duckbridge/doris-m2/,
+# see tools/doris-baseline.sh) and is not release-ready. Targeting :trino-duckbridge tasks keeps
+# doris out of the task graph (its config is lazy; its fail-loud guard only fires when a doris
+# compile/test task is actually scheduled).
+#
+# The suite is not hermetic: the T3 (quack-jdbc) integration tests spin up a real DuckDB/Quack
+# server via Testcontainers (Docker, preinstalled on ubuntu-latest). PARITY string-pushdown is the
+# default mode, which needs the signed trino_parity extension — we fetch it from the DuckDB
+# community-extensions CDN (INSTALL trino_parity FROM community is published for v1.5.5) and drop
+# it into the bundle paths so bundleParityExtension ships it and the tests exercise the real path.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build + tests (:trino-duckbridge)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Testcontainers pulls debian:trixie + the DuckDB CLI; free space is cheap insurance.
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      # JDK 25 is required just to START the Gradle wrapper (the build requires JVM >= 25); the
+      # foojay resolver in settings.gradle.kts fetches toolchains for compilation as needed.
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Fetch the signed trino_parity extension (matching the pinned DuckDB) from the DuckDB
+      # community-extensions CDN into the paths bundleParityExtension reads, so the plugin bundles
+      # it and PARITY-mode tests run for real. linux_amd64 = the runner host (build/release/...);
+      # linux_arm64 is bundled too for arm operators.
+      - name: Fetch trino_parity extension (community)
+        run: ./.github/scripts/fetch-parity-extension.sh
+
+      - name: Build (compile + detekt + tests + plugin assembly + verify)
+        run: ./gradlew :trino-duckbridge:build --no-daemon
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            trino-duckbridge/build/reports/tests/
+            trino-duckbridge/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

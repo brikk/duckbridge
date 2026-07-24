@@ -1,10 +1,17 @@
+import java.util.zip.ZipFile
+
 plugins {
     id("buildlogic.kotlin.library")
     java
     alias(libs.plugins.detekt)
 }
 
-version = "483-1-ALPHA"
+// Default dev version. The release flow (.github/workflows/release.yml) overrides this with
+// -Pversion=<derived-from-branch> (e.g. release-483-0.1.0 -> 483-0.1.0), producing the release
+// artifact trino-duckbridge-483-0.1.0. A plain script assignment clobbers -Pversion (it runs after
+// Gradle applies project properties), so honor an explicit -Pversion when present, else the dev
+// default. Version scheme: <trino-major>-<semver> so the Trino ABI is legible in the artifact name.
+version = (findProperty("version") as? String)?.takeIf { it != "unspecified" } ?: "483-0.1.0-SNAPSHOT"
 
 // Idiomatic-Kotlin quality gate (detekt 2.0 runs on the JDK 25 daemon; jvmTarget is read
 // from the Kotlin compilerOptions). Custom src/test layout, so point detekt at it explicitly.
@@ -92,6 +99,22 @@ dependencies {
     testCompileOnly("com.fasterxml.jackson.core:jackson-annotations")
     testImplementation("io.airlift:slice")
     testImplementation("io.trino:trino-spi")
+}
+
+// ★ Keep engine-provided (parent-first SPI) jars OUT of the plugin dir. trino-base-jdbc /
+// plugin-toolkit / airlift-json pull slice + jackson-annotations + opentelemetry-context back in at
+// COMPILE scope, so `compileOnly` alone does not remove them from runtimeClasspath — without these
+// excludes the assembled plugin dir bundles them and collides with Trino's parent-first classloader.
+// (Mirrors the trino-doris-connector assembly proof.)
+configurations.named("runtimeClasspath") {
+    exclude(group = "io.trino", module = "trino-spi")
+    exclude(group = "io.airlift", module = "slice")
+    exclude(group = "com.fasterxml.jackson.core", module = "jackson-annotations")
+    exclude(group = "io.opentelemetry", module = "opentelemetry-api")
+    exclude(group = "io.opentelemetry", module = "opentelemetry-api-incubator")
+    exclude(group = "io.opentelemetry", module = "opentelemetry-context")
+    // NOTE: do NOT exclude io.opentelemetry by group — -jdbc/-instrumentation/-semconv are
+    // plugin-local and required by trino-base-jdbc.
 }
 
 tasks.withType<JavaCompile> {
@@ -221,6 +244,63 @@ val pluginAssemble by tasks.registering(Copy::class) {
     from(configurations.runtimeClasspath)
 }
 
+// Guard the assembled plugin dir: no engine-provided (parent-first SPI) jar may be bundled, the
+// core runtime jars must be present, exactly one guice jar (the `classes` classifier), and the
+// connector jar must carry its ServiceLoader registration (a real Trino server discovers the plugin
+// via META-INF/services — the programmatic installPlugin used by tests bypasses it, so a missing
+// registration is invisible to every suite). Mirrors trino-doris-connector's verifyPluginAssembly.
+val verifyPluginAssembly by tasks.registering {
+    dependsOn(pluginAssemble)
+    val pluginDir = layout.buildDirectory.dir("trino-plugin/trino-duckbridge-$version")
+    doLast {
+        val jars = pluginDir.get().asFile.listFiles().orEmpty().map { it.name }.sorted()
+        check(jars.isNotEmpty()) { "plugin dir is empty: ${pluginDir.get()}" }
+
+        val forbiddenModules = listOf(
+            "trino-spi",
+            "slice",
+            "jackson-annotations",
+            "opentelemetry-api",
+            "opentelemetry-api-incubator",
+            "opentelemetry-context",
+        )
+        val offenders = jars.filter { jar ->
+            forbiddenModules.any { module -> Regex("^${Regex.escape(module)}-\\d.*\\.jar$").matches(jar) }
+        }
+        check(offenders.isEmpty()) { "provided/parent-first SPI jars must not be bundled: $offenders" }
+
+        val requiredPrefixes = listOf(
+            "trino-base-jdbc-",
+            "trino-plugin-toolkit-",
+            "duckdb_jdbc-",
+            "quack-jdbc-",
+            "arrow-vector-",
+        )
+        val missing = requiredPrefixes.filter { prefix -> jars.none { it.startsWith(prefix) } }
+        check(missing.isEmpty()) { "expected bundled jars missing (prefixes): $missing; got $jars" }
+
+        val guiceJars = jars.filter { it.startsWith("guice-") }
+        check(guiceJars.size == 1 && guiceJars.single().endsWith("-classes.jar")) {
+            "expected exactly one guice jar with the 'classes' classifier, got: $guiceJars"
+        }
+
+        val connectorJar = pluginDir.get().asFile.listFiles().orEmpty()
+            .single { it.name.startsWith("trino-duckbridge-") && it.name.endsWith(".jar") }
+        val serviceEntry = "META-INF/services/io.trino.spi.Plugin"
+        val registered = ZipFile(connectorJar).use { zip ->
+            zip.getEntry(serviceEntry)?.let { entry ->
+                zip.getInputStream(entry).bufferedReader().readText().trim()
+            }
+        }
+        check(registered == "dev.brikk.duckbridge.trino.plugin.DuckBridgePlugin") {
+            "connector jar must register DuckBridgePlugin via $serviceEntry; found: $registered"
+        }
+
+        logger.lifecycle("verifyPluginAssembly OK: ${jars.size} jars, no provided/parent-first SPI jars, ServiceLoader registration present")
+    }
+}
+
 tasks.build {
     dependsOn(pluginAssemble)
+    dependsOn(verifyPluginAssembly)
 }

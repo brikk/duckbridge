@@ -61,6 +61,7 @@ object QuackParameterInliner {
         return substitutePlaceholders(prepared.query(), literals)
     }
 
+    @Suppress("CyclomaticComplexMethod") // A flat Trino-type → DuckDB-literal dispatch; one arm per type.
     private fun renderLiteral(param: QueryParameter): String {
         val value = param.value.orElse(null) ?: return "NULL"
         val type = param.type
