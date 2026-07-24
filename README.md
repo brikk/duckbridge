@@ -16,6 +16,33 @@ cross-engine fixtures); only the handful DuckDB *cannot* match natively are back
 the `trino_parity` DuckDB extension. When in doubt, an expression is not pushed — never
 wrong results.
 
+## Install
+
+The connector is a standard Trino plugin (a directory of jars under `$TRINO_HOME/plugin/`).
+
+**From a release (recommended).** Download an archive from the
+[Releases](https://github.com/brikk/duckbridge/releases) page and extract it into the Trino
+plugin directory on the coordinator **and every worker**, then restart:
+
+```sh
+tar -xzf trino-duckbridge-v483-0.1.0.tar.gz -C "$TRINO_HOME/plugin/"
+#  -> $TRINO_HOME/plugin/trino-duckbridge-v483-0.1.0/
+```
+
+Both `.tar.gz` and `.zip` are published, each with a `.sha256` sidecar. The version scheme is
+`<trino-major>-<semver>` — e.g. `483-0.1.0` targets **Trino 483**.
+
+**From source.** Requires JDK 25 (the Gradle toolchain resolves it on demand):
+
+```sh
+./gradlew :trino-duckbridge:pluginAssemble
+cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin/"
+```
+
+**Compatibility.** Trino **483**; embedded DuckDB engine **1.5.5** (bundled JDBC driver). A remote
+Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
+see below).
+
 ## Quick start
 
 Catalog properties file (e.g. `etc/catalog/duckdb.properties`):
@@ -38,8 +65,59 @@ SELECT count(*) FROM duckdb.main.events WHERE length(user_agent) > 40;
 ```
 
 For a remote server, the user runs their own DuckDB with `CALL quack_serve(...)`; the
-connector connects with gizmo's pure-JVM `quack-jdbc` driver. Nothing is installed or
+connector connects with the pure-JVM `quack-jdbc` driver. Nothing is installed or
 managed on the server by the connector.
+
+## Configuration
+
+`connector.name` and `connection-url` are the only required properties. The transport is chosen
+from the URL scheme: `jdbc:duckdb:<path>` (embedded) or `jdbc:quack://host:port` (remote Quack).
+
+| Property | Default | Description |
+|---|---|---|
+| `connector.name` | — | Must be `duckbridge`. |
+| `connection-url` | — | `jdbc:duckdb:/path/to.db` (embedded) or `jdbc:quack://host:port` (remote). |
+| `duckbridge.string-pushdown.mode` | `PARITY` | `NULL_ONLY` \| `GUARDED` \| `BINARY` \| `FULL` \| `PARITY` (see dial below). |
+| `duckbridge.allow-unsigned-extensions` | `true` | Open the embedded DuckDB with `allow_unsigned_extensions` (needed to `LOAD` the parity extension by path). |
+| `duckbridge.parity-extension-path` | — | Explicit path to `trino_parity.duckdb_extension`, overriding the bundled binary (embedded) or naming a server-side path (Quack). |
+| `duckbridge.quack.token` / `.token-env` / `.token-file` | — | Quack auth; prefer `-env`/`-file` for secrets. |
+| `duckbridge.quack.tls` | `false` | Use `https` for the Quack transport. |
+| `duckbridge.lance.enabled` | `false` | Enable the Lance scan/search table functions ([README-lance.md](trino-duckbridge/README-lance.md)). |
+| `duckbridge.vortex.enabled` | `false` | Enable the Vortex scan table function ([README-vortex.md](trino-duckbridge/README-vortex.md)). |
+| `duckbridge.execution-engine` | `JDBC` | `JDBC` (production) or `DUCKDB_LOCAL`/`QUACK` (experimental Arrow data plane). |
+| `duckbridge.duckdb.memory-limit` / `.threads` | — | DuckDB tuning for the experimental Arrow engines. |
+
+Per-query **session properties** (override the catalog default): `string_pushdown_mode` and
+`pushdown_timestamp_with_timezone`.
+
+```sql
+SET SESSION duckdb.string_pushdown_mode = 'GUARDED';
+```
+
+### Dynamic catalogs
+
+With Trino's dynamic catalog management enabled (`catalog.management=dynamic` in `config.properties`),
+create a catalog at runtime — same properties as the file, quoted keys:
+
+```sql
+CREATE CATALOG analytics USING duckbridge
+WITH (
+  "connection-url" = 'jdbc:duckdb:/data/analytics.db',
+  "duckbridge.string-pushdown.mode" = 'PARITY'
+);
+
+-- remote Quack, secret from the worker environment rather than the SQL text:
+CREATE CATALOG remote USING duckbridge
+WITH (
+  "connection-url" = 'jdbc:quack://duckdb-host:9494',
+  "duckbridge.quack.token-env" = 'QUACK_TOKEN',
+  "duckbridge.quack.tls" = 'true'
+);
+
+DROP CATALOG analytics;
+```
+
+The plugin must already be installed on every node; `CREATE CATALOG` only supplies properties.
 
 ## Pushdown
 
@@ -91,17 +169,35 @@ only for those 10 functions. When `PARITY` promises pushdown the extension can't
 results could be wrong, so a missing extension is a hard, clearly-worded error — never a
 quiet fallback.
 
-- **Embedded** (`jdbc:duckdb:`): nothing to do. The extension binary is bundled in the
-  plugin jar and loaded automatically on every connection.
-- **Remote** (`jdbc:quack://`): the extension must be available to the *server* — either
-  pre-loaded there, or reachable at a server-side path named by
-  `duckbridge.parity-extension-path`. The connector probes for it on first use and fails
-  with install instructions if it's absent.
-- **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or
-  any non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~85
-  natively-emitted functions still push, alongside projection, predicate (domain), and
-  LIMIT/TopN pushdown. All queries remain correct — the 10 are simply evaluated by Trino
-  above the scan. (This replaces the former `duckbridge.parity.enabled=false`.)
+The extension is published on the DuckDB **community-extensions** repository, so any DuckDB of the
+matching version can obtain it — no manual binary management:
+
+```sql
+INSTALL trino_parity FROM community;
+LOAD trino_parity;
+```
+
+How the connector gets it, per transport:
+
+- **Embedded** (`jdbc:duckdb:`): on **Linux amd64/arm64** the signed binary is bundled in the
+  release plugin jar and `LOAD`ed automatically on every connection — nothing to do. On other
+  worker platforms (macOS / Windows) the release ships no binary; either install it once from
+  community (`INSTALL trino_parity FROM community` in a DuckDB CLI of the **same** version) and set
+  `duckbridge.parity-extension-path` to the resulting
+  `~/.duckdb/extensions/<duckdb-version>/<platform>/trino_parity.duckdb_extension`, or run in
+  `GUARDED` mode. (`duckbridge.allow-unsigned-extensions` defaults to `true` so a `LOAD` by path
+  works; a signed community binary loads either way.)
+- **Remote** (`jdbc:quack://`): the extension is a **server-side** concern — the connector never
+  installs on the server. Make it available on the Quack/DuckDB server (e.g.
+  `INSTALL trino_parity FROM community; LOAD trino_parity;`, or enable DuckDB autoloading), or point
+  `duckbridge.parity-extension-path` at a path the *server* can read (the connector then issues the
+  server-side `LOAD`). The connector probes `trino_meta()` on first use and fails with install
+  instructions if it's absent.
+- **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or any
+  non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~85 natively-emitted
+  functions still push, alongside projection, predicate (domain), and LIMIT/TopN pushdown. All
+  queries remain correct — the 10 are simply evaluated by Trino above the scan. (This replaces the
+  former `duckbridge.parity.enabled=false`.)
 
 ## Lance and Vortex (experimental)
 
@@ -141,18 +237,22 @@ use.
 ./gradlew :trino-duckbridge:detekt
 ```
 
-## Parity extension submodule
+## Parity extension
 
-The plugin jar bundles the native `trino_parity.duckdb_extension`. The submodule at
-`duckdb-trino-parity-extension/` pins the source; the built artifact is **not** checked
-in. Build it once:
+The `trino_parity` extension is published on the DuckDB
+[community-extensions](https://duckdb.org/community_extensions/) repository, which is the primary
+distribution — operators normally never touch a raw binary (see the transport table above). The
+release build and CI fetch the signed community binary for the pinned DuckDB version and bundle the
+Linux variants into the plugin jar (`.github/scripts/fetch-parity-extension.sh`).
+
+For **extension development**, the source is pinned as a submodule at
+`duckdb-trino-parity-extension/`; build it locally with:
 
 ```sh
 cd duckdb-trino-parity-extension && make        # host platform
 # optional cross-builds: make linux-amd64 / make linux-arm64
 ```
 
-The build produces `build/release/extension/trino_parity/trino_parity.duckdb_extension`,
-which the module's `bundleParityExtension` task copies into the plugin jar. Missing
-binaries are non-fatal at build time — the jar just ships without that platform's
-variant.
+The build produces `build/release/extension/trino_parity/trino_parity.duckdb_extension`, which the
+module's `bundleParityExtension` task copies into the plugin jar. Missing binaries are non-fatal at
+build time — the jar just ships without that platform's variant.
