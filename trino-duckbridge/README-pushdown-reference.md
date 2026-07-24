@@ -48,7 +48,7 @@ String comparison/ordering pushdown is dialed by `duckbridge.string-pushdown.mod
 `PARITY`. It gates the string-touching rows of §1–§3 below on two trust axes
 (comparison-byte-alignment and extension-backed functions). **Non-string** predicates
 (`length(s)=5`, `id > 3`, `year(d)=2000`) are byte-exact cross-engine and push in every
-mode. Grounded in a live probe: `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md`
+mode. Grounded in a live probe: `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.5.md`
 (design + probe methodology borrowed from the sibling trino-doris connector).
 
 | mode | VARCHAR domains (`=`/range/IN) | retained filter | string `LIKE` | string TopN | ALIAS fns | extension |

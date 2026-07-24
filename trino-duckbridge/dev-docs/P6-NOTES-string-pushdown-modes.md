@@ -33,7 +33,7 @@ Adopted wholesale from the sibling **trino-doris** connector's string-pushdown w
 - The **probe methodology + report format** — modeled on
   `trino-doris-connector/dev-docs/REPORT-string-comparison-probe-4.1.3.md` (the format
   source). Our generated equivalent is
-  `REPORT-string-comparison-probe-duckdb-1.5.4.md`, produced live by
+  `REPORT-string-comparison-probe-duckdb-1.5.5.md`, produced live by
   `TestDuckBridgeStringComparisonProbe` over BOTH embedded DuckDB and the Quack transport.
 - The **0x00 (NUL) domain skip** in GUARDED (doris observed a transient wrong-empty on a
   NUL literal; skipping is always correct) and the **CHAR exclusion reasoning** (doris

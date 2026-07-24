@@ -28,7 +28,7 @@ import io.trino.spi.predicate.Domain
  * decides how a string-column [TupleDomain][io.trino.spi.predicate.TupleDomain] constraint is
  * split between the remote DuckDB WHERE clause and Trino's retained filter.
  *
- * Evidence: `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md` — DuckDB VARCHAR comparison /
+ * Evidence: `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.5.md` — DuckDB VARCHAR comparison /
  * range / IN / ORDER BY are pure byte (memcmp) semantics over UTF-8, identical to Trino's VARCHAR
  * semantics, with NUL (U+0000) as the one probed under-return hazard class handled by GUARDED.
  *

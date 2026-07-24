@@ -96,7 +96,7 @@ invalidation `#23468`, autocheckpoint error propagation `#23510`).
 hmac changes in the branch. Expect no behaviour movement.
 
 - [ ] Re-run the string-comparison init probe
-      (`REPORT-string-comparison-probe-duckdb-1.5.4.md`) against v1.5.5; expect
+      (`REPORT-string-comparison-probe-duckdb-1.5.5.md`) against v1.5.5; expect
       identical results. If anything moves, STOP — that's a real divergence, not noise.
 - [ ] Rename/refresh the report to `...-duckdb-1.5.5.md` if it re-passes clean.
 

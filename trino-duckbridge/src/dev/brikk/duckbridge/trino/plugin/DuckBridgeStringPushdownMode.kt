@@ -18,7 +18,7 @@ package dev.brikk.duckbridge.trino.plugin
  * override via session property `string_pushdown_mode` (either direction: tighten or loosen).
  *
  * Design borrowed from the sibling trino-doris connector's mode dial (grounded in a live
- * byte-semantics probe; see `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md`, whose format
+ * byte-semantics probe; see `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.5.md`, whose format
  * mirrors doris's `REPORT-string-comparison-probe-4.1.3.md`). This dial REPLACES the old
  * `duckbridge.parity.enabled` boolean: it encodes two independent trust axes.
  *

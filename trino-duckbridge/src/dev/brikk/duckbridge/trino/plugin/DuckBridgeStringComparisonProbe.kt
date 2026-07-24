@@ -36,7 +36,7 @@ import java.sql.SQLException
  * On any failure, throws a [TrinoException] telling the operator to select GUARDED (or fix the
  * server's collation). GUARDED / NULL_ONLY never call this — they make no byte-alignment claim.
  *
- * See `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md`.
+ * See `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.5.md`.
  */
 internal object DuckBridgeStringComparisonProbe {
     private val log: Logger = Logger.get(DuckBridgeStringComparisonProbe::class.java)

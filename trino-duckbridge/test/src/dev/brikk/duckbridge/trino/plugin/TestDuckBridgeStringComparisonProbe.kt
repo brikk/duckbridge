@@ -26,7 +26,7 @@ import java.util.Properties
 /**
  * Runs the [DuckBridgeStringComparisonProbe] canary matrix (the same predicates the connection-init
  * fail-loud probe uses) against BOTH embedded DuckDB and the out-of-process Quack server, and writes
- * the verdicts to `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md`.
+ * the verdicts to `dev-docs/REPORT-string-comparison-probe-duckdb-1.5.5.md`.
  *
  * If any hazard-class canary FAILS on a transport, this test fails — the connector's BINARY/PARITY
  * byte-semantics contract is not paper-able. (It doesn't; DuckDB is binary-collated by default on
@@ -194,7 +194,7 @@ class TestDuckBridgeStringComparisonProbe {
                 The canary set lives in `DuckBridgeStringComparisonProbe.CANARIES`; the connection-init
                 fail-loud probe (`verifyOrThrow`) runs the identical set at mode >= BINARY.
                 """.trimIndent() + "\n"
-            val path = java.nio.file.Path.of("dev-docs/REPORT-string-comparison-probe-duckdb-1.5.4.md")
+            val path = java.nio.file.Path.of("dev-docs/REPORT-string-comparison-probe-duckdb-1.5.5.md")
             runCatching {
                 java.nio.file.Files.createDirectories(path.parent)
                 java.nio.file.Files.writeString(path, header + body + footer)
