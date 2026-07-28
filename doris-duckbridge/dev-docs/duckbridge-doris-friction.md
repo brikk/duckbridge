@@ -24,76 +24,25 @@ Entry shape: **Symptom** → **Root cause** (file:line) → **Workaround**
 
 ## Patches we carry — and want to DELETE
 
-The connector runs **only** on our patched FE + BE until upstream closes these
-gaps. The remaining diff is under [`../../doris-patches/`](../../doris-patches/);
-`tools/doris-baseline.sh --check-only` proves it applies at the pin. Each has a
+The connector runs **only** on our patched BE until upstream closes this gap (the
+FE runs it unpatched since #66135 — see the note below the table). The remaining
+diff is under [`../../doris-patches/`](../../doris-patches/);
+`tools/doris-baseline.sh --check-only` proves it applies at the pin. It has a
 friction entry below with its exit criteria. **The goal is a stock Doris (SPI +
 release BE) that runs `duckbridge` unpatched — at which point the patch is
 deleted and `BASELINE` points at the release tag.**
 
 | Patch | Touches | Deletes when… | Entry |
 |---|---|---|---|
-| ~~`fe/0001-spi-ready-types-duckbridge.patch`~~ **RETIRED 2026-07-28** | ~~`fe-core` `CatalogFactory.java` `SPI_READY_TYPES`~~ | ✅ **PAID** — upstream #66135 (`fce5af4e041`) removed `SPI_READY_TYPES`; the FE routes by registered provider type. Deleted at pin `a0c10f0672b`. | [2026-07-28 · #66135 re-vendor](#2026-07-28--66135-re-vendor-fe-patch-retired--scan-surface-consolidated) |
 | `be/0001-duckdb-type-handler.patch` | BE `be-java-extensions/jdbc-scanner` (`DuckDbTypeHandler` + `JdbcTypeHandlerFactory` case) | the BE `jdbc-scanner` gains a pluggable `TypeHandler` seam **or** ships a DuckDB handler | [2026-07-20 · jdbc-scanner TypeHandler seam](#2026-07-20--be-jdbc-scanner-has-no-registration-seam-for-a-dialect-typehandler-we-carry-a-be-patch) |
 
----
-
-## 2026-07-28 · #66135 re-vendor: FE patch retired + scan surface consolidated
-
-**Not friction — resolution.** Re-vendored to pin `a0c10f0672b` (the same pin
-`doris-ducklake` adopted; upstream #66135 `fce5af4e041` sits under it). This
-closes the two SPI-shape frictions below and adapts the connector — all
-compile-only, behaviour identical, `62` module tests + detekt green.
-
-**FE patch is dead (the [2026-07-20 · SPI_READY_TYPES](#2026-07-20--spi_ready_types-is-a-hardcoded-fe-allowlist-we-carry-an-fe-patch)
-friction is PAID).** #66135 removed `CatalogFactory.SPI_READY_TYPES`. The
-allowlist is gone; `CatalogFactory.createCatalog` now asks the registered
-providers first via `ConnectorFactory.createStandaloneCatalogConnector(type, …)`
-and any provider whose `getType()` claims the type wins — "installing a plugin is
-all it takes". `type="duckbridge"` routes to `DuckBridgeConnectorProvider` on a
-**pristine FE**. `fe/0001-spi-ready-types-duckbridge.patch` deleted; the FE now
-builds patch-free. (`"duckbridge"` is not a reserved `BUILTIN_CATALOG_TYPES` name,
-so `ConnectorPluginManager` doesn't refuse the provider.)
-
-**Scan surface consolidated (the [2026-07-19 · `JDBC_SCAN`/`FILE_SCAN`](#2026-07-19--jdbc_scan-range-type-is-dead-the-jdbc-path-rides-file_scan--tableformattypejdbc--format_jni)
-friction is MOOT).** The whole `ConnectorScanRangeType` discriminator was removed:
-- `ConnectorScanPlanProvider`: the 4/5/6/7-arg `planScan` overloads collapsed into
-  one `planScan(session, ConnectorScanRequest)` — the request object carries
-  handle/columns/filter/limit/requiredPartitions/countPushdown, so a connector can
-  no longer silently drop the limit or the count signal by implementing the wrong
-  overload. `getScanRangeType()` and `estimateScanRangeCount()` are **gone** from
-  the interface. `DuckBridgeScanPlanProvider` now overrides the single method and
-  reads `request.tableHandle/columns/filter/limit`; behaviour is byte-identical to
-  the old 4-arg (no limit) + 5-arg (limit) paths.
-- `ConnectorScanRange`: `getRangeType()` (and the `ConnectorScanRangeType` enum) +
-  `getDeleteFiles()`/`ConnectorDeleteFile` are removed. `DuckBridgeJdbcScanRange`
-  drops the `getRangeType()` override; the JDBC path is still selected by
-  `getTableFormatType()=="jdbc"` and the default `populateRangeParams` → the
-  `jdbc_params` map the BE's `JdbcJniScanner` reads. Nothing else moved.
-
-**Untouched.** The read-side metadata SPI (`ConnectorMetadata` and its
-`ConnectorSchemaOps`/`ConnectorTableMetadataOps` faces), the pushdown surface
-(`applyFilter`/`ConnectorPushdownOps`), and the type factories
-(`ConnectorType.of/arrayOf`, `ConnectorColumn`, `ConnectorTableSchema`) are all
-signature-compatible at this pin — re-verified against the worktree source, no
-change needed. `ConnectorType.of("STRUCT")` childless-reject (#66135) is a
-non-issue: the mapper maps STRUCT/MAP → `of("STRING")`, never `of("STRUCT")`.
-
-**BE patch unchanged and still required.** `be/0001-duckdb-type-handler.patch`
-re-verified `git apply --3way --check` clean at this pin (`JdbcTypeHandlerFactory`
-still has the `case "CLICKHOUSE"`/`case "SQLSERVER"` anchors). The BE `jdbc-scanner`
-is not part of the fe-connector SPI, so #66135 leaves it alone.
-
-**Still open (unchanged by #66135)** — the [2026-07-21 COUNT(*)](#2026-07-21--count-rides-the-row-by-row-jdbc-path--no-precomputed-count-pushdown-for-a-jdbc-riding-connector)
-JDBC-path friction below is orthogonal (JDBC scans can't serve a precomputed count
-regardless of the SPI shape). `doris-ducklake` also flags a live-cluster
-`COUNT(<nullable col>)` non-determinism (`colUniqueId=-1`) that would bite
-duckbridge equally if we ever needed FE-computed rows — noted, not v1-blocking.
-
-**Operating model:** local-only, no fork push. The patch is applied against the
-local worktree `~/DEV/OSS/doris-catalog-spi` (already at `a0c10f0672b`) and SPI
-jars are built from that checkout's `fe/` via `--install-spi-jars`; we are not
-publishing a `brikk/doris` fork branch for this pin. See `PATCHES.md` §Re-vendor log.
+> **The FE patch is retired (no longer an open item).** Upstream #66135 (`fce5af4e041`,
+> at pin `a0c10f0672b`) removed `CatalogFactory.SPI_READY_TYPES`; the FE now routes
+> `CREATE CATALOG type="duckbridge"` by registered `ConnectorProvider` type, so the FE
+> runs the plugin patch-free. The old FE-patch friction and the `ConnectorScanRangeType`
+> scan-discriminator friction are both closed by #66135 — full record in
+> `../../doris-patches/PATCHES.md` §Re-vendor log (2026-07-28). This log carries **open
+> items only**.
 
 ---
 
@@ -191,11 +140,12 @@ ingestion path is hardwired to Doris→Doris (surveyed at the pin; see
 2. **No zero-copy Arrow ingestion for a plugin.** The BE has an Arrow-Flight client
    reader, but it's hardwired to Doris→Doris federation (`remote_doris`) — there is
    no SPI surface to point it (or any ADBC/Arrow reader) at a plugin-chosen endpoint.
-3. **`ConnectorScanRangeType` has no in-memory/Arrow/custom-transport variant** that
-   the BE honors: `FILE_SCAN` / `JDBC_SCAN` / `REMOTE_OLAP_SCAN` / `CUSTOM`, and
-   only `FILE_SCAN` (+ `tableFormatType`) actually routes to a reader today
-   ([`NOTES-p5-p2-scan.md:68-83`](./NOTES-p5-p2-scan.md); `JDBC_SCAN` itself is dead —
-   see the 2026-07-19 entry).
+3. **No SPI seam selects an in-memory/Arrow/custom transport.** #66135 removed the
+   `ConnectorScanRangeType` discriminator entirely — every range is a file scan and the
+   BE reader is chosen purely by `tableFormatType` + the `file_scanner.cpp` allowlist
+   (item 1). So there is still no typed way for a plugin to say "read me over Arrow";
+   removing the dead enum didn't add a transport, it just confirmed `tableFormatType`
+   is the only selector ([`NOTES-p5-p2-scan.md`](./NOTES-p5-p2-scan.md)).
 
 So the pieces an Arrow/ADBC (or direct-Quack) transport would need — a BE reader
 that consumes Arrow batches from a plugin-named source, and an SPI way to select
@@ -270,71 +220,6 @@ patch header for why this is safe and self-contained).
 
 **Exit criteria.** When either lands in a Doris release, delete
 `be/0001-duckdb-type-handler.patch` and repoint `BASELINE`.
-
----
-
-## 2026-07-20 · `SPI_READY_TYPES` is a hardcoded FE allowlist (we carry an FE patch)
-
-**Symptom.** `DuckBridgeConnectorProvider` is `ServiceLoader`-registered
-(`META-INF/services/org.apache.doris.connector.spi.ConnectorProvider`), `getType()`
-returns `"duckbridge"`, the jar is on the FE classpath — and `CREATE CATALOG …
-type="duckbridge"` is still rejected as an unknown type, with **no FE log line**
-saying a registered provider was discovered-but-skipped.
-
-**Root cause.** `fe/fe-core/src/main/java/org/apache/doris/datasource/CatalogFactory.java`
-hardcodes `SPI_READY_TYPES` (at the pin:
-`{jdbc, es, trino-connector, max_compute, paimon, iceberg, hms}`). A provider whose
-`getType()` is outside that set falls through to the legacy switch and is silently
-dropped — there is no connector-declared registration seam. (Identical to the
-ducklake log's `SPI_READY_TYPES` entry; the whitelist is still hardcoded at our
-newer pin, just with more members.)
-
-**Workaround.** [`fe/0001-spi-ready-types-duckbridge.patch`](../../doris-patches/fe/0001-spi-ready-types-duckbridge.patch):
-one-line add of `"duckbridge"` to the set, re-applied on every Doris build we deploy.
-We use a **distinct** type (`"duckbridge"`, not `"jdbc"`) so we route to our provider,
-not the in-tree `fe-connector-jdbc`. Read-only connector ⇒ this is the *only* FE patch
-we need (no `pluginCatalogTypeToEngine` CREATE-TABLE patch, unlike ducklake).
-
-**Fix (pickable upstream changes).**
-- **End state:** drop the whitelist — any `ServiceLoader`-registered
-  `ConnectorProvider` wins (or a connector declares readiness via a capability), so a
-  new SPI full-adopter needs **no** FE source edit. This deletes our FE patch.
-- **Until then:** at minimum, **log a warning** when discovery skips a registered
-  provider. The silent drop is the worst part.
-
-**Exit criteria.** When the registration seam ships in a Doris release, delete
-`fe/0001-spi-ready-types-duckbridge.patch` and repoint `BASELINE`.
-
----
-
-## 2026-07-19 · `JDBC_SCAN` range type is dead; the JDBC path rides `FILE_SCAN` + `tableFormatType="jdbc"` + `FORMAT_JNI`
-
-**Symptom.** The plan (and the enum) suggested a JDBC scan emits
-`getRangeType() == JDBC_SCAN`. Building to that is wrong: the in-tree
-`fe-connector-jdbc` reference at the pin returns **`FILE_SCAN`** with
-`getTableFormatType() == "jdbc"` and `getFileFormat() == "jni"` (the
-`ConnectorScanRange` defaults). The `JDBC_SCAN` enum value **exists but is unused** —
-building against it silently produces a range no BE reader picks up.
-
-**Root cause.** `PluginDrivenScanNode` dispatches the BE reader off
-`setTableFormatType(scanRange.getTableFormatType())` (→ the JDBC JNI reader when
-`"jdbc"`), and `getFileFormatType()` defaults to `FORMAT_JNI` when no
-`file_format_type` scan-node prop is set. The `ConnectorScanRangeType.JDBC_SCAN`
-member is never consulted on this path. Documented in detail at
-[`NOTES-p5-p2-scan.md:68-90`](./NOTES-p5-p2-scan.md).
-
-**Workaround.** `DuckBridgeJdbcScanRange` returns `FILE_SCAN`, sets
-`tableFormatType="jdbc"`, puts everything (incl. `table_type=DUCKDB`, `query_sql`,
-`jdbc_url`, `jdbc_password`) into `getProperties()` — the default
-`populateRangeParams` copies that whole map into `setJdbcParams(...)`. We do **not**
-set `file_format_type`. Green end-to-end ([`NOTES-scaffold.md:108-120`](./NOTES-scaffold.md)).
-
-**Fix (pickable upstream changes).**
-- Either **honor `JDBC_SCAN`** in `PluginDrivenScanNode` (route it to the JDBC JNI
-  reader) so the typed enum is truthful, **or** remove/deprecate the dead member and
-  document that JDBC rides `FILE_SCAN` + `tableFormatType="jdbc"` in the
-  `ConnectorScanRange` javadoc. The current state — a typed enum value that silently
-  does nothing — is a trap for the next connector author.
 
 ---
 
