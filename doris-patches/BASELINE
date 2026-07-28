@@ -7,17 +7,20 @@
 # Immutable fork-mirror pin. Upstream branch-catalog-spi REBASES and GCs SHAs;
 # this SHA survives because it is pushed to the brikk/doris fork as an immutable
 # dated baseline branch (see FORK_BRANCH / FORK_URL below).
-PIN_SHA=568c4bb4571e23836a9ff659e6c4ef2fc7508f83
+PIN_SHA=a0c10f0672b730832b6a476b245cabe2789aa989
 
 # Upstream commit subject at the pin (match by subject if the SHA is ever GC'd
 # on upstream — the fork mirror keeps the SHA alive regardless).
-PIN_SUBJECT=[perf](catalog) two-level cross-query cache for external partition derived views (#65829)
+PIN_SUBJECT=[chore](handoff) record the 2026-07-27c rebase onto e7b7f1d1359 (upstream #66004 storage facade)
 
 # Author/commit date of the pinned commit (informational).
-PIN_DATE=2026-07-21
+PIN_DATE=2026-07-27
 
 # Immutable baseline branch on the fork mirror. Never force-pushed / rebased.
-FORK_BRANCH=duckbridge/baseline-20260721
+# CURRENT OPERATING MODEL (2026-07-28): we do NOT push a fork branch. Patches are applied LOCALLY
+# against a checkout already at PIN_SHA (the worktree ~/DEV/OSS/doris-catalog-spi), which is what
+# keeps the SHA alive for us. The fork fields below stay for when we decide to publish a mirror.
+FORK_BRANCH=duckbridge/baseline-20260728
 
 # Fork mirror remote. Clone/fetch this (NOT apache/doris) at PIN_SHA.
 FORK_URL=https://github.com/brikk/doris.git

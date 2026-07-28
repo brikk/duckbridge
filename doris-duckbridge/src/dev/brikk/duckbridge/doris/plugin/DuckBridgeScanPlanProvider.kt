@@ -7,7 +7,7 @@ import org.apache.doris.connector.api.handle.ConnectorTableHandle
 import org.apache.doris.connector.api.pushdown.ConnectorExpression
 import org.apache.doris.connector.api.scan.ConnectorScanPlanProvider
 import org.apache.doris.connector.api.scan.ConnectorScanRange
-import org.apache.doris.connector.api.scan.ConnectorScanRangeType
+import org.apache.doris.connector.api.scan.ConnectorScanRequest
 import java.util.Optional
 
 /**
@@ -28,26 +28,29 @@ internal class DuckBridgeScanPlanProvider(
     private val catalogId: Long,
 ) : ConnectorScanPlanProvider {
 
-    // FILE_SCAN (+ tableFormatType "jdbc") is the JDBC path at our pin, NOT the JDBC_SCAN enum
-    // value (which the in-tree JDBC connector does not use). See NOTES-p5-p2-scan.md.
-    override fun getScanRangeType(): ConnectorScanRangeType = ConnectorScanRangeType.FILE_SCAN
-
-    override fun estimateScanRangeCount(session: ConnectorSession?, handle: ConnectorTableHandle): Long = 1
-
+    /**
+     * Single scan entry point. The SPI (upstream #66135-era) collapsed the former 4-arg/5-arg
+     * `planScan` overloads — and the separate `getScanRangeType()` / `estimateScanRangeCount()`
+     * methods — into one `planScan(session, ConnectorScanRequest)`: the request carries the table
+     * handle, projected columns, remaining filter, row limit, pruned partitions and the COUNT(*)
+     * signal. We consume exactly the fields the old overrides did (handle, columns, filter, limit),
+     * so behaviour is byte-identical to the previous no-limit (4-arg) and limit (5-arg) paths.
+     *
+     * `requiredPartitions` and `isCountPushdown` are ignored: a JDBC scan is un-partitionable
+     * (probe P2 — always exactly one range) and duckbridge has no FE-servable metadata count (the
+     * BE counts by reading; an empty projection already renders `SELECT 1`, see the builder).
+     *
+     * `getScanRangeType()` is gone from the SPI — every range is a file scan now (the JDBC path
+     * rides `getTableFormatType() == "jdbc"` on the range; see [DuckBridgeJdbcScanRange]).
+     */
     override fun planScan(
         session: ConnectorSession?,
-        handle: ConnectorTableHandle,
-        columns: List<ConnectorColumnHandle>,
-        filter: Optional<ConnectorExpression>,
-    ): List<ConnectorScanRange> = planScan(session, handle, columns, filter, NO_LIMIT)
-
-    override fun planScan(
-        session: ConnectorSession?,
-        handle: ConnectorTableHandle,
-        columns: List<ConnectorColumnHandle>,
-        filter: Optional<ConnectorExpression>,
-        limit: Long,
+        request: ConnectorScanRequest,
     ): List<ConnectorScanRange> {
+        val handle = request.tableHandle
+        val columns = request.columns
+        val filter = request.filter
+        val limit = request.limit
         val tableHandle = handle as? DuckBridgeTableHandle
             ?: throw DorisConnectorException(
                 "duckbridge planScan received a foreign table handle: ${handle::class.java.name}",

@@ -36,7 +36,8 @@ past listing-nothing fails loud with a pointer to the plan's open probes. See
 Real (mechanics):
 - `DuckBridgeConnectorProvider` — `ServiceLoader`-registered
   (`resources/META-INF/services/org.apache.doris.connector.spi.ConnectorProvider`), `getType() ==
-  "duckbridge"`. Gated at the FE by the `SPI_READY_TYPES` whitelist patch.
+  "duckbridge"`. Since pin `a0c10f0672b` (#66135) the FE routes by registered provider type — no
+  whitelist patch needed; a pristine FE loads the plugin.
 - `DuckBridgeConnector` — composes the SPI object graph (metadata + scan-plan seam).
 - `DuckBridgeConnectorConfig` — parses the DuckDB/Quack JDBC connection coordinates off the catalog
   properties (real, tested).
@@ -50,7 +51,9 @@ Real (mechanics):
 
 - **`DuckBridgeScanPlanProvider` — REAL as of P5/P2 (2026-07-19).** `planScan` composes a DuckDB
   `SELECT` (`DuckBridgeQueryBuilder`) and emits ONE JDBC scan range (`DuckBridgeJdbcScanRange`:
-  `FILE_SCAN` + `tableFormatType="jdbc"` + `table_type=DUCKDB`) so rows flow through the BE
+  `tableFormatType="jdbc"` + `table_type=DUCKDB`; since pin `a0c10f0672b` the SPI dropped the
+  `getRangeType()`/`ConnectorScanRangeType` discriminator and collapsed the `planScan` overloads
+  into one `planScan(session, ConnectorScanRequest)`) so rows flow through the BE
   `JdbcJniScanner` + our `DuckDbTypeHandler`. Predicate pushdown is the **domain floor only**
   (comparisons/`IN`/`IS NULL`, boolean combinators, over scalar columns, faithfully escaped,
   NUL-refusing); function-shape pushdown waits on P1. The FE re-evaluates every conjunct above the
@@ -60,9 +63,11 @@ Real (mechanics):
 
 ## Doris-side patches (separate from this module)
 
-The connector runs only on our **patched FE + BE** until the SPI + our BE handler land in a Doris
-release. Both patches live at the repo root under `doris-patches/`:
-- `fe/0001-spi-ready-types-duckbridge.patch` — whitelist `"duckbridge"` in `SPI_READY_TYPES`.
+The connector runs only on our **patched BE** until our BE handler lands in a Doris release (the FE
+already runs it unpatched since #66135). The remaining patch lives at the repo root under
+`doris-patches/`:
+- ~~`fe/0001-spi-ready-types-duckbridge.patch`~~ — **RETIRED at pin `a0c10f0672b`**: #66135 removed
+  `SPI_READY_TYPES`, so the FE routes `type="duckbridge"` by registered provider on a pristine FE.
 - `be/0001-duckdb-type-handler.patch` — a first-class `DuckDbTypeHandler` in the BE `jdbc-scanner`
   (LARGEINT/HUGEINT + VARBINARY/BLOB + ARRAY/LIST; STRUCT/MAP deferred to STRING/JSON in v1) + a
   `case "DUCKDB"` in `JdbcTypeHandlerFactory`. Emit `table_type = DUCKDB` from `planScan`.

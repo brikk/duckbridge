@@ -2,13 +2,20 @@
 
 The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for Doris's
 `fe-connector` catalog SPI (the `branch-catalog-spi` line, pre-release). It runs **only on our
-own patched FE + BE** until the SPI (and our BE type handler) land in a Doris release. Two small,
-reapplyable patches carry that delta:
+own patched FE + BE** until the SPI (and our BE type handler) land in a Doris release. As of pin
+`a0c10f0672b` (2026-07-28 re-vendor) **exactly one** small, reapplyable patch carries that delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
-| FE | `fe/0001-spi-ready-types-duckbridge.patch` | `fe-core` `CatalogFactory.java` | whitelist catalog type `"duckbridge"` in `SPI_READY_TYPES` |
 | BE | `be/0001-duckdb-type-handler.patch` | `be-java-extensions/jdbc-scanner` | new `DuckDbTypeHandler` + a `case "DUCKDB"` in `JdbcTypeHandlerFactory` |
+
+> **The FE patch is RETIRED.** `fe/0001-spi-ready-types-duckbridge.patch` (which whitelisted
+> `"duckbridge"` in `CatalogFactory.SPI_READY_TYPES`) is **gone as of pin `a0c10f0672b`**: upstream
+> **#66135** (`fce5af4e041`) removed `SPI_READY_TYPES` entirely. `CatalogFactory.createCatalog` now
+> asks the registered connector providers first (`ConnectorFactory.createStandaloneCatalogConnector`)
+> — any provider whose `getType()` claims the `CREATE CATALOG` type wins, so
+> `type="duckbridge"` routes to our `DuckBridgeConnectorProvider` on a **pristine, unpatched FE**.
+> No whitelist to patch. The FE now builds **patch-free**; the deleted diff lives on in git history.
 
 **Patch files are the canonical artifact** (not fork commits): they live here as visible diffs so
 the upstream-PR obligation is impossible to forget and the delta is reviewable at a glance. The
@@ -16,9 +23,9 @@ fork mirror (`brikk/doris`) exists only to keep the **pinned baseline SHA alive*
 `branch-catalog-spi` rebases constantly and GCs SHAs. The pin is recorded in exactly one file,
 [`BASELINE`](./BASELINE), which docs and `tools/doris-baseline.sh` read.
 
-A read-only connector needs **only** the FE whitelist guard + the BE handler. The
-`pluginCatalogTypeToEngine` CREATE-TABLE patch that `doris-ducklake` carries is **not** included
-here (it's a write/DDL gate) — see the plan's Deploy shape.
+A read-only connector now needs **only** the BE handler (the FE whitelist guard is obsolete — see
+the box above). The `pluginCatalogTypeToEngine` CREATE-TABLE patch that `doris-ducklake` used to
+carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbridge never carried it.
 
 ---
 
@@ -27,15 +34,18 @@ here (it's a write/DDL gate) — see the plan's Deploy shape.
 > `branch-catalog-spi` **rebases constantly**; upstream SHAs get GC'd. **Never build from a blind
 > branch tip.** Always build from the pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `568c4bb4571e23836a9ff659e6c4ef2fc7508f83`
-> - **subject** = `[perf](catalog) two-level cross-query cache for external partition derived views (#65829)`
-> - **fork branch** = `duckbridge/baseline-20260721` on `https://github.com/brikk/doris.git`
+> - **`PIN_SHA`** = `a0c10f0672b730832b6a476b245cabe2789aa989`
+> - **subject** = `[chore](handoff) record the 2026-07-27c rebase onto e7b7f1d1359 (upstream #66004 storage facade)`
+> - **fork branch** = `duckbridge/baseline-20260728` (reserved name; **NOT pushed** — see below)
 >
-> The pin survives upstream GC because it's pushed to the fork as an **immutable dated baseline
-> branch**. If you ever see the SHA missing from *upstream*, that's expected — fetch it from the
-> **fork**. If a re-vendor moves the pin, re-diff both patches (`git apply --3way --check` must be
-> clean), record what moved and why it's benign in the Re-vendor log below, and update `BASELINE`.
-> Keep `BASELINE`, this note, and the Re-vendor log in sync.
+> **Current operating model (2026-07-28): local-only, no fork push.** We apply the patch LOCALLY
+> against a checkout already at `PIN_SHA` — the worktree `~/DEV/OSS/doris-catalog-spi` — and document
+> here + in the friction log. That worktree is what keeps the SHA alive for us; we are **not**
+> committing/pushing a `brikk/doris` fork branch right now. (The fork-mirror discipline below is the
+> future publish path if we ever want a fresh clone to bootstrap without a local Doris checkout.) If
+> a re-vendor moves the pin, re-diff the remaining patch (`git apply --3way --check` must be clean),
+> record what moved and why it's benign in the Re-vendor log below, and update `BASELINE`. Keep
+> `BASELINE`, this note, and the Re-vendor log in sync.
 
 ## Bootstrap: the project-local Doris SPI jars (SELF-CONTAINED)
 
@@ -93,10 +103,10 @@ all.)
 default `--check-only` mode) and require **JDK 17** (the Doris FE toolchain):
 
 ```bash
-# 1. Verify the patches still apply at the pin (default mode; clones the fork at the pin):
+# 1. Verify the BE patch still applies at the pin (default mode; clones the fork at the pin):
 tools/doris-baseline.sh --check-only
 
-# 2. Apply the patches into the cache checkout:
+# 2. Apply the BE patch into the cache checkout (the FE builds patch-free at this pin):
 tools/doris-baseline.sh --apply
 
 # 3. Build FE and/or BE (JDK 17 required; multi-hour for the BE C++ build):
@@ -114,22 +124,24 @@ re-running the C++ build.
 ### Manual apply (equivalent)
 
 ```bash
-# against a clean checkout of the pin (fork mirror keeps the SHA alive):
-git apply --3way doris-patches/fe/0001-spi-ready-types-duckbridge.patch
+# against a clean checkout of the pin (fork mirror keeps the SHA alive). BE patch only —
+# the FE builds patch-free at this pin (#66135 removed the SPI_READY_TYPES whitelist).
 git apply --3way doris-patches/be/0001-duckdb-type-handler.patch
 ```
 
-Both patches carry a rationale/upstream-ask header (lines above the `--- (patch body below ...)`
+The patch carries a rationale/upstream-ask header (lines above the `--- (patch body below ...)`
 marker are commentary that `git apply` ignores) followed by a `git diff`-format body.
 
 ---
 
 ## Exit criteria (the goal is deletion)
 
-Each patch is an upstream ask. When the fe-connector SPI **and** our `DuckDbTypeHandler` PR land in
-a Doris **release**: `BASELINE` points at the release tag, the fork mirror becomes optional, and
-`doris-patches/` empties to a tombstone. A stock Doris carrying the SPI + our handler then runs the
-plugin unpatched.
+The remaining patch is an upstream ask. The FE ask is already **paid** — #66135 removed the
+`SPI_READY_TYPES` whitelist upstream, so the FE runs the plugin unpatched (the FE patch was retired
+at pin `a0c10f0672b`). What's left: when our `DuckDbTypeHandler` PR lands in a Doris **release**,
+`BASELINE` points at the release tag, the fork mirror becomes optional, and `doris-patches/` empties
+to a tombstone. A stock Doris carrying the fe-connector SPI + our BE handler then runs the plugin
+fully unpatched.
 
 ---
 
@@ -153,6 +165,43 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-07-28 — re-vendor to `a0c10f0672b`** (subject: *"[chore](handoff) record the 2026-07-27c
+  rebase onto e7b7f1d1359 (upstream #66004 storage facade)"*; SHAs churn on rebase — match by
+  subject). **First PATCH-FREE FE build — the FE patch is RETIRED.** Tracks the same pin
+  `doris-ducklake` adopted (its 2026-07-27 re-vendor, upstream #66135 `fce5af4e041`); verified
+  against the local worktree `~/DEV/OSS/doris-catalog-spi` already checked out at this SHA.
+  - **FE patch DELETED (`fe/0001-spi-ready-types-duckbridge.patch`).** #66135 removed
+    `CatalogFactory.SPI_READY_TYPES`; `createCatalog` now asks the registered providers first
+    (`ConnectorFactory.createStandaloneCatalogConnector`), so a provider claiming
+    `getType()=="duckbridge"` wins on a pristine FE — re-verified by reading `CatalogFactory.java`
+    at this pin (the whitelist is gone; `"duckbridge"` is not a reserved `BUILTIN_CATALOG_TYPES`
+    name, so `ConnectorPluginManager` accepts it). The diff survives in git history. The tool's
+    `PATCHES` array and every `git apply` line here are now BE-only.
+  - **BE patch UNCHANGED and still required.** `be/0001-duckdb-type-handler.patch` re-verified at
+    this pin: `JdbcTypeHandlerFactory` still has `case "CLICKHOUSE"` / `case "SQLSERVER"` (we insert
+    `case "DUCKDB"` between). The BE `jdbc-scanner` is not part of the fe-connector SPI, so #66135
+    doesn't touch it.
+  - **Connector source adapted to the #66135 SPI scan-surface consolidation** (compile-only churn,
+    behaviour identical; the read-side metadata SPI + the pushdown surface are UNCHANGED, re-verified
+    against the pin's `ConnectorMetadata`/`ConnectorSchemaOps`/`ConnectorTableMetadataOps`/
+    `ConnectorType`/`ConnectorColumn`/`ConnectorTableSchema`):
+    - `DuckBridgeScanPlanProvider`: the 4-arg/5-arg `planScan` overloads collapsed into one
+      `planScan(session, ConnectorScanRequest)` (request carries handle/columns/filter/limit/
+      requiredPartitions/countPushdown); `getScanRangeType()` and `estimateScanRangeCount()` are
+      gone from `ConnectorScanPlanProvider` — removed. `getScanNodeProperties` (4-arg) is unchanged.
+    - `DuckBridgeJdbcScanRange`: `getRangeType()`/`ConnectorScanRangeType` removed from
+      `ConnectorScanRange` — dropped the override; the JDBC path is still selected by
+      `getTableFormatType()=="jdbc"` and the default `populateRangeParams` → `jdbc_params`.
+    - No test churn (no test constructed a scan range or called `planScan` directly). `structOf`
+      (childless-`STRUCT` rejection, #66135 item 8) is a non-issue: the type mapper maps
+      DuckDB STRUCT/MAP → `ConnectorType.of("STRING")`, never `of("STRUCT")`.
+  - **Local-only operating model — no fork push.** We are NOT publishing a `brikk/doris` fork
+    branch for this pin; patches are applied locally against the worktree `~/DEV/OSS/doris-catalog-spi`
+    (already at `a0c10f0672b`), which is what keeps the SHA alive for us. SPI jars for the gradle
+    build are produced by the `--install-spi-jars` maven invocation pointed at that checkout's `fe/`
+    (that is exactly how this re-vendor was verified). `duckbridge/baseline-20260728` is a reserved
+    name only, for if/when we later decide to publish a fork mirror.
 
 - **2026-07-21 — re-vendor to `568c4bb457`** (subject: *"[perf](catalog) two-level cross-query
   cache for external partition derived views (#65829)"*), pushed to the fork as

@@ -30,9 +30,11 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd -P)"
 BASELINE_FILE="${REPO_ROOT}/doris-patches/BASELINE"
 PATCH_DIR="${REPO_ROOT}/doris-patches"
 
-# FE first, BE second (FE is a one-liner; BE is the bigger delta).
+# BE only. The FE patch (fe/0001-spi-ready-types-duckbridge.patch, SPI_READY_TYPES whitelist) was
+# RETIRED at pin a0c10f0672b: upstream #66135 removed CatalogFactory.SPI_READY_TYPES, so a registered
+# ConnectorProvider claiming type="duckbridge" now routes to the SPI on a PRISTINE FE — no patch. See
+# doris-patches/PATCHES.md (§Re-vendor log). The BE DuckDbTypeHandler patch is still required.
 PATCHES=(
-    "${PATCH_DIR}/fe/0001-spi-ready-types-duckbridge.patch"
     "${PATCH_DIR}/be/0001-duckdb-type-handler.patch"
 )
 
