@@ -3,7 +3,7 @@
 The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for Doris's
 `fe-connector` catalog SPI (the `branch-catalog-spi` line, pre-release). It runs **only on our
 own patched FE + BE** until the SPI (and our BE type handler) land in a Doris release. As of pin
-`a0c10f0672b` (2026-07-28 re-vendor) **exactly one** small, reapplyable patch carries that delta:
+`0da96f1ad3e` (2026-07-30 re-vendor) **exactly one** small, reapplyable patch carries that delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -34,9 +34,9 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > `branch-catalog-spi` **rebases constantly**; upstream SHAs get GC'd. **Never build from a blind
 > branch tip.** Always build from the pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `a0c10f0672b730832b6a476b245cabe2789aa989`
-> - **subject** = `[chore](handoff) record the 2026-07-27c rebase onto e7b7f1d1359 (upstream #66004 storage facade)`
-> - **fork branch** = `duckbridge/baseline-20260728` (reserved name; **NOT pushed** — see below)
+> - **`PIN_SHA`** = `0da96f1ad3e7b91b777195d148c921a8f23b1f96`
+> - **subject** = `[chore](handoff) record the 2026-07-30 rebase onto 794d514479e (upstream #65991)`
+> - **fork branch** = `duckbridge/baseline-20260730` (reserved name; **NOT pushed** — see below)
 >
 > **Current operating model (2026-07-28): local-only, no fork push.** We apply the patch LOCALLY
 > against a checkout already at `PIN_SHA` — the worktree `~/DEV/OSS/doris-catalog-spi` — and document
@@ -165,6 +165,37 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-07-30 — re-vendor to `0da96f1ad3e`** (subject: *"[chore](handoff) record the 2026-07-30
+  rebase onto 794d514479e (upstream #65991)"*; SHAs churn on rebase — match by subject). Tracks the
+  pin `doris-ducklake` adopted (its 2026-07-29 re-vendor); verified against the local worktree
+  `~/DEV/OSS/doris-catalog-spi` already at this SHA. **One required plugin-side change (#66211); no
+  connector `.kt` changes.**
+  - **#66211 (`88abe41a4e3`) — fail-closed plugin API-version gate. REQUIRED, or the plugin won't
+    load.** The FE's `ApiVersionGate` now REJECTS any directory-loaded connector plugin whose
+    factory jar lacks a `Doris-Connector-Plugin-Api-Version` MANIFEST main attribute (absent ⇒
+    refused at `STAGE_API_VERSION`). Verified against the gate source at the pin
+    (`fe-extension-loader/.../ApiVersionGate.java`): the attribute name is exactly
+    `Doris-Connector-Plugin-Api-Version` and the rule is **major-must-match, minor/patch ignored**;
+    the kernel major comes from `fe-connector-spi`'s
+    `META-INF/doris/connector-plugin-api-version.properties` (`api.version=1.0` ⇒ major 1). Stamped
+    `Doris-Connector-Plugin-Api-Version: 1.0` into the connector `jar` task
+    (`doris-duckbridge/build.gradle.kts`); confirmed present in the built jar AND in the jar bundled
+    under `lib/` in the plugin zip (that's the artifact the FE loads). Bump when the SPI major changes.
+  - **BE patch UNCHANGED and still required.** `be/0001-duckdb-type-handler.patch` re-verified
+    `git apply --3way --check` clean at this pin (`case "CLICKHOUSE"`/`case "SQLSERVER"` anchors
+    intact). The FE remains patch-free (`SPI_READY_TYPES` still absent — re-checked).
+  - **No SPI compile churn.** SPI jars rebuilt from the pin into `doris-m2/`;
+    `:doris-duckbridge:test` (62) + `:detekt` + `:jar`/`:pluginZip` green, zero `.kt` edits (the
+    #66135 scan-surface adaptation from the 2026-07-28 entry already covered the API shape; nothing
+    moved between `a0c10f0672b` and here that our surface touches — the intervening commits are
+    hive/iceberg/paimon fixes + CTAS-atomicity + dead-credential-surface deletion, none of which we
+    consume).
+  - **Live smoke NOT run here** (compile + unit + detekt + patch-apply + manifest-in-zip verified).
+    `doris-ducklake` ran a full live smoke on this same pin (FULL PASS incl. plugin load with
+    `failureCount=0`), which exercises the same `ApiVersionGate` path duckbridge now satisfies.
+  - **Operating model unchanged:** local-only, no fork push (patches applied against the worktree
+    at the pin; SPI jars built from that checkout's `fe/`).
 
 - **2026-07-28 — re-vendor to `a0c10f0672b`** (subject: *"[chore](handoff) record the 2026-07-27c
   rebase onto e7b7f1d1359 (upstream #66004 storage facade)"*; SHAs churn on rebase — match by

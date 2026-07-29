@@ -2,8 +2,8 @@
 
 Running log of SPI / FE / BE surprises hit while implementing the `duckbridge`
 `fe-connector` plugin (Route J: JDBC-over-Quack) against the `branch-catalog-spi`
-line, pinned at `doris-patches/BASELINE` (`PIN_SHA=a0c10f0672b…`; earlier entries
-were written at `5f009592035…` / `568c4bb457…`).
+line, pinned at `doris-patches/BASELINE` (`PIN_SHA=0da96f1ad3e…`; earlier entries
+were written at `a0c10f0672b…` / `5f009592035…` / `568c4bb457…`).
 
 For Doris fe-connector / BE maintainers — each entry has a pickable upstream
 fix. For future plugin authors — read top-to-bottom before starting; saves
