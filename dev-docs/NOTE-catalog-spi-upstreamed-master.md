@@ -1,6 +1,14 @@
 # Note: the connector SPI is now in apache/doris `master` — retire the fork, build from master
 
-> **STATUS 2026-07-31 — DONE for `doris-ducklake`; TODO for duckbridge.** The `fe-connector`
+> **STATUS 2026-07-31 — DONE for duckbridge too (FE/SPI move + live BE validation, all GREEN).**
+> duckbridge is re-vendored to apache/doris `master` `ded91fb9fb3` (`doris-patches/PATCHES.md`
+> §Re-vendor log 2026-08-01), compiles with zero source changes, and a full `compose/smoke.sh`
+> ran end-to-end against a **master FE + master-BE-with-our-`DuckDbTypeHandler`** (a thin jar
+> overlay — no C++ rebuild; see the re-vendor log): connector loads on the pristine FE, and
+> LARGEINT/ARRAY/unicode reads, pushdown (P1/P3/P6), count and P2 load are all green. The steps
+> below are the original migration recipe (kept for the record).
+>
+> **STATUS 2026-07-31 — DONE for `doris-ducklake`.** The `fe-connector`
 > catalog SPI **merged into apache/doris `master`** (`#64304` *decouple external catalogs from FE
 > core into loadable connector plugins*, plus the whole `fe/fe-connector` tree incl.
 > `fe-connector-api` / `fe-connector-spi`). `doris-ducklake` re-vendored off the retired brikk fork
@@ -141,12 +149,23 @@ actually need live data reads.
 
 ---
 
-## Still broken upstream (unchanged), if you share these paths
+## Upstream status on the master BE
 
-- Bare `COUNT(<nullable col>)` on a plugin scan is non-deterministic (scan slot `colUniqueId=-1`).
-- BE position-delete reader rejects OPTIONAL delete-file columns (iceberg-spec REQUIRED) —
-  `Not nullable column has null values in parquet file`.
-- No channel for FE-computed rows to reach the BE (matters if quack materializes rows FE-side).
+`doris-ducklake` rebuilt the BE from master (`doris-be:master-local`) and confirmed **two of the
+three prior blockers are FIXED** on the master native reader:
+
+- ✅ **`COUNT(<nullable col>)` pushdown — FIXED on master.** Previously non-deterministic
+  (`colUniqueId=-1`, e.g. `COUNT(v)=0`); ducklake now sees `COUNT(*)=4 COUNT(v)=2`. The #65548
+  count-pushdown gate behaves. **duckbridge exposure:** minimal — duckbridge rides the JDBC path and
+  does **not** push a metadata count (empty projection renders `SELECT 1`; the BE counts by reading),
+  so this was never a live duckbridge blocker, but the shared plugin-scan hazard is now gone.
+- ✅ **BE position-delete OPTIONAL columns — FIXED on master.** Step-7 DELETE previously died with
+  `[CORRUPTION] Not nullable column has null values in parquet file`; ducklake's Step 7 is now GREEN
+  (93/93 rows). **duckbridge exposure: none** — duckbridge is a read-only JDBC-over-Quack connector
+  with no delete files; this item was inherited boilerplate from the ducklake handoff, not a
+  duckbridge path.
+- ⏳ **No channel for FE-computed rows to reach the BE** — still open (matters only if quack ever
+  materializes rows FE-side; not a v1 duckbridge path).
 
 ---
 
@@ -156,5 +175,7 @@ actually need live data reads.
 2. `git apply --check` the BE `DuckDbTypeHandler` patch on master; rebase if needed.
 3. `DORIS_SRC=~/DEV/OSS/doris tools/doris-baseline.sh --install-spi-jars` → `doris-m2/`.
 4. Recompile + test + detekt — expect green (doris-ducklake needed zero changes).
-5. FE: reuse `~/DEV/OSS/doris/output/fe` (bake `--fe`, or validate SPI on the live doris-ducklake
-   master FE now). BE: monster build, deferred — you need it for data reads because of the patch.
+5. FE: retag doris-ducklake's master FE (`doris-fe:pr62767-local` → `doris-fe:duckbridge-local`) —
+   patch-free, connector-agnostic. BE: **no monster build** — the patch is jdbc-scanner-only, so
+   splice `DuckDbTypeHandler` + the DUCKDB arm into the stock master jar (javac + `jar uf`) and thin-
+   overlay it `FROM doris-be:master-local`. **All done + smoke GREEN (2026-07-31).**

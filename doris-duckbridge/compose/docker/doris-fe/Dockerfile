@@ -1,10 +1,12 @@
 # FE overlay image for the doris-duckbridge live/probe compose.
 #
-# Overlays our locally-built, PATCHED branch-catalog-spi FE (output/fe — built by
-# `tools/doris-baseline.sh --build-fe`, carrying the SPI_READY_TYPES=duckbridge patch,
-# see ../../../../doris-patches/) onto a stock released Doris FE image, so the compose
-# cluster runs our connector-SPI FE while inheriting the base image's init scripts /
-# JDK / entrypoint. Mirrors the doris-ducklake fe-overlay pattern.
+# Overlays an apache/doris `master` FE build (output/fe) onto a stock released Doris FE image,
+# so the compose cluster runs the connector-SPI FE while inheriting the base image's init
+# scripts / JDK / entrypoint. The FE is **PATCH-FREE** on master — the fe-connector SPI is
+# upstreamed and #66135 removed the SPI_READY_TYPES whitelist, so `type=duckbridge` routes by
+# registered provider on a pristine FE. (Validated 2026-07-31 by retagging doris-ducklake's
+# master FE `doris-fe:pr62767-local` as `doris-fe:duckbridge-local` — no duckbridge-specific FE
+# build needed. Mirrors the doris-ducklake fe-overlay pattern.)
 #
 # The compose file must NOT reference the ~/.cache/duckbridge/doris build tree directly:
 # bake-images.sh stages a minimal build context (copies output/fe out of the cache) and

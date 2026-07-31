@@ -173,10 +173,11 @@ done
 # deliberately; if a scan ever hits "Unsupported exec type in pipeline", the BE image is stale
 # (not branch-built) — rebake it, don't paper over it with the shim.
 
-# 6. Verify the connector provider registered (FE log OR the SPI_READY_TYPES gate accepted
-# the type). The cleanest FE-observable signal is that CREATE CATALOG type=duckbridge is NOT
-# rejected as "Unknown catalog type" — that only passes if the whitelist patch is present AND
-# the provider ServiceLoader-registered.
+# 6. Verify the connector provider registered. On master (SPI upstreamed, #66135) the FE routes
+# CREATE CATALOG by REGISTERED PROVIDER TYPE — no whitelist patch. The cleanest FE-observable
+# signal is that CREATE CATALOG type=duckbridge is NOT rejected as "Unknown catalog type", which
+# passes on a pristine FE once the plugin ServiceLoader-registers (the FE log shows
+# "registered types: [duckbridge, …]").
 log "Provider-registration probe (fe.log grep, best-effort)…"
 "${DOCKER}" exec doris-duckbridge-fe sh -c \
     'grep -iE "duckbridge|ConnectorProvider" /opt/apache-doris/fe/log/fe.log | tail -5' 2>/dev/null \
@@ -189,8 +190,8 @@ if [[ "$UP_ONLY" -eq 1 ]]; then
     exit 0
 fi
 
-# 7. CREATE CATALOG type=duckbridge. Passing the FE gate (no "Unknown catalog type") proves
-# the SPI_READY_TYPES whitelist patch + the ServiceLoader registration both work.
+# 7. CREATE CATALOG type=duckbridge. Passing the FE gate (no "Unknown catalog type") proves the
+# provider ServiceLoader-registered and the pristine master FE routed by type (no FE patch).
 log "Creating catalog duckbridge_test (type=duckbridge, quack URL + token)…"
 set +e
 cat_out=$(fe_sql -e "
@@ -209,14 +210,14 @@ set -e
 echo "${cat_out}" | tail -20
 if [[ $cat_status -ne 0 ]]; then
     if echo "${cat_out}" | grep -qiE "unknown catalog type|not.*ready|SPI_READY"; then
-        log "GATE FAIL: type=duckbridge rejected — the FE is missing the SPI_READY_TYPES=duckbridge"
-        log "  patch (doris-patches/fe/), OR the plugin didn't ServiceLoader-register. Rebake the FE."
+        log "GATE FAIL: type=duckbridge rejected as unknown — the plugin didn't ServiceLoader-register"
+        log "  (check the FE log for 'registered types: [duckbridge, …]'; the FE needs no patch on master)."
         exit 1
     fi
     log "CREATE CATALOG failed for another reason — inspect output above + fe.log."
     exit 1
 fi
-log "GATE OK: catalog created — SPI whitelist + provider registration both work."
+log "GATE OK: catalog created — provider registration + type-routing on the pristine master FE both work."
 
 # 8. METADATA is now REAL (probe P4 settled): resolution over quack-jdbc should list the seeded
 # quack schemas/tables and DESC a table's columns with the probe-decided Doris types. The SCAN

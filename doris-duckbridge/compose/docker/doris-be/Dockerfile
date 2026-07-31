@@ -1,11 +1,20 @@
 # BE overlay image for the doris-duckbridge live/probe compose.
 #
-# UNLIKE doris-ducklake (which pairs its branch FE with a STOCK 4.1.x BE because it rides
+# UNLIKE doris-ducklake (which pairs its master FE with a STOCK 4.1.x BE because it rides
 # the BE's native parquet/iceberg reader), doris-duckbridge rides `JdbcJniScanner`, which
-# is ABSENT from stock 4.1.x — so we need a BRANCH-BUILT BE too (plan §Which Doris). This
-# overlay replaces the stock BE distribution with our locally-built, patched output/be
-# (built by `tools/doris-baseline.sh --build-be`, carrying the BE DuckDbTypeHandler patch,
-# see ../../../../doris-patches/be/).
+# is ABSENT from stock 4.1.x — so we need a master-built BE too (plan §Which Doris), carrying
+# our BE DuckDbTypeHandler patch (see ../../../../doris-patches/be/).
+#
+# PROVEN FAST PATH (2026-07-31, master): the patch is jdbc-scanner-only (Java), so instead of
+# this full-dist overlay we built `doris-be:duckbridge-local` as a THIN OVERLAY over an existing
+# master BE image:
+#   FROM doris-be:master-local      # doris-ducklake's apache/doris master output/be
+#   COPY jdbc-scanner-jar-with-dependencies.jar \
+#        /opt/apache-doris/be/lib/java_extensions/jdbc-scanner/jdbc-scanner-jar-with-dependencies.jar
+# where the jar is the stock master jar with DuckDbTypeHandler + the DUCKDB factory arm spliced
+# in (compile the two classes against the stock jar with javac, `jar uf`). No C++ rebuild, no
+# 16 GB re-bake — smoke.sh drove it end-to-end GREEN. This Dockerfile (full-dist overlay off a
+# built output/be) remains the from-scratch path when you have a fresh master BE build tree.
 #
 # The compose file must NOT reference the ~/.cache/duckbridge/doris build tree directly:
 # bake-images.sh stages a minimal build context (copies output/be out of the cache) and

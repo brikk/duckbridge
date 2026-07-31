@@ -195,10 +195,20 @@ aren't lost.
     LARGEINT+ARRAY no VARBINARY; Trino = ARRAY+VARBINARY drops LARGEINT) — DuckDB needs all three, and
     the factory default falls to `DefaultTypeHandler` (no ARRAY decode). SPI jars rebuilt from master
     into `doris-m2/`.
-  - **BE image rebuild deferred.** Unlike `doris-ducklake` (FE-only; its read path tolerates a
-    stock 4.1.x BE), duckbridge's read path REQUIRES the patched BE, so a live data-read move needs a
-    master BE rebuild + the re-applied patch — the heavy build, deferred. The cheap FE/SPI move
-    (retarget + SPI-jar refresh + recompile) is done here. Live smoke NOT run here.
+  - **BE image + live smoke — DONE, FULL PASS on master (2026-07-31).** No heavy rebuild was
+    needed: the BE patch is jdbc-scanner-only (Java), so I compiled the two classes
+    (`DuckDbTypeHandler` + `JdbcTypeHandlerFactory`) against the stock master jar and spliced them
+    into `jdbc-scanner-jar-with-dependencies.jar`, then baked a **thin overlay** image
+    `doris-be:duckbridge-local` `FROM doris-be:master-local` (doris-ducklake's master BE) that just
+    `COPY`s the patched jar over — no C++ rebuild, no 16 GB re-bake. FE = doris-ducklake's master FE
+    (`doris-fe:pr62767-local`, connector-agnostic + patch-free) retagged. `compose/smoke.sh` GREEN
+    end-to-end against master: connector loads (`registered types: [duckbridge, …]`),
+    `CREATE CATALOG type=duckbridge` on the **pristine master FE**, metadata (HUGEINT→LARGEINT,
+    VARCHAR[]→ARRAY), full-row SELECT decoding **LARGEINT (HUGEINT max) + ARRAY + unicode** via the
+    BE `DuckDbTypeHandler`, predicate/`count(*)`, P1 function pushdown (`character_length→length`),
+    P3/P6 temporal (naive `TIMESTAMP` + explicit-UTC `TIMESTAMPTZ '…+00'`), and P2 load (20 seq + 8
+    concurrent, 0 failures). The DuckDbTypeHandler patch is now proven on master, not just
+    apply-clean.
 
 - **2026-07-30 — re-vendor to `0da96f1ad3e`** (subject: *"[chore](handoff) record the 2026-07-30
   rebase onto 794d514479e (upstream #65991)"*; SHAs churn on rebase — match by subject). Tracks the
