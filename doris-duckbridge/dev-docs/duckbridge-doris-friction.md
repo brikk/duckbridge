@@ -21,6 +21,16 @@ probe), [`REPORT-quack-jdbc-metadata-probe.md`](./REPORT-quack-jdbc-metadata-pro
 Entry shape: **Symptom** → **Root cause** (file:line) → **Workaround**
 → **Fix** (small, pickable). Newest first.
 
+> **Re-verified at the apache/doris `master` move (pin `ded91fb9fb3`, 2026-07-31): all four
+> open entries below are still open.** Re-checked in the master BE source: the jdbc scanner
+> (`be/src/exec/scan/jdbc_scanner.cpp`) still has no `TPushAggOp`/count-pushdown path; `file_scanner.cpp`
+> still dispatches the BE reader off a hardcoded `table_format_type` allowlist with **no** `plugin_driven`
+> case; `JdbcTypeHandlerFactory` is still a hardcoded `switch` with no `ServiceLoader` seam (so the BE
+> `DuckDbTypeHandler` patch is still required — proven live on master); and the jdbc-scanner still has no
+> `connectionInitSql` hook. The two upstream BE fixes on master (`COUNT(<nullable col>)` `colUniqueId=-1`,
+> position-delete OPTIONAL nullability) were never duckbridge frictions — see
+> `../../dev-docs/NOTE-catalog-spi-upstreamed-master.md` (§Upstream status on the master BE).
+
 ---
 
 ## Patches we carry — and want to DELETE
