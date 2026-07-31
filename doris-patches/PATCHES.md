@@ -1,9 +1,10 @@
 # Doris patches for the `doris-duckbridge` connector
 
 The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for Doris's
-`fe-connector` catalog SPI (the `branch-catalog-spi` line, pre-release). It runs **only on our
-own patched FE + BE** until the SPI (and our BE type handler) land in a Doris release. As of pin
-`0da96f1ad3e` (2026-07-30 re-vendor) **exactly one** small, reapplyable patch carries that delta:
+`fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
+`fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
+the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
+`ded91fb9fb3` (2026-08-01, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -19,8 +20,8 @@ own patched FE + BE** until the SPI (and our BE type handler) land in a Doris re
 
 **Patch files are the canonical artifact** (not fork commits): they live here as visible diffs so
 the upstream-PR obligation is impossible to forget and the delta is reviewable at a glance. The
-fork mirror (`brikk/doris`) exists only to keep the **pinned baseline SHA alive** — upstream
-`branch-catalog-spi` rebases constantly and GCs SHAs. The pin is recorded in exactly one file,
+baseline is now plain **apache/doris `master`** (the pre-merge `brikk/doris` fork mirror is retired —
+master keeps the pinned SHA alive itself). The pin is recorded in exactly one file,
 [`BASELINE`](./BASELINE), which docs and `tools/doris-baseline.sh` read.
 
 A read-only connector now needs **only** the BE handler (the FE whitelist guard is obsolete — see
@@ -31,21 +32,19 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 
 ## ⚠ Never build blind — pin discipline
 
-> `branch-catalog-spi` **rebases constantly**; upstream SHAs get GC'd. **Never build from a blind
-> branch tip.** Always build from the pin in [`BASELINE`](./BASELINE):
+> apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
+> pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `0da96f1ad3e7b91b777195d148c921a8f23b1f96`
-> - **subject** = `[chore](handoff) record the 2026-07-30 rebase onto 794d514479e (upstream #65991)`
-> - **fork branch** = `duckbridge/baseline-20260730` (reserved name; **NOT pushed** — see below)
+> - **`PIN_SHA`** = `ded91fb9fb30e9192a7d14387e63fda973f57293`
+> - **subject** = `[fix](ci) Skip usage-limited Codex review accounts (#66319)`
+> - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
-> **Current operating model (2026-07-28): local-only, no fork push.** We apply the patch LOCALLY
-> against a checkout already at `PIN_SHA` — the worktree `~/DEV/OSS/doris-catalog-spi` — and document
-> here + in the friction log. That worktree is what keeps the SHA alive for us; we are **not**
-> committing/pushing a `brikk/doris` fork branch right now. (The fork-mirror discipline below is the
-> future publish path if we ever want a fresh clone to bootstrap without a local Doris checkout.) If
-> a re-vendor moves the pin, re-diff the remaining patch (`git apply --3way --check` must be clean),
-> record what moved and why it's benign in the Re-vendor log below, and update `BASELINE`. Keep
-> `BASELINE`, this note, and the Re-vendor log in sync.
+> **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
+> apache/doris `master` checkout at `PIN_SHA` (the worktree `~/DEV/OSS/doris`) and build the SPI jars
+> from that checkout's `fe/`. Master keeps the SHA alive (no dated fork-mirror branch to maintain
+> anymore). If a re-vendor moves the pin, re-diff the remaining patch (`git apply --3way --check`
+> must be clean), record what moved and why it's benign in the Re-vendor log below, and update
+> `BASELINE`. Keep `BASELINE`, this note, and the Re-vendor log in sync.
 
 ## Bootstrap: the project-local Doris SPI jars (SELF-CONTAINED)
 
@@ -57,7 +56,7 @@ clone on a clean machine builds end-to-end with **one** bootstrap command:
 JAVA_HOME=<jdk17> tools/doris-baseline.sh --install-spi-jars
 ```
 
-This clones the fork at the `BASELINE` pin, applies the patches, and `mvn install`s the SPI jars —
+This clones apache/doris `master` at the `BASELINE` pin, applies the BE patch, and `mvn install`s the SPI jars —
 built from **our** pin — into a **project-local maven repo** at `doris-duckbridge/doris-m2/`
 (gitignored). The gradle module resolves `org.apache.doris:*` from **that** directory (scoped to the
 `org.apache.doris` group via `exclusiveContent`), **not** `mavenLocal()`/`~/.m2`.
@@ -103,7 +102,9 @@ all.)
 default `--check-only` mode) and require **JDK 17** (the Doris FE toolchain):
 
 ```bash
-# 1. Verify the BE patch still applies at the pin (default mode; clones the fork at the pin):
+# 1. Verify the BE patch still applies at the pin (default mode; clones apache/doris master at the pin).
+#    Simplest: skip the clone by pointing DORIS_SRC at the existing apache checkout:
+#      DORIS_SRC=~/DEV/OSS/doris tools/doris-baseline.sh --check-only
 tools/doris-baseline.sh --check-only
 
 # 2. Apply the BE patch into the cache checkout (the FE builds patch-free at this pin):
@@ -124,8 +125,8 @@ re-running the C++ build.
 ### Manual apply (equivalent)
 
 ```bash
-# against a clean checkout of the pin (fork mirror keeps the SHA alive). BE patch only —
-# the FE builds patch-free at this pin (#66135 removed the SPI_READY_TYPES whitelist).
+# against a clean apache/doris master checkout at the pin. BE patch only —
+# the FE builds patch-free (the SPI is upstreamed; #66135 removed the SPI_READY_TYPES whitelist).
 git apply --3way doris-patches/be/0001-duckdb-type-handler.patch
 ```
 
@@ -136,12 +137,12 @@ marker are commentary that `git apply` ignores) followed by a `git diff`-format 
 
 ## Exit criteria (the goal is deletion)
 
-The remaining patch is an upstream ask. The FE ask is already **paid** — #66135 removed the
-`SPI_READY_TYPES` whitelist upstream, so the FE runs the plugin unpatched (the FE patch was retired
-at pin `a0c10f0672b`). What's left: when our `DuckDbTypeHandler` PR lands in a Doris **release**,
-`BASELINE` points at the release tag, the fork mirror becomes optional, and `doris-patches/` empties
-to a tombstone. A stock Doris carrying the fe-connector SPI + our BE handler then runs the plugin
-fully unpatched.
+The remaining patch is an upstream ask. The FE ask is already **paid** — the fe-connector SPI is now
+in apache/doris `master` and #66135 removed the `SPI_READY_TYPES` whitelist, so the FE runs the
+plugin unpatched (the FE patch was retired at pin `a0c10f0672b`). What's left: when our
+`DuckDbTypeHandler` PR lands in a Doris **release**, `BASELINE` points at the release tag and
+`doris-patches/` empties to a tombstone. A stock Doris carrying the fe-connector SPI + our BE handler
+then runs the plugin fully unpatched.
 
 ---
 
@@ -165,6 +166,39 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-08-01 — re-vendor to apache/doris `master` `ded91fb9fb3`** (subject: *"[fix](ci) Skip
+  usage-limited Codex review accounts (#66319)"*). **The fe-connector SPI is UPSTREAMED — the brikk
+  `branch-catalog-spi` fork line is retired; we now vendor from apache/doris `master`.** Tracks the
+  sync point `doris-ducklake` adopted (its 2026-07-31 move to `master`); verified against the local
+  apache checkout `~/DEV/OSS/doris` at this SHA.
+  - **Baseline retargeted to master.** `BASELINE`: `FORK_URL=git@github.com:apache/doris.git`,
+    `UPSTREAM_BRANCH=master`, `FORK_BRANCH` relabeled to `master` (no dated fork-mirror branch —
+    master keeps the SHA alive). `<revision>` in master's `fe/pom.xml` is still `1.2-SNAPSHOT`, so
+    the `org.apache.doris:*:1.2-SNAPSHOT` coordinates are unchanged — **no gradle-coord edits**.
+  - **Zero connector source changes.** master is +316 commits over the old fork merge-base with
+    ~7k lines of api/spi churn (`ConnectorScanRangeType`→`ConnectorScanRequest`/`Profile`,
+    `ConnectorContext` refactor + new `ConnectorStorageContext`/`ForwardingConnectorContext`,
+    `ScanNodePropertyKeys`), but **none of it touches the subset duckbridge uses** — the #66135-era
+    `planScan(session, ConnectorScanRequest)` collapse we already absorbed covered the shape.
+    Re-verified: `:doris-duckbridge:compileKotlin`+`compileTestKotlin` clean, `test` (62) + `detekt`
+    + `jar`/`pluginZip` green. (Matches `doris-ducklake`: zero-change move.)
+  - **FE patch-free on master.** `CatalogFactory.SPI_READY_TYPES` still absent; routing via
+    `ConnectorFactory.createStandaloneCatalogConnector` (registered-provider lookup). Re-checked.
+  - **#66211 API-version gate unchanged** — both sides ship major `1.0`
+    (`fe/fe-connector/pom.xml <connector.plugin.api.version>1.0`); our jar's
+    `Doris-Connector-Plugin-Api-Version: 1.0` manifest stamp still valid (confirmed in the plugin zip).
+  - **BE patch UNCHANGED and still required.** `be/0001-duckdb-type-handler.patch` re-verified
+    `git apply --3way --check` clean on master. Re-confirmed the need against master's `jdbc-scanner`:
+    no `DuckDbTypeHandler`/`case "DUCKDB"` upstream, no ServiceLoader registration seam, and the
+    three-way stock-handler split still holds (Default = LARGEINT+VARBINARY no ARRAY; ClickHouse =
+    LARGEINT+ARRAY no VARBINARY; Trino = ARRAY+VARBINARY drops LARGEINT) — DuckDB needs all three, and
+    the factory default falls to `DefaultTypeHandler` (no ARRAY decode). SPI jars rebuilt from master
+    into `doris-m2/`.
+  - **BE image rebuild deferred.** Unlike `doris-ducklake` (FE-only; its read path tolerates a
+    stock 4.1.x BE), duckbridge's read path REQUIRES the patched BE, so a live data-read move needs a
+    master BE rebuild + the re-applied patch — the heavy build, deferred. The cheap FE/SPI move
+    (retarget + SPI-jar refresh + recompile) is done here. Live smoke NOT run here.
 
 - **2026-07-30 — re-vendor to `0da96f1ad3e`** (subject: *"[chore](handoff) record the 2026-07-30
   rebase onto 794d514479e (upstream #65991)"*; SHAs churn on rebase — match by subject). Tracks the

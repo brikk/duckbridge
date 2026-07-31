@@ -1,29 +1,35 @@
 # Machine-readable single source of truth for the Doris baseline this repo's
-# FE/BE patches (doris-patches/) apply against. Read by tools/doris-baseline.sh
+# BE patch (doris-patches/) applies against. Read by tools/doris-baseline.sh
 # and referenced by PATCHES.md. Format: KEY=VALUE, '#' comments, blank lines ok.
 #
 # Bump procedure + re-vendor log live in PATCHES.md (§Re-vendor log).
 
-# Immutable fork-mirror pin. Upstream branch-catalog-spi REBASES and GCs SHAs;
-# this SHA survives because it is pushed to the brikk/doris fork as an immutable
-# dated baseline branch (see FORK_BRANCH / FORK_URL below).
-PIN_SHA=0da96f1ad3e7b91b777195d148c921a8f23b1f96
+# UPSTREAMED: the fe-connector catalog SPI merged into apache/doris `master` (#64304 + the whole
+# fe/fe-connector tree). The pre-merge brikk fork `branch-catalog-spi` is RETIRED — we now vendor
+# straight from apache/doris master. master keeps the SHA alive itself, so there is no fork-mirror
+# baseline branch to maintain.
+PIN_SHA=ded91fb9fb30e9192a7d14387e63fda973f57293
 
-# Upstream commit subject at the pin (match by subject if the SHA is ever GC'd
-# on upstream — the fork mirror keeps the SHA alive regardless).
-PIN_SUBJECT=[chore](handoff) record the 2026-07-30 rebase onto 794d514479e (upstream #65991)
+# Upstream commit subject at the pin (match by subject if the SHA is ever GC'd on origin).
+PIN_SUBJECT=[fix](ci) Skip usage-limited Codex review accounts (#66319)
 
 # Author/commit date of the pinned commit (informational).
-PIN_DATE=2026-07-30
+PIN_DATE=2026-08-01
 
-# Immutable baseline branch on the fork mirror. Never force-pushed / rebased.
-# CURRENT OPERATING MODEL: we do NOT push a fork branch. Patches are applied LOCALLY against a
-# checkout already at PIN_SHA (the worktree ~/DEV/OSS/doris-catalog-spi), which is what keeps the
-# SHA alive for us. The fork fields below stay for when we decide to publish a mirror.
-FORK_BRANCH=duckbridge/baseline-20260730
+# Upstream remote. Clone/fetch this at PIN_SHA. (Was the brikk/doris fork mirror while the SPI lived
+# on the pre-merge branch-catalog-spi line; now it is apache/doris master.)
+FORK_URL=git@github.com:apache/doris.git
 
-# Fork mirror remote. Clone/fetch this (NOT apache/doris) at PIN_SHA.
-FORK_URL=https://github.com/brikk/doris.git
+# Branch the tool clones before checking out PIN_SHA. RELABELED from the retired dated fork-mirror
+# branch to plain `master` now that the SPI is upstreamed (tools/doris-baseline.sh clones
+# --branch "$FORK_BRANCH" then detaches at PIN_SHA). Simplest local path: skip the clone by pointing
+# DORIS_SRC at the existing apache checkout (DORIS_SRC=~/DEV/OSS/doris).
+FORK_BRANCH=master
 
-# The upstream line this baseline tracks (informational; do not build a blind tip).
-UPSTREAM_BRANCH=branch-catalog-spi
+# The upstream line this baseline tracks (informational; do not build a blind tip — pin PIN_SHA).
+UPSTREAM_BRANCH=master
+
+# OPERATING MODEL: local-only, no fork push. The BE patch is applied against a local apache/doris
+# master checkout at PIN_SHA (the worktree ~/DEV/OSS/doris); SPI jars are built from that checkout's
+# fe/ into the project-local doris-duckbridge/doris-m2/. The FE is patch-free (SPI upstreamed).
+# FORK_BRANCH is retired — master, not a dated fork mirror, keeps PIN_SHA alive now.
