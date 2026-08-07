@@ -3,8 +3,8 @@
 Running log of SPI / FE / BE surprises hit while implementing the `duckbridge`
 `fe-connector` plugin (Route J: JDBC-over-Quack) against the `branch-catalog-spi`
 line — now **apache/doris `master`** (the SPI is upstreamed; the pre-merge `branch-catalog-spi`
-fork is retired), pinned at `doris-patches/BASELINE` (`PIN_SHA=ded91fb9fb3…`; earlier entries
-were written at `0da96f1ad3e…` / `a0c10f0672b…` / `5f009592035…` / `568c4bb457…`).
+fork is retired), pinned at `doris-patches/BASELINE` (`PIN_SHA=a82564ced5d…`; earlier entries
+were written at `ded91fb9fb3…` / `0da96f1ad3e…` / `a0c10f0672b…` / `5f009592035…` / `568c4bb457…`).
 
 For Doris fe-connector / BE maintainers — each entry has a pickable upstream
 fix. For future plugin authors — read top-to-bottom before starting; saves
@@ -21,15 +21,27 @@ probe), [`REPORT-quack-jdbc-metadata-probe.md`](./REPORT-quack-jdbc-metadata-pro
 Entry shape: **Symptom** → **Root cause** (file:line) → **Workaround**
 → **Fix** (small, pickable). Newest first.
 
-> **Re-verified at the apache/doris `master` move (pin `ded91fb9fb3`, 2026-07-31): all four
-> open entries below are still open.** Re-checked in the master BE source: the jdbc scanner
-> (`be/src/exec/scan/jdbc_scanner.cpp`) still has no `TPushAggOp`/count-pushdown path; `file_scanner.cpp`
-> still dispatches the BE reader off a hardcoded `table_format_type` allowlist with **no** `plugin_driven`
-> case; `JdbcTypeHandlerFactory` is still a hardcoded `switch` with no `ServiceLoader` seam (so the BE
-> `DuckDbTypeHandler` patch is still required — proven live on master); and the jdbc-scanner still has no
-> `connectionInitSql` hook. The two upstream BE fixes on master (`COUNT(<nullable col>)` `colUniqueId=-1`,
-> position-delete OPTIONAL nullability) were never duckbridge frictions — see
-> `../../dev-docs/NOTE-catalog-spi-upstreamed-master.md` (§Upstream status on the master BE).
+> **Re-verified at apache/doris `master` `a82564ced5d` (2026-08-07).** The three entries below are
+> still open (re-checked in the master BE source): the jdbc scanner
+> (`be/src/exec/scan/jdbc_scanner.cpp`) still has no `TPushAggOp`/count-pushdown path;
+> `JdbcTypeHandlerFactory` is still a hardcoded `switch` with no `ServiceLoader` seam (so the BE
+> `DuckDbTypeHandler` patch is still required — proven live on master); and the jdbc-scanner still
+> has no `connectionInitSql` hook.
+>
+> **Removed this pass — the "Route-J ceiling" (no BE Arrow/ADBC transport) is resolved upstream.**
+> Master now ships a first-class **ADBC/Arrow** connector: `fe/fe-connector/fe-connector-adbc` (FE)
+> plus a BE ADBC reader (`be/src/util/adbc_driver_registry.cpp` and a `table_format_type == "adbc"`
+> dispatch in `be/src/exec/operator/file_scan_operator.cpp`). That is exactly the Arrow transport the
+> old ceiling entry asked upstream to add, so it is no longer a pickable upstream friction. Whether
+> **duckbridge** migrates off the per-value JDBC path (`JdbcJniScanner`) to ADBC is a duckbridge/quack
+> roadmap item (gated on quack shipping an ADBC driver), tracked in
+> [`PLAN-doris-duckbridge.md` §Ceiling of Route J](../../dev-docs/PLAN-doris-duckbridge.md), not here.
+>
+> Note: the #66407 `fe-connector-api`→`fe-connector-spi` merge and the plugin API-version `1`→`5`
+> bump (both in `ded91fb9fb3..a82564ced5d`) were mechanical upstream evolution absorbed in the
+> re-vendor (`../../doris-patches/PATCHES.md` §Re-vendor log 2026-08-06), not frictions. The two
+> master BE fixes (`COUNT(<nullable col>)` `colUniqueId=-1`, position-delete OPTIONAL nullability)
+> were never duckbridge paths — see `../../dev-docs/NOTE-catalog-spi-upstreamed-master.md`.
 
 ---
 
@@ -113,85 +125,14 @@ cost for **every** JDBC-family connector, not just duckbridge):
 
 **Opinion (design).** For a columnar engine like DuckDB/Quack, `COUNT(*)` is the
 canonical O(1)-from-metadata query, and forcing it through a row-by-row JDBC scan is
-the starkest example of the Route-J transport tax (see the 2026-07-20 ceiling entry).
-The BE-side fix is the cleaner one — it needs no FE-side blocking query at plan time
-and benefits the in-tree JDBC connector too. We are **not** taking it now because it
-would mean a *third* BE patch (against the goal of shedding patches, not adding them);
-`SELECT 1` is the honest patch-free interim. Revisit if count-heavy workloads land, or
-bundle it with the generic `plugin_driven` BE work from the 2026-07-20 ceiling entry.
-
----
-
-## 2026-07-20 · No BE transport for a plugin's OWN scanner (ADBC/Arrow, or direct-Quack→Arrow) — the Route-J ceiling
-
-**Symptom.** Not a crash — a wall. Route J ships rows FE→BE by reporting
-`table_format_type="jdbc"` and riding the **stock BE `JdbcJniScanner`**, which
-pulls rows out of the quack-jdbc `ResultSet` one JDBC value at a time and copies
-them into the BE's JNI off-heap columns via a `TypeHandler`
-([`NOTES-p5-p2-scan.md:85`](./NOTES-p5-p2-scan.md), our `DuckDbTypeHandler`).
-That per-value JDBC hop is the whole transport. There is **no way for a plugin to
-supply its own BE scanner** — e.g. one that reads Quack's native result stream as
-**Arrow** (via `adbc-driver-quack`, or by deserializing the Quack wire protocol to
-Arrow directly the way the JDBC-quack driver does internally, minus the JDBC
-`ResultSet` layer) and hands the BE columnar batches with no per-value marshalling.
-
-**Root cause.** Two BE dispatchers are **hardcoded allowlists**, and the one Arrow
-ingestion path is hardwired to Doris→Doris (surveyed at the pin; see
-[`PLAN-doris-duckbridge.md` §Ceiling of Route J](../../dev-docs/PLAN-doris-duckbridge.md)):
-
-1. **No generic plugin JNI scanner.** The SPI's `"plugin_driven"` table-format
-   default has **no BE reader behind it**. The FE→BE JNI sys-table mechanism that
-   *does* let the BE materialize connector-supplied rows (iceberg/paimon via
-   `FORMAT_JNI` + `serialized_split` + a per-format be-java-extension scanner) is
-   gated by a **hardcoded `table_format_type` switch** in `be/src/exec/scan/file_scanner.cpp`
-   (only `max_compute`/`paimon`/`hudi`/`trino_connector`/`jdbc`/`iceberg`, no
-   `plugin_driven` case). An SPI connector can't reach it without a BE patch **and**
-   its own be-java-extension scanner jar. (Same root gap the ducklake log records
-   for inlined-data reads; here it blocks a *custom transport*, not just custom rows.)
-2. **No zero-copy Arrow ingestion for a plugin.** The BE has an Arrow-Flight client
-   reader, but it's hardwired to Doris→Doris federation (`remote_doris`) — there is
-   no SPI surface to point it (or any ADBC/Arrow reader) at a plugin-chosen endpoint.
-3. **No SPI seam selects an in-memory/Arrow/custom transport.** #66135 removed the
-   `ConnectorScanRangeType` discriminator entirely — every range is a file scan and the
-   BE reader is chosen purely by `tableFormatType` + the `file_scanner.cpp` allowlist
-   (item 1). So there is still no typed way for a plugin to say "read me over Arrow";
-   removing the dead enum didn't add a transport, it just confirmed `tableFormatType`
-   is the only selector ([`NOTES-p5-p2-scan.md`](./NOTES-p5-p2-scan.md)).
-
-So the pieces an Arrow/ADBC (or direct-Quack) transport would need — a BE reader
-that consumes Arrow batches from a plugin-named source, and an SPI way to select
-it — **do not exist**. The stock `JdbcJniScanner` is the only shared reader an SPI
-connector can ride, and it is JDBC-`ResultSet`-shaped by construction.
-
-**Workaround.** Ride the `jdbc` BE reader (report `table_format_type="jdbc"`,
-`table_type=DUCKDB`, one range/query) and keep all cleverness — dialect, pushdown,
-parity, type mapping — on the FE. Accept the per-value JDBC marshalling cost; it is
-green and correct at our cardinality ([`NOTES-p5-p2-scan.md:134-172`](./NOTES-p5-p2-scan.md)).
-This is deliberately the "reuse a shared BE reader" move (the ducklake analogue rides
-`iceberg`), not a custom transport.
-
-**Fix (pickable upstream changes, rising scope).**
-- **Smallest:** a generic `FORMAT_JNI` `table_format_type == "plugin_driven"`
-  dispatch in `file_scanner.cpp` that routes to a **connector-declared** JNI
-  scanner class (mirrors the iceberg sys-table path, but registration-driven, not a
-  hardcoded case). That alone lets a plugin ship an Arrow/ADBC-backed
-  be-java-extension scanner (`adbc-driver-quack`, or a direct Quack-protocol→Arrow
-  decoder) and skip the JDBC `ResultSet` hop.
-- **Cleaner:** an Arrow-native ingestion transport reachable from the SPI — either
-  an ADBC/Arrow-Flight `ConnectorScanRangeType` that carries a plugin-chosen endpoint,
-  or unhardwiring the existing Arrow-Flight reader from `remote_doris` so a plugin can
-  target it. Gives columnar batches end-to-end, no per-value marshalling.
-- **Either way:** make the BE reader selection **registration-driven** (a connector
-  declares its transport/reader) instead of the two hardcoded allowlists, so new
-  transports don't need a BE source edit per connector.
-
-**Opinion (design).** A JDBC `ResultSet` is the wrong seam for a columnar engine
-talking to a columnar engine: Quack already speaks Arrow, DuckDB is columnar, and
-the BE is columnar off-heap — Route J's one non-columnar link is the JDBC hop we're
-forced through purely because it's the only *reachable* shared BE reader. The right
-long-term shape is an SPI-selectable Arrow/ADBC transport; until the BE offers one,
-"ride `jdbc`" is the honest pragmatic cut, not the ceiling of what's *possible*.
-Tracked in [`PLAN-doris-duckbridge.md` §Ceiling of Route J](../../dev-docs/PLAN-doris-duckbridge.md).
+the starkest example of the Route-J transport tax. The BE-side fix is the cleaner one
+— it needs no FE-side blocking query at plan time and benefits the in-tree JDBC
+connector too. We are **not** taking it now because it would mean a *third* BE patch
+(against the goal of shedding patches, not adding them); `SELECT 1` is the honest
+patch-free interim. The bigger lever is transport: master now has an ADBC/Arrow
+connector (see the header note), so a future duckbridge migration off the JDBC path
+would sidestep this entirely — tracked in
+[`PLAN-doris-duckbridge.md` §Ceiling of Route J](../../dev-docs/PLAN-doris-duckbridge.md).
 
 ---
 
