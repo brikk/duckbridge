@@ -1,6 +1,6 @@
 package dev.brikk.duckbridge.doris.plugin
 
-import org.apache.doris.connector.api.DorisConnectorException
+import org.apache.doris.connector.spi.DorisConnectorException
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.Properties

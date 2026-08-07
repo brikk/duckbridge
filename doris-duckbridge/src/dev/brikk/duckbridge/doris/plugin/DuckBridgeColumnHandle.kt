@@ -1,7 +1,7 @@
 package dev.brikk.duckbridge.doris.plugin
 
-import org.apache.doris.connector.api.ConnectorType
-import org.apache.doris.connector.api.handle.ConnectorColumnHandle
+import org.apache.doris.connector.spi.ConnectorType
+import org.apache.doris.connector.spi.handle.ConnectorColumnHandle
 
 /**
  * Opaque duckbridge column handle. [ordinalPosition] is the column's index in the table schema

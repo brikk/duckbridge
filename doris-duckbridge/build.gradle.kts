@@ -34,7 +34,7 @@ detekt {
 
 // PROJECT-LOCAL Doris artifact repository — the self-contained bootstrap.
 //
-// The Doris fe-connector-api / fe-connector-spi / fe-thrift artifacts are built from OUR pinned
+// The Doris fe-connector-spi / fe-thrift artifacts are built from OUR pinned
 // Doris baseline (see doris-patches/BASELINE) by `tools/doris-baseline.sh --install-spi-jars`,
 // which `mvn install`s them into `doris-duckbridge/doris-m2/` (gitignored). We resolve them from
 // THAT directory — NOT `mavenLocal()`/`~/.m2`.
@@ -62,14 +62,15 @@ val dorisVersion = "1.2-SNAPSHOT"
 
 // Actionable pre-bootstrap failure: if the SPI jars aren't in doris-m2/ yet, fail with the exact
 // command to run rather than a cryptic "could not resolve org.apache.doris:...". Checks for the
-// api jar (the anchor artifact) at its Maven layout path under doris-m2/.
+// spi jar (the anchor artifact) at its Maven layout path under doris-m2/. (Upstream #66407 merged
+// fe-connector-api INTO fe-connector-spi — there is no fe-connector-api artifact anymore.)
 val dorisSpiAnchorJar = dorisLocalRepo.file(
-    "org/apache/doris/fe-connector-api/$dorisVersion/fe-connector-api-$dorisVersion.jar",
+    "org/apache/doris/fe-connector-spi/$dorisVersion/fe-connector-spi-$dorisVersion.jar",
 )
 val bootstrapHint =
     "Doris SPI jars are not bootstrapped. Run:\n\n" +
         "    tools/doris-baseline.sh --install-spi-jars\n\n" +
-        "This builds fe-connector-api / fe-connector-spi / fe-thrift from the pinned Doris " +
+        "This builds fe-connector-spi / fe-thrift from the pinned Doris " +
         "baseline (doris-patches/BASELINE) into doris-duckbridge/doris-m2/ (JDK 17 required). " +
         "See doris-patches/PATCHES.md §Bootstrap."
 
@@ -92,7 +93,8 @@ dependencies {
     // FE supplies these via the parent classloader at runtime — compile-only, so the plugin jar
     // ships no second copy of the SPI/thrift classes (a duplicate would LinkageError across the
     // SPI boundary).
-    compileOnly("org.apache.doris:fe-connector-api:$dorisVersion")
+    // #66407 merged fe-connector-api into fe-connector-spi: fe-connector-spi now carries the whole
+    // connector contract (org.apache.doris.connector.spi.*, incl. the former .api types).
     compileOnly("org.apache.doris:fe-connector-spi:$dorisVersion")
     compileOnly("org.apache.doris:fe-thrift:$dorisVersion")
 
@@ -104,7 +106,6 @@ dependencies {
     implementation(libs.quack.jdbc)
 
     // Tests instantiate the provider / connector, so the SPI types are needed at test time too.
-    testImplementation("org.apache.doris:fe-connector-api:$dorisVersion")
     testImplementation("org.apache.doris:fe-connector-spi:$dorisVersion")
     // junit / assertj / kotlin-test come from buildlogic.kotlin.common.
 
@@ -127,12 +128,15 @@ tasks.withType<JavaCompile>().configureEach {
 // rejected at STAGE_API_VERSION). The gate reads it from the jar that defines our ConnectorProvider
 // (this jar) and compares MAJOR only against the kernel resource
 // META-INF/doris/connector-plugin-api-version.properties (api.version) baked into fe-connector-spi.
-// Both sides ship "1.0" at pin 0da96f1ad3e (fe/fe-connector/pom.xml <connector.plugin.api.version>);
-// we stamp the same value so our plugin declares major 1, like doris-fe-connector-iceberg.jar.
-// Bump this when the SPI baseline's major changes.
+// The gate compares MAJOR only. Upstream bumped the CONNECTOR plugin API major 1 -> 5 in the
+// ded91fb9fb3..a82564ced5d window (fe/fe-connector/pom.xml <connector.plugin.api.version>5.0), so a
+// plugin stamped "1.0" is now REJECTED (FE load summary stage=apiVersion; CREATE CATALOG then fails
+// "No connector plugin claimed catalog type"). We stamp "5.0" to match the master baseline. Sanity-
+// check after a re-vendor: unzip -p doris-m2/.../fe-connector-spi-1.2-SNAPSHOT.jar \
+//   META-INF/doris/connector-plugin-api-version.properties. Bump when the SPI major changes again.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "1.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "5.0")
     }
 }
 
@@ -147,7 +151,6 @@ val pluginZip by tasks.registering(Zip::class) {
     from(tasks.named("jar")) { into("lib") }
     from(configurations.runtimeClasspath) {
         into("lib")
-        exclude("fe-connector-api-*.jar")
         exclude("fe-connector-spi-*.jar")
         exclude("fe-thrift-*.jar")
     }

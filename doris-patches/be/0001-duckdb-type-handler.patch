@@ -41,7 +41,7 @@ Upstream ask / exit criteria:
   Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
   lands in a release, this patch is deleted and BASELINE points at the tag.
 
-Anchors at pin 5f009592035:
+Anchors at pin a82564ced5d (#66345):
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
        (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the
@@ -51,7 +51,7 @@ Apply:  git apply --3way doris-patches/be/0001-duckdb-type-handler.patch
 --- (patch body below; lines above this marker are commentary ignored by git apply) ---
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java
 new file mode 100644
-index 0000000..06b1622
+index 00000000000..06b1622f9ed
 --- /dev/null
 +++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java
 @@ -0,0 +1,256 @@
@@ -312,7 +312,7 @@ index 0000000..06b1622
 +    }
 +}
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
-index 4a6f045..04f575c 100644
+index 4a6f045fb86..04f575c7a79 100644
 --- a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
 +++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
 @@ -43,6 +43,8 @@ public class JdbcTypeHandlerFactory {

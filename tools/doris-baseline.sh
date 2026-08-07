@@ -11,7 +11,7 @@
 #   4. optional, opt-in: --build-fe / --build-be / --install-spi-jars (JDK 17 required).
 #
 # --install-spi-jars is the CANONICAL BOOTSTRAP for a fresh clone: it `mvn install`s the Doris SPI
-# jars (fe-connector-api / fe-connector-spi / fe-thrift, built from OUR pin) into a PROJECT-LOCAL
+# jars (fe-connector-spi / fe-thrift, built from OUR pin) into a PROJECT-LOCAL
 # maven repo at doris-duckbridge/doris-m2/ (gitignored), which the gradle module resolves from
 # INSTEAD of ~/.m2. This isolates us from ~/.m2 and from other projects (doris-ducklake publishes
 # the same 1.2-SNAPSHOT coordinates from a different pin — last-build-wins clobbering).
@@ -62,7 +62,7 @@ Usage: tools/doris-baseline.sh [options]
   --apply             apply the patches into the cache checkout (implies the check).
   --build-fe          run Doris `build.sh --fe` (JDK 17 required). Implies --apply.
   --build-be          run Doris `build.sh --be` (JDK 17; multi-hour C++). Implies --apply.
-  --install-spi-jars  CANONICAL BOOTSTRAP. `mvn install` the fe-connector-api/-spi/fe-thrift
+  --install-spi-jars  CANONICAL BOOTSTRAP. `mvn install` the fe-connector-spi + fe-thrift
                       SPI jars (built from OUR pin) into the project-local repo
                       doris-duckbridge/doris-m2/, which gradle resolves from. Implies --apply.
                       JDK 17 + a thrift 0.16.x executable required (see DORIS_THRIFT).
@@ -290,11 +290,11 @@ install_spi_jars() {
 
     mkdir -p "${DORIS_M2}"
     info "installing SPI jars into project-local repo: ${DORIS_M2}"
-    info "  reactor: fe-connector/fe-connector-spi -am  (pulls fe-connector-api + fe-thrift +"
+    info "  reactor: fe-connector/fe-connector-spi -am  (pulls fe-thrift +"
     info "           fe-extension-spi + fe-filesystem-api transitively), -T ${jobs}"
 
     # -pl fe-connector/fe-connector-spi -am : also-make builds (and installs) every reactor
-    #   dependency, which covers fe-connector-api -> fe-thrift and the spi's fe-extension-spi /
+    #   dependency, which covers fe-connector-spi -> fe-thrift and the spi's fe-extension-spi /
     #   fe-filesystem-api. That single -pl target is the minimal set that yields all three jars
     #   the gradle module needs.
     # -Dmaven.repo.local=${DORIS_M2} : install into OUR project-local repo, NOT ~/.m2. (This is

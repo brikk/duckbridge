@@ -1,6 +1,6 @@
 package dev.brikk.duckbridge.doris.plugin
 
-import org.apache.doris.connector.api.handle.ConnectorTableHandle
+import org.apache.doris.connector.spi.handle.ConnectorTableHandle
 
 /**
  * Opaque duckbridge table handle. The FE passes it back for every per-table op

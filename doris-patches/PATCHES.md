@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`ded91fb9fb3` (2026-08-01, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`a82564ced5d` (2026-08-06, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,8 +35,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `ded91fb9fb30e9192a7d14387e63fda973f57293`
-> - **subject** = `[fix](ci) Skip usage-limited Codex review accounts (#66319)`
+> - **`PIN_SHA`** = `a82564ced5dba0c00317a892f30d1336a9e22016`
+> - **subject** = `[fix](iceberg) Fix MVCC and nested schema evolution edge cases (#66345)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
@@ -48,8 +48,9 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 
 ## Bootstrap: the project-local Doris SPI jars (SELF-CONTAINED)
 
-The gradle module (`doris-duckbridge/`) compiles against three Doris SPI jars
-(`org.apache.doris:fe-connector-api`, `fe-connector-spi`, `fe-thrift`, all `1.2-SNAPSHOT`). A fresh
+The gradle module (`doris-duckbridge/`) compiles against two Doris SPI jars
+(`org.apache.doris:fe-connector-spi`, `fe-thrift`, both `1.2-SNAPSHOT`; #66407 merged the old
+`fe-connector-api` into `fe-connector-spi`). A fresh
 clone on a clean machine builds end-to-end with **one** bootstrap command:
 
 ```bash
@@ -74,10 +75,10 @@ all.)
 ### Under the hood
 
 - **Minimal reactor:** `mvn install -pl fe-connector/fe-connector-spi -am`. The `-am` (also-make)
-  pulls every reactor dependency — `fe-connector-api → fe-thrift`, and the spi's `fe-extension-spi`
-  / `fe-filesystem-api` — so that single `-pl` target yields all three jars the module needs (plus
-  those two transitive Doris deps). 8 reactor modules build: parent POM, fe-thrift, fe-filesystem
-  (aggregator + API), fe-extension-spi, fe-connector (aggregator + API + SPI).
+  pulls every reactor dependency — `fe-connector-spi → fe-thrift` + `fe-foundation` /
+  `fe-extension-spi` / `fe-filesystem-api` — so that single `-pl` target yields the two jars the
+  module needs (`fe-connector-spi`, `fe-thrift`) plus the transitive Doris deps. (#66407 merged
+  `fe-connector-api` into `fe-connector-spi`, so there is no separate api jar anymore.)
 - **`-P flatten`** is **required**: the `flatten-maven-plugin` lives in `<pluginManagement>`, so
   only the `flatten` profile binds it. It resolves `${revision}` / parent refs in the installed
   POMs; without it the POMs keep `<version>${revision}</version>` and gradle can't parse them.
@@ -166,6 +167,41 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-08-06 — re-vendor to apache/doris `master` `a82564ced5d`** (subject: *"[fix](iceberg) Fix
+  MVCC and nested schema evolution edge cases (#66345)"*). Tracks the pin `doris-ducklake` adopted;
+  verified against the local apache checkout `~/DEV/OSS/doris` at this SHA. **Two breaking changes in
+  the `ded91fb9fb3..a82564ced5d` window (+74 commits), both handled; `<revision>` stays
+  `1.2-SNAPSHOT` so `doris-m2` coordinates are unchanged.**
+  - **#66407 — `fe-connector-api` merged INTO `fe-connector-spi`, package `connector.api.*` →
+    `connector.spi.*`.** The `fe-connector-api` module/artifact is gone; `fe-connector-spi` now
+    carries the whole contract (verified: all types duckbridge uses — `Connector`,
+    `ConnectorMetadata`, `ConnectorType`, `handle.*`, `pushdown.*`, `scan.*`,
+    `ConnectorScanRequest` — live under `org.apache.doris.connector.spi.*`). Changes: rewrote the
+    imports `connector.api.` → `connector.spi.` across **16** connector `.kt` files (imports only,
+    no logic; no duplicate-import collisions); `build.gradle.kts` dropped the `fe-connector-api`
+    `compileOnly`/`testImplementation`, repointed the bootstrap anchor-jar check at `fe-connector-spi`,
+    and dropped the `exclude("fe-connector-api-*.jar")` from the plugin zip.
+  - **#66xxx — CONNECTOR plugin API-version MAJOR bumped `1` → `5` (fail-closed gate).**
+    `fe/fe-connector/pom.xml <connector.plugin.api.version>` is now `5.0`; a plugin stamped `1.0` is
+    rejected at load (`stage=apiVersion`, then `CREATE CATALOG` → "No connector plugin claimed catalog
+    type"). Bumped the `jar` manifest stamp `Doris-Connector-Plugin-Api-Version` `1.0` → `5.0`
+    (verified the rebuilt spi jar ships `api.version=5.0` and the plugin-zip jar stamps `5.0`).
+  - **BE `DuckDbTypeHandler` patch — regenerated against `a82564ced5d`.** Still required (no upstream
+    DUCKDB handler / registration seam). Its factory hunk offsets drifted (imports shifted on master),
+    so `git apply --3way --check` was failing on the stale `@@` offsets; re-diffed the body against
+    the pin (correct offsets + real blob hash) and updated the header anchor line — `--3way --check`
+    now clean.
+  - **No connector source churn beyond the import rewrite.** SPI jars rebuilt from master into
+    `doris-m2` (had to `rm` root-owned reactor `target/` dirs left by doris-ducklake's containerized
+    build first — regenerable outputs, no effect on `output/fe`/`output/be` or images);
+    `:doris-duckbridge:test` (62) + `:detekt` + `:jar`/`:pluginZip` green.
+  - **BE image + live smoke: deferred.** The handoff notes a still-open master BE blocker
+    (schema-evolution DEFAULT-backfill read crashes the BE — `Const(INT)` vs `Nullable(INT)` SIGSEGV
+    in `format_v2::TableReader`), and the newer `build.sh` needs a `≥2026-08-06` build-env image for
+    the Arrow/Paimon thirdparty freshness guard. The cheap FE/SPI move (source + SPI jars + compile/
+    test) is done; a fresh master-BE thin-overlay + live smoke is the follow-up (see the 2026-07-31
+    entry for the thin-overlay recipe).
 
 - **2026-08-01 — re-vendor to apache/doris `master` `ded91fb9fb3`** (subject: *"[fix](ci) Skip
   usage-limited Codex review accounts (#66319)"*). **The fe-connector SPI is UPSTREAMED — the brikk

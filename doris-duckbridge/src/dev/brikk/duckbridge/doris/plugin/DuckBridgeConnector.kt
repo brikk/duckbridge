@@ -1,9 +1,9 @@
 package dev.brikk.duckbridge.doris.plugin
 
-import org.apache.doris.connector.api.Connector
-import org.apache.doris.connector.api.ConnectorMetadata
-import org.apache.doris.connector.api.ConnectorSession
-import org.apache.doris.connector.api.scan.ConnectorScanPlanProvider
+import org.apache.doris.connector.spi.Connector
+import org.apache.doris.connector.spi.ConnectorMetadata
+import org.apache.doris.connector.spi.ConnectorSession
+import org.apache.doris.connector.spi.scan.ConnectorScanPlanProvider
 import org.apache.doris.connector.spi.ConnectorContext
 
 /**
