@@ -196,12 +196,16 @@ aren't lost.
     `doris-m2` (had to `rm` root-owned reactor `target/` dirs left by doris-ducklake's containerized
     build first — regenerable outputs, no effect on `output/fe`/`output/be` or images);
     `:doris-duckbridge:test` (62) + `:detekt` + `:jar`/`:pluginZip` green.
-  - **BE image + live smoke: deferred.** The handoff notes a still-open master BE blocker
-    (schema-evolution DEFAULT-backfill read crashes the BE — `Const(INT)` vs `Nullable(INT)` SIGSEGV
-    in `format_v2::TableReader`), and the newer `build.sh` needs a `≥2026-08-06` build-env image for
-    the Arrow/Paimon thirdparty freshness guard. The cheap FE/SPI move (source + SPI jars + compile/
-    test) is done; a fresh master-BE thin-overlay + live smoke is the follow-up (see the 2026-07-31
-    entry for the thin-overlay recipe).
+  - **BE image + live smoke: DONE, FULL PASS on master `a82564` (2026-08-07).** Thin-overlaid the
+    patched jdbc-scanner jar (compiled against this pin's stock jar) `FROM doris-be:master-local`
+    (doris-ducklake's fresh a82564 master BE) and retagged its a82564 master FE — no C++ rebuild.
+    `compose/smoke.sh` GREEN end-to-end: the **API-version 5.0 gate passes** (FE load
+    `registered types: [adbc, duckbridge, …]`, `CREATE CATALOG type=duckbridge` on the pristine FE),
+    metadata (HUGEINT→LARGEINT, VARCHAR[]→ARRAY), full-row decode of LARGEINT (HUGEINT max) + ARRAY +
+    unicode via the BE `DuckDbTypeHandler`, predicate/`count(*)`, P1 function pushdown, P3/P6 temporal,
+    P2 load (20 seq + 8 concurrent, 0 failures). The handoff's still-open master BE blocker
+    (schema-evolution DEFAULT-backfill read SIGSEGV in `format_v2::TableReader`) does **not** touch
+    duckbridge — it reads a fixed quack schema with no schema evolution.
 
 - **2026-08-01 — re-vendor to apache/doris `master` `ded91fb9fb3`** (subject: *"[fix](ci) Skip
   usage-limited Codex review accounts (#66319)"*). **The fe-connector SPI is UPSTREAMED — the brikk
