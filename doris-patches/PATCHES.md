@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`a82564ced5d` (2026-08-06, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`b119273e3f0` (2026-08-16, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,8 +35,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `a82564ced5dba0c00317a892f30d1336a9e22016`
-> - **subject** = `[fix](iceberg) Fix MVCC and nested schema evolution edge cases (#66345)`
+> - **`PIN_SHA`** = `b119273e3f06b3425a09908fc0ac65742e6a1b96`
+> - **subject** = `[fix](load) Keep graceful BE stop bounded when an audit stream load is in flight (#66797)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
@@ -167,6 +167,28 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-08-16 — re-vendor to apache/doris `master` `b119273e3f0`** (subject: *"[fix](load) Keep
+  graceful BE stop bounded when an audit stream load is in flight (#66797)"*; +44 over `a82564ced5d`).
+  **Routine, non-breaking bump — zero source changes.** Tracks the pin `doris-ducklake` adopted
+  (its 2026-08-16 re-vendor); verified against the local apache checkout `~/DEV/OSS/doris` at this SHA.
+  - **No `fe-connector-spi` surface change since `a82564ced5d`** — the api→spi merge rewrite and the
+    API-version `5.0` stamp from the 2026-08-06 entry still hold (re-verified: `<connector.plugin.api.version>`
+    is `5.0` at this pin; `org.apache.doris.connector.spi.*` types incl. `ConnectorScanRequest` present;
+    FE patch-free — `SPI_READY_TYPES` absent). SPI jars rebuilt from `b119` into `doris-m2`;
+    `:doris-duckbridge:test` (62) + `:detekt` + `:jar`/`:pluginZip` green with **no `.kt` edits**.
+  - **BE `DuckDbTypeHandler` patch unchanged** — `git apply --3way --check` clean at `b119` (jdbc-scanner
+    factory anchors unmoved; no offset refresh needed).
+  - **#66628 (normalize connector table errors) edits `PluginDrivenScanNode`** — the FE scan node our
+    reads flow through. **Live smoke GREEN on `b119`** (thin-overlay BE `FROM doris-be:master-local` +
+    retagged `b119` master FE): metadata, LARGEINT(HUGEINT-max)/ARRAY/unicode decode, predicate +
+    `count(*)`, P1 function pushdown, P3/P6 temporal, P2 load — all pass. #66628 is a no-op for us.
+  - **Not applicable to duckbridge (shared open items on the ducklake side):** §12b schema-evolution
+    DEFAULT-backfill reads `0` not the default — duckbridge passes `null` for `ConnectorColumn.defaultValue`
+    and reads no schema-evolved parquet, so it never hits this. timestamptz is fully resolved upstream.
+  - **BE full-build note (unused by us):** a fresh master BE build needs a build-env image ≥ 2026-08-15
+    (`#66783` hadoop-3.4.2 thirdparty bump + unity builds) — irrelevant here since we thin-overlay the
+    jdbc-scanner jar rather than rebuild the BE C++.
 
 - **2026-08-06 — re-vendor to apache/doris `master` `a82564ced5d`** (subject: *"[fix](iceberg) Fix
   MVCC and nested schema evolution edge cases (#66345)"*). Tracks the pin `doris-ducklake` adopted;

@@ -3,8 +3,8 @@
 Running log of SPI / FE / BE surprises hit while implementing the `duckbridge`
 `fe-connector` plugin (Route J: JDBC-over-Quack) against the `branch-catalog-spi`
 line — now **apache/doris `master`** (the SPI is upstreamed; the pre-merge `branch-catalog-spi`
-fork is retired), pinned at `doris-patches/BASELINE` (`PIN_SHA=a82564ced5d…`; earlier entries
-were written at `ded91fb9fb3…` / `0da96f1ad3e…` / `a0c10f0672b…` / `5f009592035…` / `568c4bb457…`).
+fork is retired), pinned at `doris-patches/BASELINE` (`PIN_SHA=b119273e3f0…`; earlier entries
+were written at `a82564ced5d…` / `ded91fb9fb3…` / `0da96f1ad3e…` / `a0c10f0672b…` / `5f009592035…`).
 
 For Doris fe-connector / BE maintainers — each entry has a pickable upstream
 fix. For future plugin authors — read top-to-bottom before starting; saves
@@ -21,7 +21,7 @@ probe), [`REPORT-quack-jdbc-metadata-probe.md`](./REPORT-quack-jdbc-metadata-pro
 Entry shape: **Symptom** → **Root cause** (file:line) → **Workaround**
 → **Fix** (small, pickable). Newest first.
 
-> **Re-verified at apache/doris `master` `a82564ced5d` (2026-08-07).** The three entries below are
+> **Re-verified at apache/doris `master` `b119273e3f0` (2026-08-16).** The three entries below are
 > still open (re-checked in the master BE source): the jdbc scanner
 > (`be/src/exec/scan/jdbc_scanner.cpp`) still has no `TPushAggOp`/count-pushdown path;
 > `JdbcTypeHandlerFactory` is still a hardcoded `switch` with no `ServiceLoader` seam (so the BE

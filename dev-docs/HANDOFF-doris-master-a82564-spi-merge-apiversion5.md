@@ -8,9 +8,56 @@
 > verdict). Friction doc:
 > `https://github.com/brikk/doris-ducklake/blob/main/dev-docs/ducklake-doris-friction.md`
 
-New pin to adopt: **`a82564ced5d`** (`[fix](iceberg) Fix MVCC and nested schema evolution edge
-cases (#66345)`, 2026-08-06). `<revision>` is still `1.2-SNAPSHOT` → `doris-m2` coordinates
-unchanged.
+New pin to adopt: **`b119273e3f0`** (apache/doris master, 2026-08-16) — see the 2026-08-16 delta
+directly below; all the `a82564ced5d` migration steps still apply verbatim. `<revision>` is still
+`1.2-SNAPSHOT` → `doris-m2` coordinates unchanged.
+
+---
+
+## UPDATE 2026-08-16 — ducklake re-vendored to `b119273e3f0` (+44 over a82564; still non-breaking)
+
+Routine "stay-ready" bump; ducklake full smoke + corpus GREEN on master FE+BE both `b119273e3f0`.
+No `fe-connector-spi` surface change since `a82564ced5d`, so the migration checklist below is
+unchanged. Two things to fold in for duckbridge:
+- **BE build env:** `#66783` bumped the thirdparty hadoop to `hadoop-3.4.2.3-for-doris`, so use a
+  **build-env image ≥ 2026-08-15** (older ones fail the arrow/paimon thirdparty freshness guard).
+  Unity builds are now on (`#66712/#66776/#66789`) — expect a near-full BE recompile the first time.
+- **On the shared scan path:** `#66628` (normalize connector table errors) edits `PluginDrivenScanNode`
+  — the FE scan node duckbridge's reads also flow through. ducklake smoke shows no regression; just
+  re-smoke after your bump.
+- **§12b DEFAULT backfill still open** (shared): a column added with a DEFAULT over pre-existing rows
+  reads `0` not the default (crash long gone; correctness only). Relevant only if duckbridge reads
+  schema-evolved DEFAULT columns. **timestamptz is fully resolved** on master (zone-aware read works).
+Reference: `doris-ducklake@22bcd4b`.
+
+---
+
+## UPDATE 2026-08-08 — bumped ducklake `a82564ced5d` → `b42e1ab294b` (+15, routine/non-breaking) and re-smoked
+
+## UPDATE 2026-08-08 — bumped ducklake `a82564ced5d` → `b42e1ab294b` (+15, routine/non-breaking) and re-smoked
+
+Non-breaking for the SPI: the only `fe-connector-spi` change (#66507) touched `package-info.java`
+only; api-version still **5.0** (no stamp change beyond the 1→5 above). Nothing new to do in the
+checklist below for duckbridge — the api→spi rewrite + api-version-5 stamp + build-env≥2026-08-06 +
+BE-patch re-verify all still apply. Reference: `doris-ducklake@86bc20e`.
+
+**What changed in the smoke:** the §12b schema-evolution **BE crash is RESOLVED** on `b42e1ab294b`
+(the `format_v2::TableReader::_evaluate_constant_filters` `Const(INT)` vs `Nullable(INT)` SIGSEGV is
+gone; #66589 reworked the FileScannerV2 reader lifecycle). Full smoke now completes end-to-end incl.
+§13 GC — first time on master.
+
+**New, lesser §12b issue (shared, relevant to duckbridge reads):** the crash downgraded to a
+**correctness miss** — a column added with a DEFAULT over pre-existing rows now reads **`0`, not the
+DEFAULT** (`ALTER TABLE ADD COLUMN b INT DEFAULT 42` → old rows read `0`; explicit rows + non-evolved
+reads are correct; no NULLs; `be-4.1.3` returned `42`). Root cause we traced: master's new
+`format_v2/column_mapper.cpp` fills a missing column from the **BE table column's `initial_default_value`**
+(the Iceberg-schema `initial-default`; `column_mapper.cpp:~2078`) and **no longer consults the FE-supplied
+`TFileScanSlotInfo.default_value_expr`** channel that ducklake/quack feed via `ConnectorColumn.defaultValue`
+(worked on 4.1.3). So if duckbridge surfaces column defaults through `ConnectorColumn.defaultValue`, expect
+the same `0`-not-default read on master. Fix path (still under investigation on the ducklake side): emit
+the default as the Iceberg V3 `initial-default` in the schema/`iceberg_params` handed to the BE, **or**
+upstream restores `default_value_expr` honoring in `format_v2`. Tracking in the ducklake friction doc
+(§12b entry, 2026-08-08).
 
 ---
 
