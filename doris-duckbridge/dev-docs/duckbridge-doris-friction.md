@@ -12,7 +12,7 @@ Each entry is a pickable upstream ask. **Ordered by what we'd most want fixed if
 | **P2** | `COUNT(*)` pushdown on the BE JDBC scanner | `COUNT(*)` is O(rows) not O(1); helps every JDBC connector | No (interim: `SELECT 1`) |
 | **P3** | Per-scan `connectionInitSql` on the BE JDBC pool | Unblocks tz-sensitive predicate pushdown | No (feature gated off; we render zone-explicit) |
 
-Status **b119273e3f0 (2026-08-16):** all three re-verified open in the master BE source. The FE runs
+Status **1731787677f (2026-08-25):** all three re-verified open in the master BE source. The FE runs
 patch-free (#66135 removed `SPI_READY_TYPES`); the only carried patch is BE `DuckDbTypeHandler` (P1).
 The old "Route-J ceiling / no Arrow transport" ask is **resolved** — master ships an ADBC/Arrow
 connector (`fe-connector-adbc` + BE `adbc_driver_registry`); a duckbridge JDBC→ADBC migration is a

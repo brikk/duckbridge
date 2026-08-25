@@ -128,15 +128,15 @@ tasks.withType<JavaCompile>().configureEach {
 // rejected at STAGE_API_VERSION). The gate reads it from the jar that defines our ConnectorProvider
 // (this jar) and compares MAJOR only against the kernel resource
 // META-INF/doris/connector-plugin-api-version.properties (api.version) baked into fe-connector-spi.
-// The gate compares MAJOR only. Upstream bumped the CONNECTOR plugin API major 1 -> 5 in the
-// ded91fb9fb3..a82564ced5d window (fe/fe-connector/pom.xml <connector.plugin.api.version>5.0), so a
-// plugin stamped "1.0" is now REJECTED (FE load summary stage=apiVersion; CREATE CATALOG then fails
-// "No connector plugin claimed catalog type"). We stamp "5.0" to match the master baseline. Sanity-
-// check after a re-vendor: unzip -p doris-m2/.../fe-connector-spi-1.2-SNAPSHOT.jar \
+// The gate compares MAJOR only. Upstream bumped the CONNECTOR plugin API major over time
+// (1->5 in ded91fb9fb3..a82564ced5d; 5->6 at 1731787677f via #66413). A plugin stamped an older
+// major is REJECTED at load (FE summary stage=apiVersion; CREATE CATALOG then fails "No connector
+// plugin claimed catalog type"). We stamp "6.0" to match the master baseline. Sanity-check after a
+// re-vendor: unzip -p doris-m2/.../fe-connector-spi-1.2-SNAPSHOT.jar \
 //   META-INF/doris/connector-plugin-api-version.properties. Bump when the SPI major changes again.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "5.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "6.0")
     }
 }
 

@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`b119273e3f0` (2026-08-16, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`1731787677f` (2026-08-25, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,8 +35,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `b119273e3f06b3425a09908fc0ac65742e6a1b96`
-> - **subject** = `[fix](load) Keep graceful BE stop bounded when an audit stream load is in flight (#66797)`
+> - **`PIN_SHA`** = `1731787677f0199ccdb4fe6318f9116310627c52`
+> - **subject** = `[chore](lance) update lance version to tag 0.1.7 (#67115)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
@@ -167,6 +167,25 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-08-25 — re-vendor to apache/doris `master` `1731787677f`** (subject: *"[chore](lance) update
+  lance version to tag 0.1.7 (#67115)"*). **Non-breaking except one required stamp bump.** Tracks the
+  pin `doris-ducklake` adopted; verified against the local apache checkout `~/DEV/OSS/doris` at this SHA.
+  - **⚠️ Plugin API-version MAJOR bumped `5` → `6`** (`#66413`; `fe/fe-connector/pom.xml
+    <connector.plugin.api.version>` is now `6.0`). A plugin stamped `5.0` is rejected at load
+    (`stage=apiVersion` → `CREATE CATALOG` fails "No connector plugin claimed catalog type"). Bumped
+    the `jar` manifest stamp `Doris-Connector-Plugin-Api-Version` `5.0` → `6.0`; verified the rebuilt
+    spi jar ships `api.version=6.0` and the plugin-zip jar stamps `6.0`.
+  - **No other `fe-connector-spi` surface change** — `#66413` added only `default` methods. Zero
+    connector source changes: SPI jars rebuilt from `1731787677f` into `doris-m2`;
+    `:doris-duckbridge:test` (62) + `:detekt` + `:jar`/`:pluginZip` green.
+  - **BE `DuckDbTypeHandler` patch unchanged** — `git apply --3way --check` clean at this pin.
+  - **Live smoke GREEN** (thin-overlay BE `FROM doris-be:master-local` + retagged master FE): the
+    **6.0 gate passes** (plugin loads, `CREATE CATALOG type=duckbridge`), metadata, LARGEINT/ARRAY/
+    unicode decode, pushdown P1/P3/P6, `count(*)`, P2 load — all pass.
+  - **§12b DEFAULT-backfill (shared, ducklake) N/A:** `#66413` briefly re-introduced then re-fixed the
+    schema-evolution DEFAULT-read BE crash at this pin (back to a silent `0`-not-default miss);
+    duckbridge passes `null` for `ConnectorColumn.defaultValue` and reads no schema-evolved parquet.
 
 - **2026-08-16 — re-vendor to apache/doris `master` `b119273e3f0`** (subject: *"[fix](load) Keep
   graceful BE stop bounded when an audit stream load is in flight (#66797)"*; +44 over `a82564ced5d`).
