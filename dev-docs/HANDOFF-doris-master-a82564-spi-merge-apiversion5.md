@@ -12,7 +12,9 @@ re-vendored it clean (`doris-ducklake@032841d`, full smoke + corpus GREEN). One 
    `Doris-Connector-Plugin-Api-Version = 6.0`** in your `build.gradle.kts`. (No `fe-connector-spi`
    surface change otherwise — recompile is clean; `#66413` added only `default` methods.)
 2. **BE build-env:** thirdparty moved again (hadoop/lance) — pull a **build-env image dated ≥ your build
-   day** or the arrow/paimon freshness guard fails. Re-verify your `DuckDbTypeHandler` BE patch applies.
+   day** or the arrow/paimon freshness guard fails. Your `DuckDbTypeHandler` BE patch
+   (`doris-patches/be/0001-duckdb-type-handler.patch`) **applies cleanly on `1731787677f`** — verified
+   from ducklake (`git apply --check` green), no rebase needed.
 3. **§12b (shared, net no-op for you):** `#66413`'s `column_mapper` rewrite briefly re-introduced the
    schema-evolution DEFAULT-read **BE crash**, then it was **fixed again at `1731787677f`** — back to the
    silent-correctness miss (old rows read `0` not the DEFAULT), no crash. Only relevant if you read
