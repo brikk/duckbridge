@@ -1,5 +1,30 @@
 # Handoff: sync duckbridge to apache/doris master `a82564ced5d` (SPI api→spi merge + API-version 1→5)
 
+## UPDATE 2026-08-25 — go current: `b119273e3f0` → `1731787677f` (you're only ~9 days behind)
+
+duckbridge is already at `b119273e3f0` (api→spi merge + api-version **5.0** done ✅). To reach current
+master `1731787677f` (2026-08-25 22:36 +0800), the delta is small and **non-breaking** — ducklake
+re-vendored it clean (`doris-ducklake@032841d`, full smoke + corpus GREEN). One required change:
+
+1. **⚠️ api-version bumped 5 → 6** (`#66413`; `fe/fe-connector/pom.xml <connector.plugin.api.version>`
+   is now `6.0`). Your plugin jar stamps `5.0`, so the fail-closed gate will **reject it at load** on a
+   current FE (`No connector plugin claimed catalog type 'duckbridge'`, `stage=apiVersion`). **Stamp
+   `Doris-Connector-Plugin-Api-Version = 6.0`** in your `build.gradle.kts`. (No `fe-connector-spi`
+   surface change otherwise — recompile is clean; `#66413` added only `default` methods.)
+2. **BE build-env:** thirdparty moved again (hadoop/lance) — pull a **build-env image dated ≥ your build
+   day** or the arrow/paimon freshness guard fails. Re-verify your `DuckDbTypeHandler` BE patch applies.
+3. **§12b (shared, net no-op for you):** `#66413`'s `column_mapper` rewrite briefly re-introduced the
+   schema-evolution DEFAULT-read **BE crash**, then it was **fixed again at `1731787677f`** — back to the
+   silent-correctness miss (old rows read `0` not the DEFAULT), no crash. Only relevant if you read
+   schema-evolved DEFAULT columns. Ducklake friction log (priority-ordered, "current as of" marker):
+   `https://github.com/brikk/doris-ducklake/blob/main/dev-docs/ducklake-doris-friction.md`
+
+Then: `BASELINE` → `1731787677f`, `--install-spi-jars`, recompile+detekt, rebuild FE+BE, bake, smoke.
+Full historical playbook (api→spi rewrite mechanics etc.) below.
+
+---
+
+
 > **From the `doris-ducklake` sync, 2026-08-06.** duckbridge is currently pinned at
 > `ded91fb9fb3` (`doris-patches/BASELINE`), which is *before* two breaking changes that landed in
 > the `ded91fb9fb3..a82564ced5d` window (+74 commits). This note is the exact playbook to move
