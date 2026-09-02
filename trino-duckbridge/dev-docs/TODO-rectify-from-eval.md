@@ -286,10 +286,12 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   **Deployment caveat (partly open).** CI and the release build do NOT use the locally built
   binary: `.github/scripts/fetch-parity-extension.sh` pulls the *community-extensions* build,
   which still carries the old full-mapping code until the catalog ref is bumped. Status:
-  (1) ✅ extension fix committed + pushed (`b181c61`), MainDistributionPipeline running;
-  (2) ⏳ PR to duckdb/community-extensions: `extensions/trino_parity/description.yml` →
-  `ref: b181c61…`, `version: 0.3.0`, and rewrite `docs.hello_world` / `description` /
-  `extended_description`, which currently advertise `'STRASSE'` and `'i̇stanbul'`;
+  (1) ✅ extension fix committed + pushed (`b181c61`), MainDistributionPipeline green;
+  (2) ⏳ PR to duckdb/community-extensions **opened**:
+  https://github.com/duckdb/community-extensions/pull/2594 (`ref: b181c61…`, `version: 0.3.0`,
+  `docs.hello_world` / `description` / `extended_description` corrected — they advertised
+  `'STRASSE'` and `'i̇stanbul'`); upstream MainDistributionPipeline on `b181c61` green on the full
+  matrix (run 33609826315);
   (3) ✅ submodule pointer bumped + connector-side changes committed here;
   (4) ⏳ this repo's CI goes green only after (2) is merged and the community CDN rebuilt
   for v1.5.5 — until then `testRepresentativeAliasSemantics` fails against the fetched binary.
