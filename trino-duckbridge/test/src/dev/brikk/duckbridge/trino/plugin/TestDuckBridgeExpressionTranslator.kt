@@ -673,7 +673,7 @@ class TestDuckBridgeExpressionTranslator {
                 DuckBridgeExpressionTranslator.NameArity("upper", 1),
                 DuckBridgeExpressionTranslator.NameArity("reverse", 1),
                 DuckBridgeExpressionTranslator.NameArity("chr", 1),
-                DuckBridgeExpressionTranslator.NameArity("levenshtein_distance", 2),
+                DuckBridgeExpressionTranslator.NameArity("date_trunc", 2),
             )
     }
 

@@ -91,13 +91,13 @@ internal object DuckBridgeEmissionCatalog {
             put(NameArity("concat_ws", 5), Emission.Bare)
             put(NameArity("translate", 3), Emission.Bare)
             put(NameArity("chr", 1), Emission.Bare)
-            put(NameArity("bit_length", 1), Emission.Bare)
+            // (bit_length is not a Trino function — the former entry was unreachable.)
             // url_encode / url_decode are NOT pushed (EV-A5): Trino uses application/x-www-form-urlencoded
             // rules (space→'+', '*' kept, '~' encoded) while DuckDB is RFC 3986 percent-encoding —
             // url_encode('a b*~') is 'a+b*%7E' in Trino, 'a%20b%2A~' in DuckDB; url_decode('a+b') is 'a b'
             // vs 'a+b'.
             put(NameArity("to_base64", 1), Emission.Bare)
-            put(NameArity("from_base64", 1), Emission.Bare)
+            // from_base64 is NOT pushed (EV-A13): Trino accepts unpadded input ('YWI'), DuckDB errors.
             // Numeric / math
             put(NameArity("abs", 1), Emission.Bare)
             put(NameArity("ceil", 1), Emission.Bare)
@@ -117,8 +117,9 @@ internal object DuckBridgeEmissionCatalog {
             put(NameArity("sin", 1), Emission.Bare)
             put(NameArity("cos", 1), Emission.Bare)
             put(NameArity("tan", 1), Emission.Bare)
-            put(NameArity("asin", 1), Emission.Bare)
-            put(NameArity("acos", 1), Emission.Bare)
+            // asin/acos: Trino returns NaN outside [-1, 1]; DuckDB throws (EV-A13).
+            put(NameArity("asin", 1), Emission.Inline { a -> "(CASE WHEN ${a[0]} BETWEEN -1 AND 1 THEN asin(${a[0]}) ELSE 'nan'::DOUBLE END)" })
+            put(NameArity("acos", 1), Emission.Inline { a -> "(CASE WHEN ${a[0]} BETWEEN -1 AND 1 THEN acos(${a[0]}) ELSE 'nan'::DOUBLE END)" })
             put(NameArity("atan", 1), Emission.Bare)
             put(NameArity("atan2", 2), Emission.Bare)
             put(NameArity("sinh", 1), Emission.Bare)
@@ -126,7 +127,8 @@ internal object DuckBridgeEmissionCatalog {
             put(NameArity("tanh", 1), Emission.Bare)
             put(NameArity("degrees", 1), Emission.Bare)
             put(NameArity("radians", 1), Emission.Bare)
-            put(NameArity("cbrt", 1), Emission.Bare)
+            // cbrt is NOT pushed (EV-A13): Java's Math.cbrt is exact for perfect cubes (cbrt(-27) = -3)
+            // where DuckDB's yields -3.0000000000000004 — an equality predicate would miss the row.
             put(NameArity("sign", 1), Emission.Bare)
             put(NameArity("pi", 0), Emission.Bare)
             // Regex. All regex entries are gated (TYPE_GATES) to a constant pattern that passes the
@@ -160,9 +162,11 @@ internal object DuckBridgeEmissionCatalog {
 
             // ---- RENAME: a different bare DuckDB built-in name ---------------------------------
             put(NameArity("to_hex", 1), Emission.Rename("hex"))
-            put(NameArity("from_hex", 1), Emission.Rename("unhex"))
-            put(NameArity("levenshtein_distance", 2), Emission.Rename("levenshtein"))
-            put(NameArity("hamming_distance", 2), Emission.Rename("hamming"))
+            // from_hex is NOT pushed (EV-A13): Trino errors on odd-length input ('abc'), DuckDB
+            // left-pads a nibble ('0ABC').
+            // levenshtein_distance / hamming_distance are NOT pushed (EV-A13): DuckDB's levenshtein /
+            // hamming operate on BYTES (levenshtein('äö','ab') = 4, hamming errors on the byte-length
+            // mismatch) where Trino counts code points (2).
             put(NameArity("truncate", 1), Emission.Rename("trunc"))
             put(NameArity("regexp_like", 2), Emission.Rename("regexp_matches"))
             put(NameArity("day_of_year", 1), Emission.Rename("dayofyear"))
@@ -246,18 +250,28 @@ internal object DuckBridgeEmissionCatalog {
         // with_timezone(TIMESTAMP no-TZ, varchar) → WTZ. Gate strictly to TIMESTAMP.
         gates[NameArity("with_timezone", 2)] = arg(0, TimestampType::class.java)
 
-        // lpad/rpad: push ONLY when the pad argument (arg 2) is a constant, non-empty varchar.
-        // Trino raises on an empty pad string; DuckDB does not. A non-constant pad could be empty at
-        // runtime, so we can only push when we can PROVE the pad is non-empty — i.e. a literal.
+        // lpad/rpad: push ONLY when the pad argument (arg 2) is a constant, non-empty varchar AND the
+        // size (arg 1) is a constant ≥ 0. Trino raises on an empty pad string and on a negative size;
+        // DuckDB pads with nothing / returns ''. Non-constant arguments could hit either at runtime.
         val constNonEmptyPad = constNonEmptyVarcharArg(2)
-        gates[NameArity("lpad", 3)] = constNonEmptyPad
-        gates[NameArity("rpad", 3)] = constNonEmptyPad
+        val constSizeAtLeastZero = constIntArgAtLeast(1, 0)
+        val padGate = ArgTypeGate { args, session -> constNonEmptyPad.accepts(args, session) && constSizeAtLeastZero.accepts(args, session) }
+        gates[NameArity("lpad", 3)] = padGate
+        gates[NameArity("rpad", 3)] = padGate
 
         // substring/{2,3}: DuckDB treats start=0 as start=1, Trino differs. Push ONLY when the start
-        // argument (arg 1) is a constant integer ≥ 1, which is the range both engines align on.
+        // argument (arg 1) is a constant integer ≥ 1, which is the range both engines align on; for
+        // substring/3 the length (arg 2) must also be a constant ≥ 0 — Trino returns '' for a negative
+        // length where DuckDB returns a slice ('hello', 2, -1 → 'h') (EV-A13).
         val constStartAtLeastOne = constIntArgAtLeast(1, 1)
+        val constLengthAtLeastZero = constIntArgAtLeast(2, 0)
         gates[NameArity("substring", 2)] = constStartAtLeastOne
-        gates[NameArity("substring", 3)] = constStartAtLeastOne
+        gates[NameArity("substring", 3)] =
+            ArgTypeGate { args, session -> constStartAtLeastOne.accepts(args, session) && constLengthAtLeastZero.accepts(args, session) }
+
+        // replace/3: the search string (arg 1) must be a constant, non-empty varchar. Trino's
+        // replace('abc', '', 'x') inserts between every character ('xaxbxcx'); DuckDB is a no-op (EV-A13).
+        gates[NameArity("replace", 3)] = constNonEmptyVarcharArg(1)
 
         // mod/2 (EV-A12): divisor must be a non-zero integer constant — Trino throws on a zero divisor,
         // DuckDB yields NULL and the row would silently vanish. A column divisor could be 0 at runtime.
@@ -324,12 +338,25 @@ internal object DuckBridgeEmissionCatalog {
         "(CASE WHEN $x > 0 THEN $fn($x) WHEN $x = 0 THEN -('inf'::DOUBLE) ELSE 'nan'::DOUBLE END)"
 
     /**
-     * The session zone as a quoted DuckDB literal, normalised the same way `applySessionTimeZone` sets
-     * it, or null when there is no session / the zone has no DuckDB spelling (then the conjunct stays
-     * in Trino).
+     * The session zone as a quoted DuckDB literal — ONLY for fixed-offset zones (UTC, `+05:00`, ...).
+     * Zones with DST are declined (null → the conjunct stays in Trino): in the autumn overlap hour
+     * Trino resolves an ambiguous local time to the EARLIER offset (Java `ZoneRules`) while DuckDB's
+     * ICU picks the LATER one (2024-11-03 01:30 America/New_York: 1730611800 vs 1730615400 — EV-A13),
+     * so no zone-name rewrite can be made exact for a DST zone. Also null with no session or when the
+     * zone has no DuckDB spelling.
      */
     private fun sessionZoneLiteral(session: ConnectorSession?): String? {
-        val zone = TrinoTimeZoneNormaliser.normalise(session?.timeZoneKey?.id) ?: return null
+        val id = session?.timeZoneKey?.id ?: return null
+        val fixed =
+            try {
+                java.time.ZoneId.of(id).rules.isFixedOffset
+            } catch (@Suppress("SwallowedException") e: java.time.DateTimeException) {
+                false
+            }
+        if (!fixed) {
+            return null
+        }
+        val zone = TrinoTimeZoneNormaliser.normalise(id) ?: return null
         return "'" + zone.replace("'", "''") + "'"
     }
 

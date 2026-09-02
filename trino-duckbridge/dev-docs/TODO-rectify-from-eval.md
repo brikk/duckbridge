@@ -28,13 +28,13 @@ it (new `TYPE_GATES` entry, `:230-269`, same style as `lpad`/`substring`) so it 
 pushes where the engines agree, or **remove** the entry. Whichever is chosen, add the
 divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
 
-- [ ] **EV-A1 `millisecond/1`** — `:218` emits `extract('millisecond' FROM x)`, which in
+- [x] **EV-A1 `millisecond/1`** — `:218` emits `extract('millisecond' FROM x)`, which in
   DuckDB is *sub-minute* milliseconds (0..59999), not millis-of-second.
   Trino `millisecond(TS '2024-01-01 00:00:05.123')` = `123`; DuckDB = `5123`.
   The inline comment ("0..999") is wrong. Mode: all.
   Fix: `CAST(extract('millisecond' FROM x) % 1000 AS BIGINT)` (verify), fixture with seconds ≠ 0.
 
-- [ ] **EV-A2 `date_diff/3`** — `:170` `Bare`. DuckDB `date_diff` counts *partition
+- [x] **EV-A2 `date_diff/3`** — `:170` `Bare`. DuckDB `date_diff` counts *partition
   boundaries crossed*; Trino counts *complete units elapsed*.
   `date_diff('month', DATE '2020-01-31', DATE '2020-02-01')`: Trino `0`, DuckDB `1`.
   `date_diff('day', TS '2020-01-01 23:00', TS '2020-01-02 01:00')`: Trino `0`, DuckDB `1`.
@@ -43,13 +43,13 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
   Mode: all. Fix: evaluate DuckDB `date_sub(part, start, end)` (complete-unit semantics)
   as a `Rename`; verify every unit Trino accepts incl. `week`/`quarter`/`millisecond`; else remove.
 
-- [ ] **EV-A3 `bitwise_right_shift/2`** — `:195` emits `(x >> n)`. Trino's
+- [x] **EV-A3 `bitwise_right_shift/2`** — `:195` emits `(x >> n)`. Trino's
   `bitwise_right_shift` is a *logical* (zero-fill) shift; DuckDB `>>` is arithmetic.
   `bitwise_right_shift(BIGINT '-8', 1)`: Trino `9223372036854775804`, DuckDB `-4`.
   Mode: all. Fix: remove (a width-correct unsigned rewrite per integer type is possible
   but fiddly; Trino also has `bitwise_right_shift_arithmetic` if the arithmetic form is wanted).
 
-- [ ] **EV-A4 `to_unixtime/1` on `TIMESTAMP` (no tz)** — `:220` emits `CAST(epoch(x) AS DOUBLE)`.
+- [x] **EV-A4 `to_unixtime/1` on `TIMESTAMP` (no tz)** — `:220` emits `CAST(epoch(x) AS DOUBLE)`.
   Trino interprets a naive timestamp in the *session* zone; DuckDB `epoch(TIMESTAMP)`
   treats it as UTC and ignores `SET TimeZone` (verified after `SET TimeZone='America/New_York'`).
   `to_unixtime(TS '1970-01-01 00:00:01')` in the test session: Trino `39601.0`, DuckDB `1.0`.
@@ -58,7 +58,7 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
   normalised zone `applySessionTimeZone` sets, or restrict the `argTier(0)` gate (`:237`)
   to `TIMESTAMP WITH TIME ZONE` only. Fixture must run under a non-UTC session zone.
 
-- [ ] **EV-A5 `url_encode/1`, `url_decode/1`** — `:126-127` `Bare`. Trino uses
+- [x] **EV-A5 `url_encode/1`, `url_decode/1`** — `:126-127` `Bare`. Trino uses
   `application/x-www-form-urlencoded` rules (space→`+`, `*` kept, `~` encoded); DuckDB is
   RFC 3986 percent-encoding.
   `url_encode('a b*~')`: Trino `a+b*%7E`, DuckDB `a%20b%2A~`.
@@ -67,21 +67,21 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
   Mode: ≥BINARY (result compared to a string). Fix: remove both; or implement as `Alias`
   natives in the extension if pushdown is wanted.
 
-- [ ] **EV-A6 `regexp_extract/2`, `/3` no-match** — `:157-158` `Bare`. Trino returns `NULL`
+- [x] **EV-A6 `regexp_extract/2`, `/3` no-match** — `:157-158` `Bare`. Trino returns `NULL`
   on no match; DuckDB returns `''`.
   `regexp_extract('abc','x') IS NULL`: Trino `true`, DuckDB `false`.
   `IS NULL` form pushes in all modes; `= ''` form ≥BINARY.
   Fix: `CASE WHEN regexp_matches(s, p) THEN regexp_extract(s, p[, g]) END`
   (NOT `nullif(.., '')` — a genuine empty match must stay `''`). Also subject to EV-A8.
 
-- [ ] **EV-A7 `regexp_replace/2`, `/3` replacement syntax** — `:203-204`. Trino replacement
+- [x] **EV-A7 `regexp_replace/2`, `/3` replacement syntax** — `:203-204`. Trino replacement
   uses `$1`/`${name}` group references; DuckDB (RE2) uses `\1`.
   `regexp_replace('abc','(b)','[$1]')`: Trino `a[b]c`, DuckDB `a[$1]c`.
   Mode: ≥BINARY. Fix: gate on a `Constant` replacement containing neither `$` nor `\`
   (translate `$n`→`\n` only if you are prepared to prove the full escaping grammar).
   Also subject to EV-A8.
 
-- [ ] **EV-A8 regex dialect (Joni/Java vs RE2)** — affects `regexp_like` (`:182`),
+- [x] **EV-A8 regex dialect (Joni/Java vs RE2)** — affects `regexp_like` (`:182`),
   `regexp_extract`, `regexp_replace`. Silent divergence found: `$` matches before a
   trailing `\n` in Java, not in RE2 — `regexp_like('abc\n', 'c$')`: Trino `true`,
   DuckDB `false`. (`\w` on `é` was checked and agrees: both `false`.) Loud divergence:
@@ -91,7 +91,7 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
   `(?m)`-explicit or trailing-`\n` handled, no `(?=`/`(?!`/`(?<`, no `\1`..`\9`, no `*+`/`++`/`?+`,
   no `\Z`/`\z`/`\G`, no `\p{}` names RE2 lacks), else leave in Trino.
 
-- [ ] **EV-A9 `TRY_CAST(varchar AS int/bigint/…/date/boolean)`** — `:551`, `:716-727`.
+- [x] **EV-A9 `TRY_CAST(varchar AS int/bigint/…/date/boolean)`** — `:551`, `:716-727`.
   DuckDB's string parsers are more lenient, so `TRY_CAST` yields a value where Trino yields `NULL`:
   `TRY_CAST('1.0' AS INTEGER)`: Trino `NULL`, DuckDB `1`;
   `TRY_CAST('2020/01/01' AS DATE)`: Trino `NULL`, DuckDB a date;
@@ -100,19 +100,19 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
   Plain `CAST` from varchar is error-vs-result (Trino throws, DuckDB returns) — see EV-A12.
   Fix: in `translateCast`, refuse `TRY_CAST` when the operand type is `VarcharType`/`CharType`.
 
-- [ ] **EV-A10 `CAST(double AS VARCHAR)`** — `:549`, `:723`. Java `Double.toString` vs DuckDB
+- [x] **EV-A10 `CAST(double AS VARCHAR)`** — `:549`, `:723`. Java `Double.toString` vs DuckDB
   formatting: `CAST(DOUBLE '1e7' AS VARCHAR)`: Trino `1.0E7`, DuckDB `10000000.0`;
   `1e20` → `1.0E20` vs `1e+20`. Agrees only for ~`1e-3 ≤ |x| < 1e7`. Mode: ≥BINARY.
   Fix: in `translateCast`, refuse `VARCHAR` target when the operand is `DoubleType`/`RealType`
   (check `REAL`, `DECIMAL`, `TIMESTAMP` → `VARCHAR` too before allowing any of them).
 
-- [ ] **EV-A11 `concat_ws/2..5` with an ARRAY argument** — `:119-122` `Bare`, no type gate.
+- [x] **EV-A11 `concat_ws/2..5` with an ARRAY argument** — `:119-122` `Bare`, no type gate.
   Trino's `concat_ws(sep, ARRAY[...])` overload joins elements; DuckDB stringifies the list.
   `concat_ws(',', ARRAY['a','b'])`: Trino `a,b`, DuckDB `[a, b]`. Arrays are mapped
   (`DuckBridgeArrayColumnMapping`) so this is reachable. Mode: ≥BINARY.
   Fix: `TYPE_GATES` entry requiring every argument to be `VarcharType`.
 
-- [ ] **EV-A12 error-vs-result divergences** — Trino fails the query where DuckDB silently
+- [x] **EV-A12 error-vs-result divergences** — Trino fails the query where DuckDB silently
   returns rows (dropping or keeping them), or vice versa:
   - `mod/2` (`:134`): `mod(5, 0)` Trino throws `/ by zero`, DuckDB `NULL` → row silently dropped.
     Contradicts the stated reason `$modulo` is NOT pushed (`:747-751`). Mode: all.
@@ -124,28 +124,60 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
   - `CAST(varchar AS int/date/boolean)`: Trino throws on `'1.0'`/`'2020/01/01'`/`'yes'`, DuckDB returns.
   - RE2-unsupported syntax (see EV-A8): DuckDB throws, Trino succeeds.
 
+**Resolution of EV-A1..A12 (2026-09-02, commits `2639822` Tier 1 + Tier 2).** Rewrites:
+`millisecond` (`% 1000`), `date_diff→date_sub` (unit-gated), `to_unixtime` (`epoch(timezone(<zone>,
+ts))`, fixed-offset zones only — see EV-A13), `regexp_extract` (`CASE WHEN regexp_matches`),
+`sqrt`/`ln`/`log2`/`log10` (`CASE` → NaN / -Infinity). Gates: regex pattern must be a constant
+passing `Re2Safety`; `regexp_replace/3` replacement constant without `$`/`\`; `mod` non-zero
+constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non-string and
+→VARCHAR from anything but integer/BOOLEAN/DATE. Removed: `url_encode`, `url_decode`,
+`bitwise_left_shift`, `bitwise_right_shift`. Catalog split into `DuckBridgeEmissionCatalog`;
+`README-pushdown-reference.md` corrected. `ln`/`sqrt` etc. were rewritten rather than gated so the
+common `ln(col) > x` shape still pushes.
+
+- [x] **EV-A13 divergences surfaced by the Trino-computed fixtures (EV-B1)** — the new harness
+  found these on its first run; all fixed in the Tier 2 commit. Trino vs DuckDB:
+  - `substring('hello', 2, -1)`: `''` vs `'h'` → `substring/3` gate: constant length ≥ 0.
+  - `replace('abc', '', 'x')`: `'xaxbxcx'` vs `'abc'` → gate: constant non-empty search string.
+  - `lpad('abc', -1, 'x')`: error vs `''` → `lpad`/`rpad` gate: constant size ≥ 0 (plus existing pad gate).
+  - `levenshtein_distance('äö','ab')`: `2` vs `4`; `hamming_distance` same inputs: `2` vs error —
+    DuckDB's are byte-based → both **removed**.
+  - `asin(2.0)` / `acos(-2.0)`: `NaN` vs error → `CASE WHEN x BETWEEN -1 AND 1` rewrite.
+  - `cbrt(-27.0)`: `-3.0` vs `-3.0000000000000004` → **removed** (equality predicates would miss).
+  - `to_unixtime(TIMESTAMP '2024-11-03 01:30:00')` in `America/New_York`: `1730611800` (Trino: earlier
+    offset) vs `1730615400` (ICU: later offset) → the EV-A4 rewrite is now emitted **only for
+    fixed-offset session zones** (UTC, `+HH:MM`); DST zones stay in Trino. The spring-gap hour agreed.
+  - VARCHAR constant containing U+0000: Trino fine, DuckDB "unterminated quoted string" (the translator
+    wrote the raw NUL into the literal) → `translateConstant` declines NUL-bearing constants.
+  - `from_hex('abc')`: error vs `0ABC` (DuckDB pads odd length); `from_base64('YWI')`: decodes vs error
+    (DuckDB requires padding) → both **removed** (VARBINARY-shaped, unreachable anyway per EV-C5).
+  - `bit_length` is not a Trino function ("Function 'bit_length' not registered") → dead entry removed.
+  Net catalog: 85 entries (43 Bare, 9 Rename, 3 Operator, 20 Inline/Contextual, 10 Alias), down from 95.
+
 ## B. Test methodology
 
-- [ ] **EV-B1 fixtures are not cross-engine** — `SemanticFixtures.kt` runs the emitted SQL on
-  DuckDB and compares against a *hand-written* `expected`; Trino never computes it. That is
-  how EV-A1..A5 shipped green (`:105` encodes the DuckDB answer; `:152`, `:185`, `:212`, `:213`
-  test only the inputs where the engines coincide). README.md:13-15 and :163-165 describe
-  these as "per-function cross-engine fixtures" — they aren't.
-  Fix: for every `(name, arity)` in `PUSHABLE_FUNCTIONS`, compute the expected value by running
-  the same expression through Trino (query runner `VALUES`, or the connector with the conjunct
-  forced unpushed) and assert equality against the pushed path over an edge corpus:
-  `NULL`, `''`, negative, zero divisor, unicode/astral, embedded `\n`, non-UTC session zone,
-  seconds ≠ 0, month/year boundaries, `MIN_VALUE`. `testEveryNonAliasEntryHasAFixture`
-  (`TestTrinoFunctionAliases.kt:92`) should then require ≥ N edge inputs per entry, not 1.
+- [x] **EV-B1 fixtures are not cross-engine** — **done (Tier 2 commit).** `SemanticFixtures` +
+  `TestPushdownSemanticFixtures`: every fixture is a Trino `Call` that is (1) rendered to Trino SQL
+  and evaluated on the Trino query runner — the authoritative expected value, never hand-written —
+  and (2) run through the production translator and executed on DuckDB; outcomes must be identical
+  (value, or both engines error). `NotPushed` fixtures pin every gate. Both engines run in a non-UTC
+  session zone (`America/New_York`). 406 cases: string/numeric/regex/date-time/encoding/cast edge
+  corpus for all 75 native entries + the section-E ALIAS corpus (case mapping, whitespace classes,
+  NFC, hashes incl. >64-byte HMAC keys). `testEveryNonAliasEntryHasAFixture` still enforces
+  coverage. First run found EV-A13 (10 new divergences) — the methodology works.
+  (Historical note: `SemanticFixtures.kt:105` had asserted the DuckDB answer for `url_encode` as
+  Trino's; `:152/:185/:212/:213` tested only the coinciding inputs.)
 
 - [ ] **EV-B2 no pushed-vs-unpushed result comparison in integration tests** —
   `TestDuckBridgePushdown` asserts plan shape (`isFullyPushedDown`) plus a few hand-picked
-  rows. Add a differential test that runs each pushable predicate over a fixed table with
-  pushdown on vs. `string_pushdown_mode=NULL_ONLY` / the conjunct wrapped to defeat pushdown,
-  and asserts identical row sets.
+  rows. EV-B1 covers function *semantics* (scalar in, scalar out) but not the end-to-end WHERE
+  path (TupleDomain interplay, per-conjunct split, connection-init probes, NULL rows in a table).
+  Add a differential test that runs each pushable predicate over a fixed table with pushdown on
+  vs. the conjunct wrapped to defeat pushdown, and asserts identical row sets.
 
-- [ ] **EV-B3 correct README/doc claims once B1 lands** — README.md:13-15, :163-165,
-  :212-215 ("~85 natively-emitted functions… verified by per-function cross-engine fixtures").
+- [x] **EV-B3 correct README/doc claims once B1 lands** — done: README.md now describes the
+  differential fixtures accurately and says ~75; `README-pushdown-reference.md` counts and per-row
+  notes updated (incl. removing the false "RE2 on both sides").
 
 ## C. Design / operational
 

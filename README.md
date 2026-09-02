@@ -11,10 +11,10 @@ executed inside DuckDB instead of in Trino.
 
 Pushdown correctness is held to Trino-identical semantics (NULLs, unicode, arithmetic
 edge cases, date/time zone rules). Most scalar functions are emitted as plain DuckDB
-SQL that DuckDB already evaluates identically to Trino (proven by per-function
-cross-engine fixtures); only the handful DuckDB *cannot* match natively are backed by
-the `trino_parity` DuckDB extension. When in doubt, an expression is not pushed — never
-wrong results.
+SQL that DuckDB evaluates identically to Trino — proven by differential fixtures that
+run the same expression on Trino and on DuckDB and require identical outcomes; only the
+handful DuckDB *cannot* match natively are backed by the `trino_parity` DuckDB extension.
+When in doubt, an expression is not pushed — never wrong results.
 
 ## Install
 
@@ -160,9 +160,10 @@ The [`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-pari
 backs **only the functions whose semantics DuckDB cannot match natively**: ICU case
 folding / trim / `normalize` (`lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`,
 `normalize/1`) and the vendored-crypto hashes (`xxhash64`, `sha512`, `hmac_sha256`) —
-10 functions in all. Everything else (the ~85 other pushable functions) is emitted as
-plain DuckDB SQL that DuckDB already evaluates identically to Trino, verified by
-per-function cross-engine fixtures.
+10 functions in all. Everything else (the ~75 other pushable functions) is emitted as
+plain DuckDB SQL that DuckDB evaluates identically to Trino, verified by differential
+fixtures (Trino result vs DuckDB result for the same expression, incl. NULL / unicode /
+domain-edge / zone inputs).
 
 The extension is required only in the default `PARITY` string-pushdown mode (above), and
 only for those 10 functions. When `PARITY` promises pushdown the extension can't back,
@@ -210,7 +211,7 @@ How the connector gets it, per transport:
   first connection. Either way the connector probes `trino_meta()` on first use and fails with
   install instructions if it's absent — it does **not** `LOAD` per connection.
 - **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or any
-  non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~85 natively-emitted
+  non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~75 natively-emitted
   functions still push, alongside projection, predicate (domain), and LIMIT/TopN pushdown. All
   queries remain correct — the 10 are simply evaluated by Trino above the scan. (This replaces the
   former `duckbridge.parity.enabled=false`.)

@@ -225,6 +225,11 @@ object DuckBridgeExpressionTranslator {
                 return null
             }
             val s = value.toStringUtf8()
+            // A literal containing U+0000 cannot be spelled as a plain quoted string (DuckDB's parser
+            // stops at the NUL byte: "unterminated quoted string"); leave the conjunct in Trino.
+            if (s.indexOf('\u0000') >= 0) {
+                return null
+            }
             return "'" + s.replace("'", "''") + "'"
         }
         if (type is DateType) {

@@ -15,9 +15,7 @@ package dev.brikk.duckbridge.trino.plugin
 
 import dev.brikk.duckbridge.trino.plugin.DuckBridgeExpressionTranslator.NameArity
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestFactory
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -37,12 +35,11 @@ import java.util.Properties
  *      0d531cc ("shrink to the 10 native divergence-fixing functions"), so any extra or missing
  *      entry on either side is a hard failure again.
  *
- *  (b) [nonAliasSemanticFixtures] — SEMANTIC FIXTURES: every non-ALIAS entry
- *      (Bare/Rename/Operator/Inline) has at least one fixture that TRANSLATES a Trino
- *      [io.trino.spi.expression.Call] through the production [DuckBridgeExpressionTranslator], then
- *      evaluates the emitted DuckDB SQL against embedded DuckDB and compares it to the Trino-side
- *      expected value. These are the canary that re-proves native alignment on DuckDB pin bumps —
- *      if a bare/rename/inline built-in ever drifts from Trino, its fixture goes red.
+ *  (b) [testEveryNonAliasEntryHasAFixture] — FIXTURE COVERAGE: every non-ALIAS entry
+ *      (Bare/Rename/Operator/Inline) has at least one [SemanticFixtures.Fixture]. The fixtures
+ *      themselves run in [TestPushdownSemanticFixtures], which evaluates each expression on Trino AND
+ *      on DuckDB (via the production translator's SQL) and requires the outcomes to agree — the canary
+ *      that re-proves native alignment on DuckDB / Trino pin bumps.
  */
 class TestTrinoFunctionAliases {
     // ---- (a) ALIAS lockstep -------------------------------------------------
@@ -94,29 +91,10 @@ class TestTrinoFunctionAliases {
             DuckBridgeExpressionTranslator.EMISSION_STRATEGIES
                 .filterValues { it !is DuckBridgeExpressionTranslator.Emission.Alias }
                 .keys
-        val covered = SemanticFixtures.all().map { NameArity(it.name, it.arity) }.toSet()
+        val covered = SemanticFixtures.all().filterIsInstance<SemanticFixtures.Fixture>().map { NameArity(it.name, it.arity) }.toSet()
         assertThat(covered)
             .`as`("every Bare/Rename/Operator/Inline entry must carry a semantic fixture")
             .containsAll(nonAlias)
-    }
-
-    // ---- (b) semantic fixtures ---------------------------------------------
-
-    @TestFactory
-    @Throws(Exception::class)
-    fun nonAliasSemanticFixtures(): List<DynamicTest> {
-        val conn = openConnectionWithExtension()
-        val stmt = conn.createStatement()
-        return SemanticFixtures.all().map { fx ->
-            DynamicTest.dynamicTest("${fx.name}/${fx.arity} :: ${fx.label}") {
-                val sql = fx.emittedSql()
-                assertThat(sql)
-                    .`as`("fixture %s/%d [%s] must be pushable (translator returned SQL)", fx.name, fx.arity, fx.label)
-                    .isNotNull()
-                val actual = scalar(stmt, fx.query(sql!!))
-                fx.assertMatches(actual)
-            }
-        }
     }
 
     // ---- representative extension-macro semantics (loaded binary sanity) ----
