@@ -292,9 +292,12 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   `docs.hello_world` / `description` / `extended_description` corrected — they advertised
   `'STRASSE'` and `'i̇stanbul'`); upstream MainDistributionPipeline on `b181c61` green on the full
   matrix (run 33609826315);
-  (3) ✅ submodule pointer bumped + connector-side changes committed here;
-  (4) ⏳ this repo's CI goes green only after (2) is merged and the community CDN rebuilt
-  for v1.5.5 — until then `testRepresentativeAliasSemantics` fails against the fetched binary.
+  (3) ✅ submodule pointer bumped + connector-side changes pushed to `brikk/duckbridge` main
+  (`520cd39`);
+  (4) ⏳ this repo's CI is **knowingly red** (`testRepresentativeAliasSemantics` and the four
+  `upper(name) = 'STRAßE'` integration tests) until (2) is merged and the community CDN rebuilt
+  for v1.5.5. No action needed here; it self-heals. Decision: pushed rather than hold local
+  commits for days.
   Stale pre-fix `build/{linux-*,darwin-*,windows-*}` binaries under the submodule were deleted
   locally (they are untracked; anyone else with an old checkout should do the same, or
   `bundleParityExtension` picks them up on a non-linux-amd64 host).
