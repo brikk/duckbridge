@@ -72,9 +72,11 @@ class TestDuckBridgeArrowEngine : AbstractTestQueryFramework() {
     @Test
     fun parityPredicatePushdownThroughArrowEngine() {
         // upper(name) pushes as trino_upper server-side (the executor LOADs the extension); the Arrow
-        // result comes back through the T2 page source.
+        // result comes back through the T2 page source. Trino's upper() is a simple per-code-point
+        // mapping, so upper('straße') = 'STRAßE' (ß has no simple uppercase); DuckDB's built-in would
+        // give 'STRAẞE' and miss the row — matching row 4 proves the extension path was taken.
         val ids =
-            computeActual("SELECT id FROM nums WHERE upper(name) = 'STRASSE' ORDER BY id")
+            computeActual("SELECT id FROM nums WHERE upper(name) = 'STRAßE' ORDER BY id")
                 .materializedRows
                 .map { it.getField(0) as Long }
         assertThat(ids).containsExactly(4L)

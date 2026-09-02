@@ -94,8 +94,9 @@ class TestDuckBridgeInProcessExecutor {
                     }
                 }
             }
-            // 'abc' → 'ABC', 'straße' → 'STRASSE' (full case fold via the extension).
-            assertThat(out).containsExactly("ABC", "STRASSE")
+            // 'abc' → 'ABC', 'straße' → 'STRAßE' (Trino's simple per-code-point mapping via the
+            // extension; DuckDB's built-in upper would give 'STRAẞE').
+            assertThat(out).containsExactly("ABC", "STRAßE")
         } finally {
             Files.deleteIfExists(dbFile)
         }

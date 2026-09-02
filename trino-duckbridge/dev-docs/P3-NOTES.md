@@ -39,7 +39,7 @@ real server in `TestDuckBridgeQuackTransport`.
   instructions (fail loud).
 
 `TestDuckBridgeQuackTransport.parityFunctionPushdownOverQuack` / `parityUnicodeCaseFoldOverQuack` run
-GREEN against the real built extension LOADed server-side (`upper('straße')` → `STRASSE`,
+GREEN against the real built extension LOADed server-side (`upper('straße')` → `STRAßE` — corrected from `STRASSE` on 2026-09-02, EV-E1,
 `length` pushdown), so the full `trino_*` pushdown path works over Quack.
 
 ## SET TimeZone over Quack — VERIFIED

@@ -153,8 +153,9 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
     @Test
     fun parityPredicatePushdownOverQuackArrow() {
         assumeTrue(parityAvailable, "parity extension not available for the container arch")
+        // Trino: upper('straße') = 'STRAßE' (simple mapping); only trino_upper matches, the built-in gives 'STRAẞE'.
         val ids =
-            computeActual("SELECT id FROM t WHERE upper(name) = 'STRASSE'").materializedRows.map { it.getField(0) as Long }
+            computeActual("SELECT id FROM t WHERE upper(name) = 'STRAßE'").materializedRows.map { it.getField(0) as Long }
         assertThat(ids).containsExactly(3L)
     }
 

@@ -127,10 +127,16 @@ class TestTrinoFunctionAliases {
         openConnectionWithExtension().use { conn ->
             conn.createStatement().use { stmt ->
                 // The ALIAS class is where DuckDB's built-in diverges; prove the loaded binary
-                // actually evaluates the Trino-aligned semantics (ICU full case folding, code-point
-                // reverse, NULL propagation).
+                // actually evaluates the Trino-aligned semantics (SIMPLE per-code-point case mapping —
+                // Trino's StringFunctions go through airlift SliceUtf8 / Character.toUpperCase(int),
+                // so upper('ß') stays 'ß' and lower('İ') is a bare 'i'; code-point reverse; NULL
+                // propagation). Values verified against Trino 483 (EV-E1 in TODO-rectify-from-eval.md).
                 assertThat(scalar(stmt, "SELECT trino_lower('HeLLo')")).isEqualTo("hello")
-                assertThat(scalar(stmt, "SELECT trino_upper('ß')")).isEqualTo("SS")
+                assertThat(scalar(stmt, "SELECT trino_upper('ß')")).isEqualTo("ß")
+                assertThat(scalar(stmt, "SELECT trino_upper('straße')")).isEqualTo("STRAßE")
+                assertThat(scalar(stmt, "SELECT trino_lower(chr(304) || 'stanbul')")).isEqualTo("istanbul")
+                assertThat(scalar(stmt, "SELECT trino_lower('ΟΔΥΣΣΕΥΣ')")).isEqualTo("οδυσσευσ")
+                assertThat(scalar(stmt, "SELECT trino_upper(chr(64257))")).isEqualTo("\uFB01")
                 assertThat(scalar(stmt, "SELECT trino_reverse('abc')")).isEqualTo("cba")
                 assertThat(scalar(stmt, "SELECT trino_lower(NULL)")).isNull()
             }

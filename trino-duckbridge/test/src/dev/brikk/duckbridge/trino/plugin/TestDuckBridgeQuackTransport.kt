@@ -130,10 +130,11 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
     @Test
     fun parityUnicodeCaseFoldOverQuack() {
         org.junit.jupiter.api.Assumptions.assumeTrue(parityAvailable, "parity not available")
-        // upper is an ALIAS emission → trino_upper server-side ICU full case fold: 'straße' →
-        // 'STRASSE'. The predicate pushes and matches row 3 only when the extension is available.
+        // upper is an ALIAS emission → trino_upper server-side: Trino's simple per-code-point mapping
+        // gives upper('straße') = 'STRAßE' (DuckDB's built-in would give 'STRAẞE'). The predicate
+        // pushes and matches row 3 only when the extension is available.
         val ids =
-            computeActual("SELECT id FROM t WHERE upper(name) = 'STRASSE'").materializedRows.map { it.getField(0) as Long }
+            computeActual("SELECT id FROM t WHERE upper(name) = 'STRAßE'").materializedRows.map { it.getField(0) as Long }
         assertThat(ids).containsExactly(3L)
     }
 
