@@ -112,6 +112,9 @@ class TestDuckBridgeExpressionEmission {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(bnot, ASSIGNMENTS))
             .containsExactly("((~\"id\") = -1)")
 
+        // EV-A3 / EV-A12: shifts are not pushed — Trino's bitwise_right_shift is logical (zero-fill)
+        // where DuckDB's >> is arithmetic, and Trino's left shift wraps to the operand width / yields 0
+        // for shift >= width where DuckDB throws.
         val bshift =
             call(
                 StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME,
@@ -119,8 +122,7 @@ class TestDuckBridgeExpressionEmission {
                 call(FunctionName("bitwise_left_shift"), BIGINT, Variable("id", BIGINT), Constant(2L, BIGINT)),
                 Constant(4L, BIGINT),
             )
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(bshift, ASSIGNMENTS))
-            .containsExactly("((\"id\" << 2) = 4)")
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(bshift, ASSIGNMENTS)).isEmpty()
     }
 
     @Test

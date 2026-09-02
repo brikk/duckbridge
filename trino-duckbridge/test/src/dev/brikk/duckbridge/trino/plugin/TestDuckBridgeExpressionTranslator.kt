@@ -311,20 +311,51 @@ class TestDuckBridgeExpressionTranslator {
     @Test
     fun testCastToBigint() {
         val cast: ConnectorExpression =
-            Call(BIGINT, StandardFunctions.CAST_FUNCTION_NAME, listOf(Variable("name", VARCHAR)))
+            Call(BIGINT, StandardFunctions.CAST_FUNCTION_NAME, listOf(Variable("weight", DOUBLE)))
         val expression: ConnectorExpression =
             call(StandardFunctions.GREATER_THAN_OPERATOR_FUNCTION_NAME, BOOLEAN, cast, Constant(0L, BIGINT))
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(CAST(\"name\" AS BIGINT) > 0)")
+            .containsExactly("(CAST(\"weight\" AS BIGINT) > 0)")
     }
 
     @Test
-    fun testTryCastToInteger() {
+    fun testTryCastFromVarcharStaysInTrino() {
+        // EV-A9: DuckDB's string parsers are more lenient than Trino's (TRY_CAST('1.0' AS INTEGER) is 1
+        // in DuckDB, NULL in Trino; '2020/01/01' → DATE; 'yes' → BOOLEAN), so string-sourced casts are
+        // never pushed — neither TRY_CAST nor CAST.
         val tryCast: ConnectorExpression =
             Call(IntegerType.INTEGER, StandardFunctions.TRY_CAST_FUNCTION_NAME, listOf(Variable("name", VARCHAR)))
         val expression: ConnectorExpression = call(StandardFunctions.IS_NULL_FUNCTION_NAME, BOOLEAN, tryCast)
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
+    }
+
+    @Test
+    fun testTryCastFromBigintPushes() {
+        val tryCast: ConnectorExpression =
+            Call(IntegerType.INTEGER, StandardFunctions.TRY_CAST_FUNCTION_NAME, listOf(Variable("id", BIGINT)))
+        val expression: ConnectorExpression = call(StandardFunctions.IS_NULL_FUNCTION_NAME, BOOLEAN, tryCast)
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(TRY_CAST(\"name\" AS INTEGER) IS NULL)")
+            .containsExactly("(TRY_CAST(\"id\" AS INTEGER) IS NULL)")
+    }
+
+    @Test
+    fun testCastDoubleToVarcharStaysInTrino() {
+        // EV-A10: Java Double.toString renders 1.0E7 where DuckDB renders 10000000.0.
+        val cast: ConnectorExpression =
+            Call(VARCHAR, StandardFunctions.CAST_FUNCTION_NAME, listOf(Variable("weight", DOUBLE)))
+        val expression: ConnectorExpression =
+            call(StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME, BOOLEAN, cast, varcharConst("1.0E7"))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
+    }
+
+    @Test
+    fun testCastBigintToVarcharPushes() {
+        val cast: ConnectorExpression =
+            Call(VARCHAR, StandardFunctions.CAST_FUNCTION_NAME, listOf(Variable("id", BIGINT)))
+        val expression: ConnectorExpression =
+            call(StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME, BOOLEAN, cast, varcharConst("7"))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
+            .containsExactly("(CAST(\"id\" AS VARCHAR) = '7')")
     }
 
     @Test
@@ -521,8 +552,9 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("date_diff"), BIGINT, varcharConst("day"), Variable("d", DATE), Variable("d", DATE)),
                 Constant(0L, BIGINT),
             )
+        // EV-A2: Trino's date_diff counts complete units (DuckDB's date_sub), not boundaries crossed.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(date_diff('day', \"d\", \"d\") = 0)")
+            .containsExactly("(date_sub('day', \"d\", \"d\") = 0)")
     }
 
     @Test
@@ -534,8 +566,12 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("to_unixtime"), DOUBLE, Variable("ts", TIMESTAMP_MILLIS)),
                 Constant(0.0, DOUBLE),
             )
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(CAST(epoch(\"ts\") AS DOUBLE) = 0.0)")
+        // EV-A4: a naive TIMESTAMP is interpreted in the SESSION zone by Trino; DuckDB's epoch() treats
+        // it as UTC, so the translator re-anchors via timezone(<session zone>, ts). Without a session
+        // there is no zone → stays in Trino.
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
+            .containsExactly("(CAST(epoch(timezone('UTC', \"ts\")) AS DOUBLE) = 0.0)")
     }
 
     // --- TIMESTAMP WITH TIME ZONE gated by session property -----------------
@@ -647,6 +683,7 @@ class TestDuckBridgeExpressionTranslator {
         private val DATE_COLUMN = jdbcColumn("d", DATE)
         private val TS_COLUMN = jdbcColumn("ts", TIMESTAMP_MILLIS)
         private val TSTZ_COLUMN = jdbcColumn("tstz", TIMESTAMP_TZ_MILLIS)
+        private val WEIGHT_COLUMN = jdbcColumn("weight", DOUBLE)
         private val ASSIGNMENTS: Map<String, ColumnHandle> =
             ImmutableMap.of(
                 "name",
@@ -659,6 +696,8 @@ class TestDuckBridgeExpressionTranslator {
                 TS_COLUMN,
                 "tstz",
                 TSTZ_COLUMN,
+                "weight",
+                WEIGHT_COLUMN,
             )
 
         private fun jdbcColumn(name: String, type: Type): JdbcColumnHandle {

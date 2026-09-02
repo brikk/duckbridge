@@ -21,15 +21,20 @@ conjuncts stay in Trino (per-conjunct partial pushdown). The fragments are
 rendered into the remote query's `WHERE` clause.
 
 **"Alias only what diverges."** Each pushable `(name, arity)` has an *emission
-class* (`DuckBridgeExpressionTranslator.EMISSION_STRATEGIES`):
+class* (`DuckBridgeEmissionCatalog.EMISSION_STRATEGIES`, surfaced as `DuckBridgeExpressionTranslator.EMISSION_STRATEGIES`):
 
 | Class | Emits | Extension-backed? |
 |---|---|---|
-| **BARE** (57) | the same bare DuckDB built-in — `length(s)`, `abs(x)`, `year(x)` | no |
-| **RENAME** (11) | a different bare built-in — `to_hex→hex`, `regexp_like→regexp_matches` | no |
-| **OPERATOR** (5) | a parenthesized operator — `bitwise_and→(a & b)`, `bitwise_not→(~a)` | no |
-| **INLINE** (12) | a fixed SQL transform — `md5→unhex(md5(x))`, `if/2→if(c,t,NULL)` | no |
+| **BARE** (48) | the same bare DuckDB built-in — `length(s)`, `abs(x)`, `year(x)` | no |
+| **RENAME** (12) | a different bare built-in — `to_hex→hex`, `regexp_like→regexp_matches`, `date_diff→date_sub` | no |
+| **OPERATOR** (3) | a parenthesized operator — `bitwise_and→(a & b)`, `bitwise_not→(~a)` | no |
+| **INLINE / CONTEXTUAL** (18) | a fixed SQL transform — `md5→unhex(md5(x))`, `if/2→if(c,t,NULL)`, `ln→CASE … END` (IEEE edges), `to_unixtime→epoch(timezone(<session zone>, ts))` | no |
 | **ALIAS** (10) | the extension's `trino_<name>(...)` | **yes** |
+
+Counts as of the 2026-09-02 correctness evaluation
+([dev-docs/TODO-rectify-from-eval.md](dev-docs/TODO-rectify-from-eval.md)), which removed
+`url_encode`, `url_decode`, `bitwise_left_shift`, `bitwise_right_shift` and added gates/rewrites
+noted per row below. Authoritative list: `DuckBridgeEmissionCatalog.EMISSION_STRATEGIES`.
 
 Only the **10 ALIAS** entries resolve to `trino_<name>(...)` macros / native
 scalar functions provided by the
@@ -95,7 +100,7 @@ Translator-level rewrites — emitted directly as SQL, not via the macro catalog
 | Logical | `AND`, `OR`, `NOT` |
 | Arithmetic | `+`, `-`, `*`, `/`, `%` (infix), unary `-` (negate) |
 | Null-handling | `COALESCE` (variadic), `NULLIF` |
-| Cast | `CAST` / `TRY_CAST` for primitive types (BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DOUBLE, VARCHAR, DATE) |
+| Cast | `CAST` / `TRY_CAST` for primitive targets (BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DOUBLE, VARCHAR, DATE), **except**: from a string source to a non-string target (DuckDB's parsers accept `'1.0'`→INTEGER, `'2020/01/01'`→DATE, `'yes'`→BOOLEAN where Trino rejects — EV-A9), and to VARCHAR from anything other than an exact integer, BOOLEAN or DATE (`DOUBLE` renders `1.0E7` in Trino vs `10000000.0` in DuckDB — EV-A10). Those stay in Trino. |
 | Pattern | `LIKE` / `NOT LIKE` with optional `ESCAPE` (constant patterns only; dynamic or NULL patterns stay unpushed) |
 | `BETWEEN` | Pushed implicitly — Trino's planner decomposes it to `>= AND <=` before `applyFilter`, so the comparison + `AND` translators handle it. |
 | `concat(a, b, …)` → `(a \|\| b \|\| …)` | Translator rewrite for VARCHAR returns, **not** a macro: DuckDB's `concat` skips NULL while Trino's NULL-propagates; the `\|\|` operator propagates in both, matching Trino. |
@@ -115,13 +120,13 @@ conditional 2.
 | Category | Functions | Ext? | Notes |
 |---|---|---|---|
 | **String — native (ICU)** | `lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`, `normalize/1` | **yes** (ALIAS) | Native C++ (`string_functions.cpp`) for Trino parity: **simple** per-code-point case mapping exactly as Trino's airlift `SliceUtf8` does (`upper('ß')`→`'ß'` unchanged, where DuckDB's built-in gives `'ẞ'`; `lower('İ')`→`'i'`; no final-sigma rule; ligatures unchanged), **code-point** reverse, `Character.isWhitespace`-aligned trim, NFC via `icu::Normalizer2`. `normalize/2` (NFD/NFKC/NFKD selector) is **not** pushed — the vendored ICU snapshot ships only NFC data. |
-| **String — native emission** | `length`, `substring/{2,3}`, `replace`, `strpos`, `starts_with`, `lpad`, `rpad`, `concat_ws/{2..5}`, `translate`, `chr`, `bit_length` | no (BARE) | Code-point (not byte / grapheme) semantics; pinned in fixtures against unicode, NULL, and edge inputs. **`lpad`/`rpad` push only with a constant, non-empty pad** (Trino raises on empty pad; DuckDB doesn't). **`substring` pushes only with a constant start ≥ 1** (DuckDB treats 0 as 1; Trino differs). |
-| **Numeric** | `abs`, `ceil`, `floor`, `mod`, `power`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `degrees`, `radians`, `cbrt`, `truncate`, `sign`, `pi/0`, `bitwise_and`, `bitwise_or`, `bitwise_not`, `bitwise_xor`, `bitwise_left_shift`, `bitwise_right_shift` | no | BARE, except RENAME `truncate→trunc`, `bitwise_xor→xor`; OPERATOR `bitwise_and/or/not/left_shift/right_shift`. Float `mod` gated out; `log10` emitted explicitly (never bare `log`); `bitwise_right_shift` on negatives can differ (signed/unsigned) — safe for typical positive-integer use. |
-| **Regex** | `regexp_like/2`, `regexp_extract/{2,3}`, `regexp_replace/{2,3}` | no | RE2 on both sides. RENAME `regexp_like→regexp_matches`; BARE `regexp_extract`; INLINE `regexp_replace` forces the `'g'` flag to match Trino's global default (2-arg uses `''`). |
-| **Encoding** | `url_encode`, `url_decode`, `to_hex`, `from_hex`, `to_base64`, `from_base64` | no | RFC-3986 / hex / base64; output bytes identical. RENAME `to_hex→hex`, `from_hex→unhex`; the rest BARE. |
+| **String — native emission** | `length`, `substring/{2,3}`, `replace`, `strpos`, `starts_with`, `lpad`, `rpad`, `concat_ws/{2..5}`, `translate`, `chr`, `bit_length` | no (BARE) | Code-point (not byte / grapheme) semantics; pinned in fixtures against unicode, NULL, and edge inputs. **`lpad`/`rpad` push only with a constant, non-empty pad** (Trino raises on empty pad; DuckDB doesn't). **`substring` pushes only with a constant start ≥ 1** (DuckDB treats 0 as 1; Trino differs). **`concat_ws` pushes only when every argument is VARCHAR** (Trino's ARRAY overload joins elements; DuckDB would stringify the list — EV-A11). |
+| **Numeric** | `abs`, `ceil`, `floor`, `mod`, `power`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `degrees`, `radians`, `cbrt`, `truncate`, `sign`, `pi/0`, `bitwise_and`, `bitwise_or`, `bitwise_not`, `bitwise_xor` | no | BARE, except RENAME `truncate→trunc`, `bitwise_xor→xor`; OPERATOR `bitwise_and/or/not`; INLINE `sqrt`/`ln`/`log2`/`log10` wrap in `CASE` so 0 / negative inputs yield Trino's `-Infinity` / `NaN` instead of DuckDB's Out-of-Range error (EV-A12). **`mod` pushes only with a non-zero constant divisor** (Trino throws on zero, DuckDB returns NULL — EV-A12). **`bitwise_left_shift` / `bitwise_right_shift` are not pushed**: Trino's right shift is logical (zero-fill), DuckDB's `>>` is arithmetic; left shift wraps to width in Trino, throws for shift ≥ width in DuckDB (EV-A3). |
+| **Regex** | `regexp_like/2`, `regexp_extract/{2,3}`, `regexp_replace/{2,3}` | no | **Not** "RE2 on both sides": Trino compiles with Joni (Java syntax), DuckDB with RE2. All three push **only with a constant pattern that passes the RE2-safe allowlist** (`Re2Safety`: no `$`, no `(?…)` other than `(?:`, no lookaround/backrefs/possessive quantifiers, no `\Z \G \v \h \R \u \0`, no nested/POSIX/`&&` classes; only general-category `\p{L}`-style properties — EV-A8). RENAME `regexp_like→regexp_matches`; INLINE `regexp_extract` guarded with `CASE WHEN regexp_matches(...)` so a non-match yields NULL as in Trino (DuckDB returns `''` — EV-A6); INLINE `regexp_replace` forces the `'g'` flag (2-arg uses `''`), and **`regexp_replace/3` also requires a constant replacement containing no `$` or `\`** (Trino group refs are `$1`, RE2's are `\1` — EV-A7). |
+| **Encoding** | `to_hex`, `from_hex`, `to_base64`, `from_base64` | no | hex / base64; output bytes identical. RENAME `to_hex→hex`, `from_hex→unhex`; the rest BARE. **`url_encode` / `url_decode` are not pushed**: Trino uses `application/x-www-form-urlencoded` rules (space→`+`, `*` kept, `~` encoded), DuckDB RFC 3986 (`a b*~` → `a+b*%7E` vs `a%20b%2A~`; `url_decode('a+b')` → `a b` vs `a+b` — EV-A5). |
 | **Distance** | `levenshtein_distance`, `hamming_distance` | no | RENAME `→levenshtein` / `→hamming`. Code-point edit distance. |
 | **Hash** | `md5`, `sha1`, `sha256`, `sha512`, `xxhash64`, `hmac_sha256/2` | `sha512`, `xxhash64`, `hmac_sha256` (ALIAS) | `md5`/`sha1`/`sha256` are INLINE `unhex(<hash>(x))` (bare DuckDB hash + unhex, no extension). `sha512`, `xxhash64`, `hmac_sha256` are **native C++** (`hash_functions.cpp`) over vendored xxHash (BSD-2) + WjCryptLib SHA (public domain). `xxhash64` big-endian to match Trino; `hmac_sha256(data, key)` over raw VARBINARY bytes. |
-| **Date / time** | `year`, `month`, `day`, `quarter`, `hour`, `minute`, `second`, `millisecond`, `day_of_week` (ISO), `day_of_year`, `last_day_of_month`, `week` / `week_of_year` (ISO), `year_of_week` / `yow`, `date_trunc/2`, `date_diff/3`, `to_unixtime`, `from_unixtime`, `with_timezone/2` | no | BARE (`year`…`second`, `date_trunc`, `date_diff`, `week`), RENAME (`day_of_year→dayofyear`, `last_day_of_month→last_day`, `week_of_year→week`, `from_unixtime→to_timestamp`), INLINE (`day_of_week→isodow`, `year_of_week`/`yow→isoyear`, `millisecond`, `to_unixtime`, `with_timezone` arg-flip). Type-gated. Over `TIMESTAMP WITH TIME ZONE` they push only when `pushdown_timestamp_with_timezone` is on (**default on**). `date_trunc` on DATE input: DuckDB returns TIMESTAMP but auto-casts in comparisons, so pushed **results** stay DATE-aligned (fixture-pinned). |
+| **Date / time** | `year`, `month`, `day`, `quarter`, `hour`, `minute`, `second`, `millisecond`, `day_of_week` (ISO), `day_of_year`, `last_day_of_month`, `week` / `week_of_year` (ISO), `year_of_week` / `yow`, `date_trunc/2`, `date_diff/3`, `to_unixtime`, `from_unixtime`, `with_timezone/2` | no | BARE (`year`…`second`, `date_trunc`, `week`), RENAME (`day_of_year→dayofyear`, `last_day_of_month→last_day`, `week_of_year→week`, `from_unixtime→to_timestamp`, **`date_diff→date_sub`** — Trino counts complete units, DuckDB's `date_diff` counts boundaries crossed; unit gated to `millisecond…year` — EV-A2), INLINE (`day_of_week→isodow`, `year_of_week`/`yow→isoyear`, **`millisecond→extract('millisecond') % 1000`** — DuckDB's part is sub-minute ms, EV-A1; `with_timezone` arg-flip), CONTEXTUAL **`to_unixtime`**: on a naive `TIMESTAMP` Trino interprets the value in the *session* zone while DuckDB's `epoch()` assumes UTC, so it emits `epoch(timezone('<session zone>', ts))`; on `TIMESTAMP WITH TIME ZONE` bare `epoch()` (EV-A4). Type-gated. Over `TIMESTAMP WITH TIME ZONE` they push only when `pushdown_timestamp_with_timezone` is on (**default on**). `date_trunc` on DATE input: DuckDB returns TIMESTAMP but auto-casts in comparisons, so pushed **results** stay DATE-aligned (fixture-pinned). |
 | **Conditional** | `if/{2,3}` | no | INLINE `if/2→if(c, t, NULL)`; BARE `if/3`. |
 
 ## Not pushable (by design)
@@ -135,7 +140,8 @@ conditional 2.
 ## Adding an entry
 
 Add a `(name, arity) → Emission` row to `EMISSION_STRATEGIES` in
-`DuckBridgeExpressionTranslator`, plus a per-entry fixture:
+`DuckBridgeEmissionCatalog` (and a `TYPE_GATES` row if the push must be restricted to certain
+argument shapes), plus a per-entry fixture:
 
 - **BARE / RENAME / OPERATOR / INLINE** (DuckDB matches Trino natively): choose the
   class, and add a semantic fixture to `SemanticFixtures` (evaluated against

@@ -66,7 +66,7 @@ object SemanticFixtures {
         private val expected: Any?,
         private val fromClause: String? = null,
     ) {
-        fun emittedSql(): String? = DuckBridgeExpressionTranslator.translate(expr, ASSIGNMENTS, null, aliasAvailable = false)
+        fun emittedSql(): String? = DuckBridgeExpressionTranslator.translate(expr, ASSIGNMENTS, UTC_SESSION, aliasAvailable = false)
 
         /** The full `SELECT ...` query: emitted SQL, optionally wrapped, over an optional binding subquery. */
         fun query(sql: String): String {
@@ -102,8 +102,6 @@ object SemanticFixtures {
             add(fx("translate", 3, "basic", call("translate", VARCHAR, str("abc"), str("bc"), str("xy")), expected = "axy"))
             add(fx("chr", 1, "code point", call("chr", VARCHAR, int(233)), expected = "é"))
             add(fx("bit_length", 1, "ascii", call("bit_length", BIGINT, str("abc")), expected = 24L))
-            add(fx("url_encode", 1, "space", call("url_encode", VARCHAR, str("a b")), expected = "a%20b"))
-            add(fx("url_decode", 1, "percent", call("url_decode", VARCHAR, str("a%20b")), expected = "a b"))
             add(fx("to_base64", 1, "basic", call("to_base64", VARCHAR, str("abc")), expected = "YWJj"))
             add(fx("from_base64", 1, "roundtrip", call("from_base64", VARCHAR, str("YWJj")), wrap = { "CAST($it AS VARCHAR)" }, expected = "abc"))
             // ---- BARE: numeric ----
@@ -181,8 +179,6 @@ object SemanticFixtures {
             // ---- OPERATOR ----
             add(fx("bitwise_and", 2, "&", call("bitwise_and", BIGINT, int(5), int(3)), expected = 1L))
             add(fx("bitwise_or", 2, "|", call("bitwise_or", BIGINT, int(5), int(2)), expected = 7L))
-            add(fx("bitwise_left_shift", 2, "<<", call("bitwise_left_shift", BIGINT, int(1), int(4)), expected = 16L))
-            add(fx("bitwise_right_shift", 2, ">>", call("bitwise_right_shift", BIGINT, int(16), int(2)), expected = 4L))
             add(fx("bitwise_not", 1, "~", call("bitwise_not", INTEGER, int(5)), expected = -6L))
 
             // ---- INLINE ----
@@ -209,7 +205,13 @@ object SemanticFixtures {
             add(fx("day_of_week", 1, "ISO Sun=7", call("day_of_week", BIGINT, date("2024-01-07")), expected = 7L))
             add(fx("year_of_week", 1, "ISO isoyear", call("year_of_week", BIGINT, date("2024-12-30")), expected = 2025L))
             add(fx("yow", 1, "ISO isoyear", call("yow", BIGINT, date("2024-12-30")), expected = 2025L))
-            add(fx("millisecond", 1, "millis-of-second", call("millisecond", BIGINT, tsVar()), expected = 123L, fromClause = fromTs("2024-01-01 00:00:00.123")))
+            add(
+                fx(
+                    "millisecond", 1, "millis-of-second (seconds≠0)",
+                    call("millisecond", BIGINT, tsVar()),
+                    expected = 123L, fromClause = fromTs("2024-01-01 00:00:05.123"),
+                ),
+            )
             add(fx("to_unixtime", 1, "epoch seconds", call("to_unixtime", DOUBLE, tsVar()), expected = 1.0, fromClause = fromTs("1970-01-01 00:00:01")))
             add(
                 fx(
@@ -241,6 +243,12 @@ object SemanticFixtures {
             TIMESTAMP_MILLIS,
         )
     private val ASSIGNMENTS: Map<String, ColumnHandle> = mapOf("ts" to TS_COLUMN)
+
+    /** A UTC session (TestingConnectorSession default) so session-zone-dependent emissions (to_unixtime) render. */
+    private val UTC_SESSION: io.trino.spi.connector.ConnectorSession =
+        io.trino.testing.TestingConnectorSession.builder()
+            .setPropertyMetadata(DuckBridgeSessionProperties(DuckBridgeConfig()).getSessionProperties())
+            .build()
 
     private fun call(name: String, returnType: Type, vararg args: ConnectorExpression): ConnectorExpression =
         Call(returnType, FunctionName(name), listOf(*args))

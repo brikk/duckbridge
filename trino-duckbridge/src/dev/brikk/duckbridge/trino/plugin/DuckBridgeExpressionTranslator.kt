@@ -71,241 +71,10 @@ object DuckBridgeExpressionTranslator {
     /** The [Emission.Alias] subset — the entries that require the `trino_parity` extension. */
     val ALIAS_FUNCTIONS: Set<NameArity> get() = EMISSION_STRATEGIES.filterValues { it is Emission.Alias }.keys
 
-    /**
-     * How each pushable `(name, arity)` is emitted into remote DuckDB SQL. "Alias only what
-     * diverges" (user-approved rework): most pushed functions emit a bare DuckDB built-in name (or a
-     * rename / operator / SQL-expressible transform) that DuckDB evaluates with Trino-identical
-     * semantics natively, and only the entries DuckDB genuinely cannot match without the C++ layer
-     * route through the `trino_<name>(...)` [ALIAS] macros/functions of the `trino_parity` extension.
-     *
-     * Classification authority: the extension maintainers' passthrough audit and, for the
-     * [INLINE] bodies, the verified macro bodies in the extension's `macro_definitions.cpp`
-     * (as of the pre-shrink revision that still carried them).
-     *
-     *  - [Emission.Bare]     — same bare built-in name (`length(s)`, `abs(x)`, `year(x)`).
-     *  - [Emission.Rename]   — a different bare DuckDB built-in name (`to_hex→hex`).
-     *  - [Emission.Operator] — a parenthesized infix/prefix operator (`bitwise_and→(a & b)`).
-     *  - [Emission.Inline]   — a fixed SQL transform template (`regexp_replace/2→regexp_replace(s,p,'','g')`).
-     *  - [Emission.Alias]    — the extension's `trino_<name>(...)` (native C++ divergence-fixers only).
-     *
-     * Only [Emission.Alias] entries depend on the extension. When it is unavailable (parity disabled
-     * or the binary missing) the Bare/Rename/Operator/Inline classes REMAIN pushable — their
-     * correctness is fixture-proven against embedded DuckDB, not the extension.
-     */
-    val EMISSION_STRATEGIES: Map<NameArity, Emission> =
-        buildMap {
-            // ---- ALIAS: native C++ divergence-fixers (extension required) ----------------------
-            put(NameArity("lower", 1), Emission.Alias)
-            put(NameArity("upper", 1), Emission.Alias)
-            put(NameArity("reverse", 1), Emission.Alias)
-            put(NameArity("trim", 1), Emission.Alias)
-            put(NameArity("ltrim", 1), Emission.Alias)
-            put(NameArity("rtrim", 1), Emission.Alias)
-            put(NameArity("normalize", 1), Emission.Alias)
-            put(NameArity("xxhash64", 1), Emission.Alias)
-            put(NameArity("sha512", 1), Emission.Alias)
-            put(NameArity("hmac_sha256", 2), Emission.Alias)
+    /** The catalog of pushable entries and how each is emitted; lives in [DuckBridgeEmissionCatalog]. */
+    val EMISSION_STRATEGIES: Map<NameArity, Emission> get() = DuckBridgeEmissionCatalog.EMISSION_STRATEGIES
 
-            // ---- BARE: pure passthroughs — same bare built-in, semantics aligned ---------------
-            // String
-            put(NameArity("length", 1), Emission.Bare)
-            put(NameArity("substring", 2), Emission.Bare)
-            put(NameArity("substring", 3), Emission.Bare)
-            put(NameArity("replace", 3), Emission.Bare)
-            put(NameArity("strpos", 2), Emission.Bare)
-            put(NameArity("starts_with", 2), Emission.Bare)
-            put(NameArity("lpad", 3), Emission.Bare)
-            put(NameArity("rpad", 3), Emission.Bare)
-            put(NameArity("concat_ws", 2), Emission.Bare)
-            put(NameArity("concat_ws", 3), Emission.Bare)
-            put(NameArity("concat_ws", 4), Emission.Bare)
-            put(NameArity("concat_ws", 5), Emission.Bare)
-            put(NameArity("translate", 3), Emission.Bare)
-            put(NameArity("chr", 1), Emission.Bare)
-            put(NameArity("bit_length", 1), Emission.Bare)
-            put(NameArity("url_encode", 1), Emission.Bare)
-            put(NameArity("url_decode", 1), Emission.Bare)
-            put(NameArity("to_base64", 1), Emission.Bare)
-            put(NameArity("from_base64", 1), Emission.Bare)
-            // Numeric / math
-            put(NameArity("abs", 1), Emission.Bare)
-            put(NameArity("ceil", 1), Emission.Bare)
-            put(NameArity("floor", 1), Emission.Bare)
-            put(NameArity("mod", 2), Emission.Bare)
-            put(NameArity("power", 2), Emission.Bare)
-            put(NameArity("sqrt", 1), Emission.Bare)
-            put(NameArity("exp", 1), Emission.Bare)
-            put(NameArity("ln", 1), Emission.Bare)
-            put(NameArity("log2", 1), Emission.Bare)
-            put(NameArity("log10", 1), Emission.Bare)
-            put(NameArity("sin", 1), Emission.Bare)
-            put(NameArity("cos", 1), Emission.Bare)
-            put(NameArity("tan", 1), Emission.Bare)
-            put(NameArity("asin", 1), Emission.Bare)
-            put(NameArity("acos", 1), Emission.Bare)
-            put(NameArity("atan", 1), Emission.Bare)
-            put(NameArity("atan2", 2), Emission.Bare)
-            put(NameArity("sinh", 1), Emission.Bare)
-            put(NameArity("cosh", 1), Emission.Bare)
-            put(NameArity("tanh", 1), Emission.Bare)
-            put(NameArity("degrees", 1), Emission.Bare)
-            put(NameArity("radians", 1), Emission.Bare)
-            put(NameArity("cbrt", 1), Emission.Bare)
-            put(NameArity("sign", 1), Emission.Bare)
-            put(NameArity("pi", 0), Emission.Bare)
-            // Regex
-            put(NameArity("regexp_extract", 2), Emission.Bare)
-            put(NameArity("regexp_extract", 3), Emission.Bare)
-            // Date / time
-            put(NameArity("year", 1), Emission.Bare)
-            put(NameArity("month", 1), Emission.Bare)
-            put(NameArity("day", 1), Emission.Bare)
-            put(NameArity("quarter", 1), Emission.Bare)
-            // date_trunc: DuckDB returns TIMESTAMP even for DATE input where Trino preserves DATE.
-            // The type differs but RESULTS do NOT in any pushed (comparison) context: DuckDB
-            // auto-casts DATE→TIMESTAMP at midnight, so `date_trunc('month', d) </>/= <date>` yields
-            // the same boolean as Trino's DATE comparison. Verified against embedded DuckDB and pinned
-            // by the date_trunc fixture; BARE is result-safe, no DATE gate needed.
-            put(NameArity("date_trunc", 2), Emission.Bare)
-            put(NameArity("date_diff", 3), Emission.Bare)
-            put(NameArity("week", 1), Emission.Bare)
-            put(NameArity("hour", 1), Emission.Bare)
-            put(NameArity("minute", 1), Emission.Bare)
-            put(NameArity("second", 1), Emission.Bare)
-
-            // ---- RENAME: a different bare DuckDB built-in name ---------------------------------
-            put(NameArity("to_hex", 1), Emission.Rename("hex"))
-            put(NameArity("from_hex", 1), Emission.Rename("unhex"))
-            put(NameArity("levenshtein_distance", 2), Emission.Rename("levenshtein"))
-            put(NameArity("hamming_distance", 2), Emission.Rename("hamming"))
-            put(NameArity("truncate", 1), Emission.Rename("trunc"))
-            put(NameArity("regexp_like", 2), Emission.Rename("regexp_matches"))
-            put(NameArity("day_of_year", 1), Emission.Rename("dayofyear"))
-            put(NameArity("last_day_of_month", 1), Emission.Rename("last_day"))
-            put(NameArity("week_of_year", 1), Emission.Rename("week"))
-            put(NameArity("from_unixtime", 1), Emission.Rename("to_timestamp"))
-            // bitwise_xor: Trino name; DuckDB scalar is xor(x, y). Pure rename (the macro body is
-            // xor(x, y), NOT an operator — DuckDB has no infix XOR operator).
-            put(NameArity("bitwise_xor", 2), Emission.Rename("xor"))
-
-            // ---- OPERATOR: parenthesized infix / prefix operator -------------------------------
-            put(NameArity("bitwise_and", 2), Emission.Operator.infix("&"))
-            put(NameArity("bitwise_or", 2), Emission.Operator.infix("|"))
-            put(NameArity("bitwise_left_shift", 2), Emission.Operator.infix("<<"))
-            put(NameArity("bitwise_right_shift", 2), Emission.Operator.infix(">>"))
-            put(NameArity("bitwise_not", 1), Emission.Operator.prefix("~"))
-
-            // ---- INLINE: fixed SQL transform templates (verified vs macro_definitions.cpp) -----
-            // regexp_replace: force the 'g' flag to match Trino's global default. 2-arg removes
-            // matches ('' replacement). Macro bodies:
-            //   trino_regexp_replace/2 -> regexp_replace(s, pattern, '', 'g')
-            //   trino_regexp_replace/3 -> regexp_replace(s, pattern, replacement, 'g')
-            put(NameArity("regexp_replace", 2), Emission.Inline { a -> "regexp_replace(${a[0]}, ${a[1]}, '', 'g')" })
-            put(NameArity("regexp_replace", 3), Emission.Inline { a -> "regexp_replace(${a[0]}, ${a[1]}, ${a[2]}, 'g')" })
-            // Crypto hashes: DuckDB md5/sha1/sha256 return hex VARCHAR; Trino returns VARBINARY.
-            // unhex() the hex string to the BLOB shape Trino expects.
-            put(NameArity("md5", 1), Emission.Inline { a -> "unhex(md5(${a[0]}))" })
-            put(NameArity("sha1", 1), Emission.Inline { a -> "unhex(sha1(${a[0]}))" })
-            put(NameArity("sha256", 1), Emission.Inline { a -> "unhex(sha256(${a[0]}))" })
-            // if/2 returns NULL on the false branch; if/3 is a pure passthrough (bare `if`).
-            put(NameArity("if", 2), Emission.Inline { a -> "if(${a[0]}, ${a[1]}, NULL)" })
-            put(NameArity("if", 3), Emission.Bare)
-            // day_of_week -> ISO isodow (Mon=1..Sun=7). year_of_week/yow -> ISO-week-numbering year.
-            put(NameArity("day_of_week", 1), Emission.Inline { a -> "isodow(${a[0]})" })
-            put(NameArity("year_of_week", 1), Emission.Inline { a -> "CAST(extract('isoyear' FROM ${a[0]}) AS BIGINT)" })
-            put(NameArity("yow", 1), Emission.Inline { a -> "CAST(extract('isoyear' FROM ${a[0]}) AS BIGINT)" })
-            // millisecond -> millis-OF-SECOND (0..999), NOT epoch millis.
-            put(NameArity("millisecond", 1), Emission.Inline { a -> "CAST(extract('millisecond' FROM ${a[0]}) AS BIGINT)" })
-            // to_unixtime -> seconds since epoch (UTC) as DOUBLE.
-            put(NameArity("to_unixtime", 1), Emission.Inline { a -> "CAST(epoch(${a[0]}) AS DOUBLE)" })
-            // with_timezone(ts, zone) -> DuckDB timezone(zone, ts) ARG-ORDER FLIP.
-            put(NameArity("with_timezone", 2), Emission.Inline { a -> "timezone(${a[1]}, ${a[0]})" })
-        }
-
-    /**
-     * Sparse map of per-entry argument-type gates. [PUSHABLE_FUNCTIONS] remains the binary "is this
-     * (name, arity) pushable at all" set; this registry adds finer-grained "and only when the
-     * argument types are these" conditions. Entries without a row here accept any argument types.
-     */
-    private val TYPE_GATES: Map<NameArity, ArgTypeGate> = buildTypeGates()
-
-    private fun buildTypeGates(): Map<NameArity, ArgTypeGate> {
-        val gates: MutableMap<NameArity, ArgTypeGate> = mutableMapOf()
-        // Tier B always accepted (DATE or TIMESTAMP no-TZ); Tier C (TIMESTAMP WITH TIME ZONE)
-        // conditionally accepted when the session sets pushdown_timestamp_with_timezone = true.
-        val arg0Tier = argTier(0)
-        for (name in listOf("year", "month", "day", "quarter", "hour", "minute", "second", "millisecond", "to_unixtime")) {
-            gates[NameArity(name, 1)] = arg0Tier
-        }
-        // date_trunc(unit, x): gate the second arg.
-        gates[NameArity("date_trunc", 2)] = argTier(1)
-        // date_diff(unit, t1, t2): both date-shape args must clear the same gate.
-        gates[NameArity("date_diff", 3)] =
-            ArgTypeGate { args, session ->
-                val inner = argTier(0)
-                inner.accepts(listOf(args[1]), session) && inner.accepts(listOf(args[2]), session)
-            }
-        // Tier A — DATE-only.
-        val arg0DateStrict = arg(0, DateType::class.java)
-        for (name in listOf("day_of_week", "day_of_year", "last_day_of_month", "week", "week_of_year", "year_of_week", "yow")) {
-            gates[NameArity(name, 1)] = arg0DateStrict
-        }
-        // with_timezone(TIMESTAMP no-TZ, varchar) → WTZ. Gate strictly to TIMESTAMP.
-        gates[NameArity("with_timezone", 2)] = arg(0, TimestampType::class.java)
-
-        // lpad/rpad: push ONLY when the pad argument (arg 2) is a constant, non-empty varchar.
-        // Trino raises on an empty pad string; DuckDB does not. A non-constant pad could be empty at
-        // runtime, so we can only push when we can PROVE the pad is non-empty — i.e. a literal.
-        val constNonEmptyPad = constNonEmptyVarcharArg(2)
-        gates[NameArity("lpad", 3)] = constNonEmptyPad
-        gates[NameArity("rpad", 3)] = constNonEmptyPad
-
-        // substring/{2,3}: DuckDB treats start=0 as start=1, Trino differs. Push ONLY when the start
-        // argument (arg 1) is a constant integer ≥ 1, which is the range both engines align on.
-        val constStartAtLeastOne = constIntArgAtLeast(1, 1)
-        gates[NameArity("substring", 2)] = constStartAtLeastOne
-        gates[NameArity("substring", 3)] = constStartAtLeastOne
-        return gates.toMap()
-    }
-
-    /** Gate: argument [index] must be a [Constant] non-empty [VarcharType] [Slice]. */
-    private fun constNonEmptyVarcharArg(index: Int): ArgTypeGate =
-        ArgTypeGate { args, _ ->
-            val a = args.getOrNull(index)
-            a is Constant && a.type is VarcharType && (a.value as? Slice)?.length()?.let { it > 0 } == true
-        }
-
-    /** Gate: argument [index] must be a [Constant] integer-family value ≥ [minimum]. */
-    private fun constIntArgAtLeast(index: Int, minimum: Long): ArgTypeGate =
-        ArgTypeGate { args, _ ->
-            val a = args.getOrNull(index)
-            a is Constant && isIntegerFamily(a.type) && (a.value as? Long)?.let { it >= minimum } == true
-        }
-
-    private fun arg(index: Int, vararg allowed: Class<*>): ArgTypeGate =
-        ArgTypeGate { args, _ ->
-            if (index >= args.size) {
-                false
-            } else {
-                val t: Type = args[index].type
-                allowed.any { it.isInstance(t) }
-            }
-        }
-
-    private fun argTier(index: Int): ArgTypeGate =
-        ArgTypeGate { args, session ->
-            if (index >= args.size) {
-                false
-            } else {
-                val t: Type = args[index].type
-                when {
-                    t is DateType || t is TimestampType -> true
-                    t is TimestampWithTimeZoneType &&
-                        DuckBridgeSessionProperties.isPushdownTimestampWithTimeZone(session) -> true
-                    else -> false
-                }
-            }
-        }
+    private val TYPE_GATES: Map<NameArity, ArgTypeGate> get() = DuckBridgeEmissionCatalog.TYPE_GATES
 
     /**
      * Decompose `expression` into top-level AND-conjuncts and translate each independently.
@@ -599,6 +368,7 @@ object DuckBridgeExpressionTranslator {
             is Emission.Alias -> call("trino_$trinoName", rendered)
             is Emission.Operator -> emission.render(rendered)
             is Emission.Inline -> emission.template(rendered)
+            is Emission.Contextual -> emission.template(rendered, args, session)
         }
     }
 
@@ -612,8 +382,7 @@ object DuckBridgeExpressionTranslator {
     private fun comparesStringOperand(args: List<ConnectorExpression>): Boolean =
         args.any { it.type is VarcharType || it.type is io.trino.spi.type.CharType }
 
-    private fun isIntegerFamily(type: Type): Boolean =
-        type is BigintType || type is IntegerType || type is SmallintType || type is TinyintType
+    private fun isIntegerFamily(type: Type): Boolean = DuckBridgeEmissionCatalog.isIntegerFamily(type)
 
     private fun isVarcharConcat(name: FunctionName, args: List<ConnectorExpression>, call: Call): Boolean =
         name.catalogSchema.isEmpty && "concat" == name.name && args.size >= 2 && call.type is VarcharType
@@ -704,8 +473,32 @@ object DuckBridgeExpressionTranslator {
         ctx: Ctx,
     ): String? {
         val targetType = duckdbTypeName(call.type) ?: return null
+        if (!castSemanticsAlign(operand.type, call.type)) {
+            return null
+        }
         val inner = translateOrNull(operand, assignments, session, ctx)
         return if (inner == null) null else "$castKeyword($inner AS $targetType)"
+    }
+
+    /**
+     * Source/target pairs whose CAST / TRY_CAST results are identical in both engines. Excluded:
+     *  - string → anything else (EV-A9): DuckDB's parsers are more lenient — '1.0'→INTEGER 1,
+     *    '2020/01/01'→DATE, 'yes'→BOOLEAN — where Trino rejects (TRY_CAST NULL / CAST error).
+     *  - DOUBLE/REAL → VARCHAR (EV-A10): Java `Double.toString` vs DuckDB formatting
+     *    (1.0E7 vs 10000000.0, 1.0E20 vs 1e+20).
+     *  - TIMESTAMP/TIME/DECIMAL-family and anything not in [duckdbTypeName] → VARCHAR: rendering
+     *    (precision digits, trailing zeros) is engine-specific; only exact-integer, boolean and DATE
+     *    render identically.
+     */
+    private fun castSemanticsAlign(source: Type, target: Type): Boolean {
+        val sourceIsString = source is VarcharType || source is io.trino.spi.type.CharType
+        if (sourceIsString) {
+            return target is VarcharType
+        }
+        if (target is VarcharType) {
+            return isIntegerFamily(source) || source is BooleanType || source is DateType
+        }
+        return true
     }
 
     /**
@@ -806,6 +599,12 @@ object DuckBridgeExpressionTranslator {
 
         /** Emit a fixed SQL transform template over the (already-rendered) argument SQL fragments. */
         class Inline(val template: (List<String>) -> String) : Emission
+
+        /**
+         * Like [Inline] but also sees the original argument expressions (for their types) and the
+         * session; may return null to decline the push (e.g. no usable session zone).
+         */
+        class Contextual(val template: (List<String>, List<ConnectorExpression>, ConnectorSession?) -> String?) : Emission
     }
 
     /**
