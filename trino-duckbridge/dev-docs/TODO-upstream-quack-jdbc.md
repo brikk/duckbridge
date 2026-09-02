@@ -1,8 +1,11 @@
 # TODO: upstream quack-jdbc tracking
 
 Things blocked on gizmodata's `quack-jdbc` client driver (the pure-JVM Quack RPC
-driver, `com.gizmodata:quack-jdbc`). Each entry links a filed issue and the
-duckbridge canary that flips when it's fixed.
+driver, `com.gizmodata:quack-jdbc`). Entries link a filed issue when one exists
+and name the duckbridge canary that flips when the work is complete.
+
+DuckDB 2.0 readiness is tracked centrally in
+[`dev-docs/TODO-duckdb-2.0.md`](../../dev-docs/TODO-duckdb-2.0.md).
 
 ---
 
@@ -67,3 +70,42 @@ DUCKDB_LOCAL path is unaffected (uses duckdb-jdbc, which is faithful). Pass-thro
 `gradle/libs.versions.toml` at their coordinate/version and re-run — `arrayElementTypePreservedByQuackJdbc`
 and `listAggregateThroughPassThroughReturnsArray` must stay green. Not planned: `dev.brikk.duckdb:quack-jdbc`
 is the maintained driver now.
+
+---
+
+## Q2 — DuckDB 2.0 Quack protocol v3
+
+**Status:** OPEN, not yet filed separately (discovered by the 2026-08-28 DuckDB
+2.0 commit-history scan).
+
+Our released `dev.brikk.duckdb:quack-jdbc:0.6.0` and current
+`0.7.0-SNAPSHOT` declare `QuackConstants.QUACK_VERSION = 1`. DuckDB 2.0's
+`duckdb-quack` mainline declares protocol v3. Between v1 and current v3 the wire
+added query/cancellation identity, indexed and acknowledged fetch batches,
+read-ahead behavior, terminal batch counts, and heartbeat lease negotiation. The
+v3 bump itself accompanies heartbeat messages. The server/client handshake
+requires an overlapping protocol version, so changing the Maven version alone
+cannot make the current driver connect.
+
+**Impact:** both Trino's production `jdbc:quack://` transport and every Doris
+metadata/scan connection use this driver. They are blocked from DuckDB 2.0 until
+the driver is ported. Trino's experimental Quack/Arrow executor is different: it
+uses a matching DuckDB native Quack extension as its client.
+
+- [ ] Port the handshake and all v2/v3 message fields/types; do not only bump the
+  version constant.
+- [ ] Implement heartbeat scheduling, negotiated lease timeout, and deterministic
+  shutdown for pooled/idle connections.
+- [ ] Implement fetch batch indexes, cumulative acknowledgement, terminal batch
+  counts, late errors, cancellation, and reconnect/result-retention behavior.
+- [ ] Preserve metadata and value fidelity for arrays, wide integers, timestamp
+  variants, `SQLNULL`, JSON, and `VARIANT` while changing the codec.
+- [ ] Add mixed-version rejection tests plus a protocol-v3 conformance suite run
+  against the exact DuckDB/Quack server build used by both connector modules.
+- [ ] Publish a new `dev.brikk.duckdb:quack-jdbc` release and bump Duckbridge only
+  after Trino and Doris integration suites are green.
+
+Upstream references:
+[`duckdb-quack#229`](https://github.com/duckdb/duckdb-quack/pull/229),
+[`duckdb-quack#245`](https://github.com/duckdb/duckdb-quack/pull/245), and
+[`duckdb-quack#240`](https://github.com/duckdb/duckdb-quack/pull/240).
