@@ -315,21 +315,13 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   (`lower(U+2C2F)`); end-to-end `WHERE upper(s)=…`/`lower(s)=…` in `PARITY` mode now returns
   the right row for all 7 probe strings.
 
-  **Deployment caveat (partly open).** CI and the release build do NOT use the locally built
-  binary: `.github/scripts/fetch-parity-extension.sh` pulls the *community-extensions* build,
-  which still carries the old full-mapping code until the catalog ref is bumped. Status:
-  (1) ✅ extension fix committed + pushed (`b181c61`), MainDistributionPipeline green;
-  (2) ⏳ PR to duckdb/community-extensions **opened**:
-  https://github.com/duckdb/community-extensions/pull/2594 (`ref: b181c61…`, `version: 0.3.0`,
-  `docs.hello_world` / `description` / `extended_description` corrected — they advertised
-  `'STRASSE'` and `'i̇stanbul'`); upstream MainDistributionPipeline on `b181c61` green on the full
-  matrix (run 33609826315);
-  (3) ✅ submodule pointer bumped + connector-side changes pushed to `brikk/duckbridge` main
-  (`520cd39`);
-  (4) ⏳ this repo's CI is **knowingly red** (`testRepresentativeAliasSemantics` and the four
-  `upper(name) = 'STRAßE'` integration tests) until (2) is merged and the community CDN rebuilt
-  for v1.5.5. No action needed here; it self-heals. Decision: pushed rather than hold local
-  commits for days.
+  **Deployment: complete (2026-09-03).** (1) extension fix `b181c61` pushed, MainDistributionPipeline
+  green; (2) duckdb/community-extensions #2594 **merged 2026-09-03 09:51 UTC** (`ref b181c61`,
+  `version 0.3.0`); CDN rebuilt 10:29 UTC — the served v1.5.5 `linux_amd64` binary verified:
+  `trino_upper('straße')` = `STRAßE`, `trino_lower(chr(304))` = `i`, `trino_meta()` = 10 rows;
+  (3) submodule pointer + connector changes pushed (`2cf5ed5`); (4) `brikk/duckbridge` CI rerun
+  against the new community binary (run 33618985820) — the 18 alias-related failures were the
+  only red and self-heal with (2).
   Stale pre-fix `build/{linux-*,darwin-*,windows-*}` binaries under the submodule were deleted
   locally (they are untracked; anyone else with an old checkout should do the same, or
   `bundleParityExtension` picks them up on a non-linux-amd64 host).
