@@ -160,7 +160,7 @@ The [`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-pari
 backs **only the functions whose semantics DuckDB cannot match natively**: ICU case
 folding / trim / `normalize` (`lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`,
 `normalize/1`) and the vendored-crypto hashes (`xxhash64`, `sha512`, `hmac_sha256`) —
-10 functions in all. Everything else (the ~75 other pushable functions) is emitted as
+10 functions in all. Everything else (the ~69 other pushable functions) is emitted as
 plain DuckDB SQL that DuckDB evaluates identically to Trino, verified by differential
 fixtures (Trino result vs DuckDB result for the same expression, incl. NULL / unicode /
 domain-edge / zone inputs).
@@ -212,7 +212,7 @@ How the connector gets it, per transport:
   first connection. Either way the connector probes `trino_meta()` on first use and fails with
   install instructions if it's absent — it does **not** `LOAD` per connection.
 - **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or any
-  non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~75 natively-emitted
+  non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~69 natively-emitted
   functions still push, alongside projection, predicate (domain), and LIMIT/TopN pushdown. All
   queries remain correct — the 10 are simply evaluated by Trino above the scan. (This replaces the
   former `duckbridge.parity.enabled=false`.)

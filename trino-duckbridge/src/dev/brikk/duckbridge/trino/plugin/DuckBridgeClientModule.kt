@@ -46,7 +46,10 @@ import java.util.Properties
  * transport's JDBC driver ([DuckDBDriver] embedded / [QuackDriver] remote), the config, and the
  * `query` passthrough table function.
  */
-class DuckBridgeClientModule : AbstractConfigurationAwareModule() {
+class DuckBridgeClientModule(
+    /** Test seam for end-to-end pushed-vs-local row-set parity; production always uses the default. */
+    private val expressionPushdownEnabled: Boolean = true,
+) : AbstractConfigurationAwareModule() {
     override fun setup(binder: Binder) {
         binder.bind(JdbcClient::class.java)
             .annotatedWith(ForBaseJdbc::class.java)
@@ -100,9 +103,12 @@ class DuckBridgeClientModule : AbstractConfigurationAwareModule() {
     @Provides
     @Singleton
     fun connectorExpressionRewriter(): ConnectorExpressionRewriter<ParameterizedExpression> =
-        JdbcConnectorExpressionRewriterBuilder.newBuilder()
-            .add(DuckBridgeParityExpressionRule())
-            .build()
+        JdbcConnectorExpressionRewriterBuilder.newBuilder().let { builder ->
+            if (expressionPushdownEnabled) {
+                builder.add(DuckBridgeParityExpressionRule())
+            }
+            builder.build()
+        }
 
     /** Transport is fully determined by the connection-url prefix (see [DuckBridgeTransport]). */
     @Provides

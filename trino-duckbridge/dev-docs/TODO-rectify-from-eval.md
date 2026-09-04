@@ -127,13 +127,13 @@ divergent input to the fixture corpus (see EV-B1) so it stays red until fixed.
 **Resolution of EV-A1..A12 (2026-09-02, commits `2639822` Tier 1 + Tier 2).** Rewrites:
 `millisecond` (`% 1000`), `date_diff→date_sub` (unit-gated), `to_unixtime` (`epoch(timezone(<zone>,
 ts))`, fixed-offset zones only — see EV-A13), `regexp_extract` (`CASE WHEN regexp_matches`),
-`sqrt`/`ln`/`log2`/`log10` (`CASE` → NaN / -Infinity). Gates: regex pattern must be a constant
+`sqrt`/`ln`/`log2`/`log10` were initially rewritten with `CASE` → NaN / -Infinity, then **removed by
+EV-B2** when end-to-end WHERE tests proved scalar equality was insufficient. Gates: regex pattern must be a constant
 passing `Re2Safety`; `regexp_replace/3` replacement constant without `$`/`\`; `mod` non-zero
 constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non-string and
 →VARCHAR from anything but integer/BOOLEAN/DATE. Removed: `url_encode`, `url_decode`,
 `bitwise_left_shift`, `bitwise_right_shift`. Catalog split into `DuckBridgeEmissionCatalog`;
-`README-pushdown-reference.md` corrected. `ln`/`sqrt` etc. were rewritten rather than gated so the
-common `ln(col) > x` shape still pushes.
+`README-pushdown-reference.md` corrected. See EV-B2 for the final NaN-domain disposition.
 
 - [x] **EV-A13 divergences surfaced by the Trino-computed fixtures (EV-B1)** — the new harness
   found these on its first run; all fixed in the Tier 2 commit. Trino vs DuckDB:
@@ -142,7 +142,8 @@ common `ln(col) > x` shape still pushes.
   - `lpad('abc', -1, 'x')`: error vs `''` → `lpad`/`rpad` gate: constant size ≥ 0 (plus existing pad gate).
   - `levenshtein_distance('äö','ab')`: `2` vs `4`; `hamming_distance` same inputs: `2` vs error —
     DuckDB's are byte-based → both **removed**.
-  - `asin(2.0)` / `acos(-2.0)`: `NaN` vs error → `CASE WHEN x BETWEEN -1 AND 1` rewrite.
+  - `asin(2.0)` / `acos(-2.0)`: `NaN` vs error → initially a `CASE` rewrite; **removed by EV-B2**
+    because DuckDB and Trino's runtime filter path order the resulting NaN differently.
   - `cbrt(-27.0)`: `-3.0` vs `-3.0000000000000004` → **removed** (equality predicates would miss).
   - `to_unixtime(TIMESTAMP '2024-11-03 01:30:00')` in `America/New_York`: `1730611800` (Trino: earlier
     offset) vs `1730615400` (ICU: later offset) → the EV-A4 rewrite is now emitted **only for
@@ -152,7 +153,8 @@ common `ln(col) > x` shape still pushes.
   - `from_hex('abc')`: error vs `0ABC` (DuckDB pads odd length); `from_base64('YWI')`: decodes vs error
     (DuckDB requires padding) → both **removed** (VARBINARY-shaped, unreachable anyway per EV-C5).
   - `bit_length` is not a Trino function ("Function 'bit_length' not registered") → dead entry removed.
-  Net catalog: 85 entries (43 Bare, 9 Rename, 3 Operator, 20 Inline/Contextual, 10 Alias), down from 95.
+  Net after EV-A13 was 85 entries; EV-B2 removed 6 NaN-domain functions, leaving **79**
+  (43 Bare, 9 Rename, 3 Operator, 14 Inline/Contextual, 10 Alias), down from 95.
 
 ## B. Test methodology
 
@@ -161,22 +163,32 @@ common `ln(col) > x` shape still pushes.
   and evaluated on the Trino query runner — the authoritative expected value, never hand-written —
   and (2) run through the production translator and executed on DuckDB; outcomes must be identical
   (value, or both engines error). `NotPushed` fixtures pin every gate. Both engines run in a non-UTC
-  session zone (`America/New_York`). 406 cases: string/numeric/regex/date-time/encoding/cast edge
+  session zone (`America/New_York`). 396 current cases: string/numeric/regex/date-time/encoding/cast edge
   corpus for all 75 native entries + the section-E ALIAS corpus (case mapping, whitespace classes,
   NFC, hashes incl. >64-byte HMAC keys). `testEveryNonAliasEntryHasAFixture` still enforces
   coverage. First run found EV-A13 (10 new divergences) — the methodology works.
   (Historical note: `SemanticFixtures.kt:105` had asserted the DuckDB answer for `url_encode` as
   Trino's; `:152/:185/:212/:213` tested only the coinciding inputs.)
 
-- [ ] **EV-B2 no pushed-vs-unpushed result comparison in integration tests** —
-  `TestDuckBridgePushdown` asserts plan shape (`isFullyPushedDown`) plus a few hand-picked
-  rows. EV-B1 covers function *semantics* (scalar in, scalar out) but not the end-to-end WHERE
-  path (TupleDomain interplay, per-conjunct split, connection-init probes, NULL rows in a table).
-  Add a differential test that runs each pushable predicate over a fixed table with pushdown on
-  vs. the conjunct wrapped to defeat pushdown, and asserts identical row sets.
+- [x] **EV-B2 no pushed-vs-unpushed result comparison in integration tests** — **done.**
+  `TestPushdownRowSetParity` installs two catalogs over the SAME DuckDB file: the production
+  connector and a test-only instance whose expression rewriter has no rules. For each of 18
+  risk-focused predicates (every emission class and every EV-A rewrite/gate reachable through table
+  columns, plus nested AND/OR and rows containing NULL), it proves via distributed `EXPLAIN` that
+  production removed the Trino `filterPredicate`, baseline retained it, then compares sorted row IDs.
+  This exercises planner conversion, per-conjunct splitting, SQL emission, connection init, remote
+  WHERE evaluation, JDBC decoding and SQL three-valued logic end to end.
+
+  **It found one more real bug on its first run:** the `CASE` rewrites for `sqrt`, `ln`, `log2`,
+  `log10`, `asin`, `acos` correctly reproduced the scalar NaN/-Infinity values, but DuckDB and
+  Trino's runtime filter path order NaN differently. Pushed `sqrt(x) >= 0`, `ln(x) > 0`, and
+  `asin(x) > 0` selected negative/out-of-domain rows the local Trino filter rejected; the initial
+  rewrite also needed explicit NULL propagation. There is no context-free scalar rewrite that
+  preserves every comparison, so all six functions are now **not pushed**. This is exactly the gap
+  EV-B2 was intended to catch: scalar-in/scalar-out parity (EV-B1) is necessary but not sufficient.
 
 - [x] **EV-B3 correct README/doc claims once B1 lands** — done: README.md now describes the
-  differential fixtures accurately and says ~75; `README-pushdown-reference.md` counts and per-row
+  differential fixtures accurately and says ~69; `README-pushdown-reference.md` counts and per-row
   notes updated (incl. removing the false "RE2 on both sides").
 
 ## C. Design / operational
@@ -223,7 +235,7 @@ common `ln(col) > x` shape still pushes.
   (`:207-209`), `to_hex/from_hex` (`:177-178`), `to_base64/from_base64` (`:128-129`) are
   effectively unreachable over table columns (no varbinary column, constant, or `CAST(.. AS
   VARBINARY)` translates). Either add the mappings (with their own EV-B1 fixtures) or drop the
-  dead entries and correct the "~85 functions push" count in README/pushdown reference.
+  dead entries and correct the "~69 functions push" count in README/pushdown reference.
 
 - [ ] **EV-C6 hourglass timestamp precision** — `Types.TIMESTAMP` → `TIMESTAMP_MICROS`
   unconditionally (`DuckBridgeClient.kt:341-343`); DuckDB `TIMESTAMP_NS` columns are read

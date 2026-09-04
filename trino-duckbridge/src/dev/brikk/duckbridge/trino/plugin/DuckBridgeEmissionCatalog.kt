@@ -106,20 +106,14 @@ internal object DuckBridgeEmissionCatalog {
             // DIVISION_BY_ZERO where DuckDB returns NULL, which would silently drop the row (EV-A12).
             put(NameArity("mod", 2), Emission.Bare)
             put(NameArity("power", 2), Emission.Bare)
-            // sqrt / ln / log2 / log10: Trino returns NaN (negative) or -Infinity (log of zero) where
-            // DuckDB throws "Out of Range" — a pushed predicate would fail a query Trino runs fine
-            // (EV-A12). Emit the IEEE result explicitly so the shapes agree.
-            put(NameArity("sqrt", 1), Emission.Inline { a -> "(CASE WHEN ${a[0]} >= 0 THEN sqrt(${a[0]}) ELSE 'nan'::DOUBLE END)" })
+            // sqrt / ln / log2 / log10 / asin / acos are NOT pushed (EV-B2): Trino returns IEEE
+            // NaN/-Infinity outside the domain where DuckDB throws, but wrapping in CASE is still
+            // unsafe in a predicate because DuckDB and Trino's runtime filter path order NaN
+            // differently. No context-free scalar rewrite preserves every comparison.
             put(NameArity("exp", 1), Emission.Bare)
-            put(NameArity("ln", 1), Emission.Inline { a -> logWithIeeeEdges("ln", a[0]) })
-            put(NameArity("log2", 1), Emission.Inline { a -> logWithIeeeEdges("log2", a[0]) })
-            put(NameArity("log10", 1), Emission.Inline { a -> logWithIeeeEdges("log10", a[0]) })
             put(NameArity("sin", 1), Emission.Bare)
             put(NameArity("cos", 1), Emission.Bare)
             put(NameArity("tan", 1), Emission.Bare)
-            // asin/acos: Trino returns NaN outside [-1, 1]; DuckDB throws (EV-A13).
-            put(NameArity("asin", 1), Emission.Inline { a -> "(CASE WHEN ${a[0]} BETWEEN -1 AND 1 THEN asin(${a[0]}) ELSE 'nan'::DOUBLE END)" })
-            put(NameArity("acos", 1), Emission.Inline { a -> "(CASE WHEN ${a[0]} BETWEEN -1 AND 1 THEN acos(${a[0]}) ELSE 'nan'::DOUBLE END)" })
             put(NameArity("atan", 1), Emission.Bare)
             put(NameArity("atan2", 2), Emission.Bare)
             put(NameArity("sinh", 1), Emission.Bare)
@@ -328,14 +322,6 @@ internal object DuckBridgeEmissionCatalog {
         val extract = if (group == null) "regexp_extract($s, $pattern)" else "regexp_extract($s, $pattern, $group)"
         return "(CASE WHEN regexp_matches($s, $pattern) THEN $extract END)"
     }
-
-    /**
-     * `ln`/`log2`/`log10` with Trino's IEEE edge results made explicit: DuckDB throws on 0 / negative,
-     * Trino returns -Infinity / NaN. NaN input falls to the ELSE branch (NaN > 0 and NaN = 0 are both
-     * false) and yields NaN, as in Trino.
-     */
-    private fun logWithIeeeEdges(fn: String, x: String): String =
-        "(CASE WHEN $x > 0 THEN $fn($x) WHEN $x = 0 THEN -('inf'::DOUBLE) ELSE 'nan'::DOUBLE END)"
 
     /**
      * The session zone as a quoted DuckDB literal — ONLY for fixed-offset zones (UTC, `+05:00`, ...).
