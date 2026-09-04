@@ -21,7 +21,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.Statement
+import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Proxy
 import java.util.Properties
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Runs the [DuckBridgeStringComparisonProbe] canary matrix (the same predicates the connection-init
@@ -78,6 +82,26 @@ class TestDuckBridgeStringComparisonProbe {
     }
 
     @Test
+    fun consolidatedParityProbeUsesOneStatement() {
+        embeddedConnection().use { conn ->
+            val path = TrinoParityExtensionResolver.resolveBundledExtensionPath()
+            assumeTrue(path != null, "no bundled trino_parity for this platform")
+            TrinoFunctionAliases.loadInProcess(conn, path!!)
+
+            val executeQueries = AtomicInteger()
+            val counting = countingConnection(conn, executeQueries)
+            val result = DuckBridgeStringComparisonProbe.probe(counting, includeParityMeta = true)
+
+            assertThat(executeQueries.get())
+                .`as`("collation + trino_meta + all canaries must share one round trip")
+                .isEqualTo(1)
+            assertThat(result.parityMetaRows).isEqualTo(10)
+            assertThat(result.canaryPasses).hasSize(DuckBridgeStringComparisonProbe.CANARIES.size).allMatch { it }
+            DuckBridgeStringComparisonProbe.verifyOrThrow(result, DuckBridgeStringPushdownMode.PARITY)
+        }
+    }
+
+    @Test
     fun probeVerifyOrThrowFailsLoudOnNonBinaryCollation() {
         embeddedConnection().use { conn ->
             conn.createStatement().use { it.execute("SET default_collation = 'nocase'") }
@@ -125,6 +149,38 @@ class TestDuckBridgeStringComparisonProbe {
         val props = DuckBridgeQueryRunner.duckJdbcProperties()
         return DriverManager.getConnection("jdbc:duckdb:", props)
     }
+
+    /** JDBC dynamic proxy that counts Statement.executeQuery calls while delegating everything else. */
+    private fun countingConnection(delegate: Connection, queries: AtomicInteger): Connection =
+        Proxy.newProxyInstance(
+            Connection::class.java.classLoader,
+            arrayOf(Connection::class.java),
+        ) { _, method, args ->
+            val result = invoke(delegate, method, args)
+            if (method.name == "createStatement" && result is Statement) {
+                countingStatement(result, queries)
+            } else {
+                result
+            }
+        } as Connection
+
+    private fun countingStatement(delegate: Statement, queries: AtomicInteger): Statement =
+        Proxy.newProxyInstance(
+            Statement::class.java.classLoader,
+            arrayOf(Statement::class.java),
+        ) { _, method, args ->
+            if (method.name == "executeQuery") {
+                queries.incrementAndGet()
+            }
+            invoke(delegate, method, args)
+        } as Statement
+
+    private fun invoke(target: Any, method: java.lang.reflect.Method, args: Array<out Any?>?): Any? =
+        try {
+            method.invoke(target, *(args ?: emptyArray()))
+        } catch (e: InvocationTargetException) {
+            throw e.targetException
+        }
 
     private fun startQuack(): TestingQuackServer {
         val server = quack ?: TestingQuackServer().also { quack = it }

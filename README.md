@@ -179,9 +179,11 @@ LOAD trino_parity;
 ```
 
 `INSTALL` only downloads the binary (once per machine, to `~/.duckdb/extensions/…`); `LOAD` is what
-registers the functions — and it is scoped to the **database instance**, not the connection. So a
-single `LOAD` covers every connection on that instance, current and future; you never `LOAD`
-per connection.
+registers the functions — and it is scoped to the **database instance**, not the connection. A
+single successful `LOAD` therefore covers the instance; issuing it again is idempotent. The
+connector deliberately issues that idempotent `LOAD` while opening each embedded connection (and
+each remote connection when a server-side path is configured), because JDBC provides no stable
+database-instance identity with which to detect a restarted/replaced instance safely.
 
 How the connector gets it, per transport:
 
@@ -208,9 +210,11 @@ How the connector gets it, per transport:
   Don't rely on autoloading here: DuckDB autoloads *core* extensions on first use, but a community
   extension's functions aren't in that map, so `INSTALL` without an explicit `LOAD` leaves
   `trino_meta()` unresolved. Alternatively, set `duckbridge.parity-extension-path` to a path the
-  *server* can read — then the connector issues the (instance-wide, idempotent) `LOAD` itself on
-  first connection. Either way the connector probes `trino_meta()` on first use and fails with
-  install instructions if it's absent — it does **not** `LOAD` per connection.
+  *server* can read — then the connector issues the instance-wide, idempotent `LOAD` while opening
+  each connection. Either way every BINARY/PARITY connection runs one consolidated validation
+  `SELECT`: `default_collation` + all comparison/ordering canaries, plus `trino_meta()` in PARITY.
+  That fresh one-round-trip check detects a restarted server, a missing extension, or changed
+  collation before a pushed predicate can return wrong rows.
 - **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or any
   non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~69 natively-emitted
   functions still push, alongside projection, predicate (domain), and LIMIT/TopN pushdown. All

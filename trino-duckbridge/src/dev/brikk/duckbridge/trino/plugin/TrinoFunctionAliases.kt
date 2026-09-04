@@ -44,20 +44,4 @@ object TrinoFunctionAliases {
             scratch.execute("LOAD '" + path.replace("'", "''") + "'")
         }
     }
-
-    /**
-     * Probe `trino_meta()` on a connection that has already LOADed the extension, returning the
-     * row count. Throws [SQLException] if the table macro isn't resolvable (i.e. the extension
-     * didn't actually register), so the caller can fail loud rather than silently pushing SQL the
-     * remote DuckDB can't resolve.
-     */
-    @Throws(SQLException::class)
-    fun probeMetaRowCount(connection: Connection): Int {
-        connection.createStatement().use { scratch ->
-            scratch.executeQuery("SELECT count(*) FROM trino_meta()").use { rs ->
-                check(rs.next()) { "trino_meta() returned no rows" }
-                return rs.getInt(1)
-            }
-        }
-    }
 }

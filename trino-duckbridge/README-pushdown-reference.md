@@ -76,8 +76,10 @@ LIKE-to-range converter exists — this is stock engine behavior, verified in th
 - **Init probe (fail loud).** `BINARY`/`PARITY` verify per connection that DuckDB's
   `default_collation` is binary and a comparison/ordering canary (case pairs, trailing
   space, NFC≠NFD, astral order, zero-width, NUL, `ORDER BY` incl. NULLS) matches Trino.
-  On divergence they throw with instructions to drop to `GUARDED`. `PARITY` additionally
-  LOADs + probes the extension. `GUARDED`/`NULL_ONLY`/`FULL` skip the probe.
+  All checks — plus `trino_meta()` in PARITY — are columns of **one consolidated SELECT**
+  per connection (EV-C1), so Quack pays one HTTP round trip, not ~14. On divergence they
+  throw with instructions to drop to `GUARDED`. `PARITY` additionally issues idempotent
+  `LOAD` when the connector owns loading. `GUARDED`/`NULL_ONLY`/`FULL` skip the probe.
 - **TopN guarantee.** `isTopNGuaranteed` is true only at `BINARY`/`FULL`/`PARITY` (byte
   ordering probe-verified); string sort keys are only pushed at those modes. Non-string
   sort keys push the bound in every mode but Trino re-applies TopN below `BINARY`.

@@ -70,8 +70,8 @@ The P2 parity init bakes in two T1-embedded assumptions that P3 must generalize:
    extracts the bundled binary to the worker's `java.io.tmpdir`. A remote server can't read
    that path. P3 must let `duckbridge.parity-extension-path` mean "a path the server can
    resolve" (or ship the binary to the server out of band) and skip the local extraction.
-3. **`getConnection(session)` does SET TimeZone + LOAD + probe per connection.** For a
-   pooled remote connection this is fine (idempotent), but the probe cost and the
-   fail-loud behavior should be revisited so a transient server hiccup doesn't turn every
-   query into a hard `NOT_SUPPORTED` failure — P3 may want a one-time init latch per
-   physical connection instead.
+3. **`getConnection(session)` does SET TimeZone + idempotent LOAD (when configured) + probe per
+   connection.** **Updated by EV-C1:** `default_collation`, all 12 canaries, and `trino_meta()`
+   are now one consolidated SELECT: one remote round trip rather than ~14. It deliberately remains
+   per connection — a URL/mode latch cannot distinguish a restarted server and would trust stale
+   extension/collation state, risking wrong rows.

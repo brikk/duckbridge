@@ -56,9 +56,9 @@ non-binary DuckDB/Quack into a loud failure instead of silent wrong rows.
   mode at rewrite time, so the session override applies.
 - `DuckBridgeStringPredicatePushdown.VARCHAR_PUSHDOWN` is the mode-aware
   `PredicatePushdownController` wired onto the VARCHAR column mapping in `DuckBridgeClient`.
-- `DuckBridgeParity.ensureInitialised(connection, session)` now gates the extension
-  LOAD+probe on PARITY and runs `DuckBridgeStringComparisonProbe.verifyOrThrow` on
-  ≥ BINARY.
+- `DuckBridgeParity.ensureInitialised(connection, session)` gates extension LOAD on PARITY, then
+  runs one consolidated `DuckBridgeStringComparisonProbe.probe`: `default_collation` + all 12
+  canaries + (`PARITY` only) `trino_meta()` in a single statement/round trip (EV-C1).
 - `isTopNGuaranteed` / `supportsTopN` are mode-gated for string sort keys.
 
 ## Tests

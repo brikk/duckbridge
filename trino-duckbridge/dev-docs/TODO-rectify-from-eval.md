@@ -193,18 +193,25 @@ constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non
 
 ## C. Design / operational
 
-- [ ] **EV-C1 per-connection probe cost** — in `PARITY` every `openConnection`
-  (`DuckBridgeExtensionConnectionFactory.kt`, `DuckBridgeParity.ensureInitialised`) runs
-  `LOAD` + `SELECT count(*) FROM trino_meta()` + `duckdb_settings()` + 12 canary queries
-  (`DuckBridgeStringComparisonProbe.CANARIES`) ≈ 15 statements; base-jdbc opens a connection
-  per split and per metadata call with no pooling. Over Quack that is ~15 HTTP round trips per
-  connection. Fix: probe once per (connection-url, mode) and memoise (process-wide
-  `ConcurrentHashMap`), re-probing only on a fresh instance.
+- [x] **EV-C1 per-connection probe cost** — **done.** Was: every PARITY `openConnection` ran
+  `LOAD` + separate `trino_meta()` + `duckdb_settings()` + 12 individual canary queries: ~15
+  statements / HTTP round trips over Quack. Now `DuckBridgeStringComparisonProbe.probe()` emits
+  one `SELECT` containing `default_collation`, optional `trino_meta()` count, and all 12 canaries as
+  columns; `ProbeResult` is validated without further SQL. Cost: **BINARY = 1 statement; PARITY = 1
+  validation statement plus an idempotent LOAD only when this connector owns loading** (embedded or
+  configured server-side path); pre-loaded Quack PARITY = 1. A counting JDBC proxy test proves the
+  consolidated probe executes exactly one `executeQuery`; embedded + Quack integration tests pass.
 
-- [ ] **EV-C2 README says no per-connection `LOAD`; embedded does one** — README.md:209-211
-  vs `DuckBridgeParity.initialiseEmbedded` (`LOAD` on every connection). Reconcile: either the
-  doc (embedded LOADs per connection, cheap because instance-scoped and idempotent) or the
-  code (LOAD once, see EV-C1).
+  Deliberately **not** memoised by `(connection-url, mode)`: there is no JDBC-level stable database
+  instance identity. A URL cache survives a Quack/DuckDB restart, then skips the checks precisely
+  when the extension may no longer be loaded or `default_collation` may have changed — a wrong-row
+  risk. One fresh round trip per connection is the real fix; a stale cache would be a crutch.
+
+- [x] **EV-C2 README says no per-connection `LOAD`; embedded does one** — **done with EV-C1.**
+  README now states the actual behavior: `LOAD` registration is instance-scoped/idempotent, but the
+  connector issues it on every embedded connection (and remote connection with a configured
+  server-side path) because JDBC exposes no safe instance identity. A pre-loaded Quack server gets
+  no connector-issued LOAD. Validation is one consolidated query per connection.
 
 - [x] **EV-C3 Alias natives unaudited** — done 2026-09-02, results in section E
   (EV-E1..E4). Remaining action: fold the section-E corpus into EV-B1 so it runs on every

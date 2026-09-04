@@ -70,14 +70,15 @@ class DuckBridgeParity
 
         /**
          * Per-connection string-pushdown init, keyed off the effective mode:
-         *  - PARITY: LOAD (where applicable) + probe the trino_parity extension AND run the
-         *    byte-comparison canary. Fail loud if the extension is missing.
-         *  - BINARY: run the byte-comparison canary only (no extension). Fail loud if DuckDB's string
+         *  - PARITY: LOAD (where applicable), then ONE consolidated query probes `trino_meta()`,
+         *    `default_collation`, and all byte-comparison canaries. Fail loud if the extension is missing.
+         *  - BINARY: run the same one query without `trino_meta()` (no extension). Fail loud if DuckDB's string
          *    comparison/ordering or `default_collation` diverges from Trino.
          *  - FULL/GUARDED/NULL_ONLY: no probe (FULL is caller-asserted; GUARDED/NULL_ONLY don't need
          *    byte alignment).
          *
-         * Idempotent: LOAD of an already-loaded extension is a no-op; the probes are tiny scans.
+         * Idempotent: LOAD of an already-loaded extension is a no-op. Validation deliberately remains
+         * per-connection (not URL-cached) so a restarted remote instance is never trusted stale.
          *
          * @throws TrinoException if a required extension or comparison guarantee is unavailable.
          */
@@ -85,16 +86,49 @@ class DuckBridgeParity
             val mode = effectiveMode(session)
             if (mode.requiresParityExtension) {
                 when (transport) {
-                    DuckBridgeTransport.EMBEDDED -> initialiseEmbedded(connection)
-                    DuckBridgeTransport.QUACK -> initialiseQuack(connection)
+                    DuckBridgeTransport.EMBEDDED -> loadEmbedded(connection)
+                    DuckBridgeTransport.QUACK -> loadQuackWhenConfigured(connection)
                 }
             }
             if (mode.requiresComparisonProbe) {
-                DuckBridgeStringComparisonProbe.verifyOrThrow(connection, mode)
+                val remote = transport == DuckBridgeTransport.QUACK
+                val result = runProbe(connection, mode, remote)
+                requireParityRows(result, mode, remote)
+                DuckBridgeStringComparisonProbe.verifyOrThrow(result, mode)
             }
         }
 
-        private fun initialiseEmbedded(connection: Connection) {
+        @Throws(SQLException::class)
+        private fun runProbe(
+            connection: Connection,
+            mode: DuckBridgeStringPushdownMode,
+            remote: Boolean,
+        ): DuckBridgeStringComparisonProbe.ProbeResult =
+            try {
+                DuckBridgeStringComparisonProbe.probe(connection, mode.requiresParityExtension)
+            } catch (e: SQLException) {
+                if (mode.requiresParityExtension) {
+                    throw parityUnavailable(
+                        "the consolidated startup probe could not resolve trino_meta() / comparison canaries: ${e.message}",
+                        remote,
+                        e,
+                    )
+                }
+                throw e
+            }
+
+        private fun requireParityRows(
+            result: DuckBridgeStringComparisonProbe.ProbeResult,
+            mode: DuckBridgeStringPushdownMode,
+            remote: Boolean,
+        ) {
+            if (mode.requiresParityExtension && (result.parityMetaRows ?: 0) <= 0) {
+                val where = if (remote) "on the Quack server" else "after LOAD"
+                throw parityUnavailable("trino_meta() returned no rows $where — extension did not register", remote)
+            }
+        }
+
+        private fun loadEmbedded(connection: Connection) {
             val path = resolvedLocalPath
             val failure =
                 when {
@@ -114,52 +148,31 @@ class DuckBridgeParity
                                 "duckbridge.allow-unsigned-extensions=true",
                             remote = false,
                         )
-                    else -> loadAndProbe(connection, path, remote = false)
+                    else -> loadOnly(connection, path, remote = false)
                 }
             if (failure != null) {
                 throw failure
             }
         }
 
-        private fun initialiseQuack(connection: Connection) {
+        private fun loadQuackWhenConfigured(connection: Connection) {
             // On a remote server we can only LOAD a path the SERVER can read. When configured, treat
             // duckbridge.parity-extension-path as a server-side path; otherwise assume the server
             // pre-loaded the extension and just probe.
             val serverPath = config.parityExtensionPath
             if (serverPath != null) {
-                loadAndProbe(connection, serverPath, remote = true)?.let { throw it }
-            } else {
-                probeOnly(connection)?.let { throw it }
+                loadOnly(connection, serverPath, remote = true)?.let { throw it }
             }
         }
 
-        /** LOAD + probe; returns a ready-to-throw [TrinoException] on any failure, or null on success. */
-        private fun loadAndProbe(connection: Connection, path: String, remote: Boolean): TrinoException? =
+        /** LOAD only; the one consolidated probe runs after transport-specific loading. */
+        private fun loadOnly(connection: Connection, path: String, remote: Boolean): TrinoException? =
             try {
                 TrinoFunctionAliases.loadInProcess(connection, path)
-                probeAfterLoad(connection, path, remote)
-            } catch (e: SQLException) {
-                parityUnavailable("failed to LOAD/probe trino_parity from '$path': ${e.message}", remote, e)
-            }
-
-        /** Probe only — used for Quack when the server is expected to have pre-loaded the extension. */
-        private fun probeOnly(connection: Connection): TrinoException? =
-            try {
-                probeAfterLoad(connection, path = null, remote = true)
-            } catch (e: SQLException) {
-                parityUnavailable("trino_meta() is not resolvable on the Quack server: ${e.message}", remote = true, e)
-            }
-
-        @Throws(SQLException::class)
-        private fun probeAfterLoad(connection: Connection, path: String?, remote: Boolean): TrinoException? {
-            val rows = TrinoFunctionAliases.probeMetaRowCount(connection)
-            return if (rows > 0) {
                 null
-            } else {
-                val where = path?.let { "after LOAD '$it'" } ?: "on the Quack server"
-                parityUnavailable("trino_meta() returned no rows $where — extension did not register", remote)
+            } catch (e: SQLException) {
+                parityUnavailable("failed to LOAD trino_parity from '$path': ${e.message}", remote, e)
             }
-        }
 
         private fun parityUnavailable(reason: String, remote: Boolean, cause: Throwable? = null): TrinoException {
             log.error(cause, "duckbridge: parity extension unavailable — %s", reason)

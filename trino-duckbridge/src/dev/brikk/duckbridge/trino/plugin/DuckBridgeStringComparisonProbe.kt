@@ -89,30 +89,78 @@ internal object DuckBridgeStringComparisonProbe {
             ),
         )
 
+    /** One-row result of the consolidated connection-init query. */
+    data class ProbeResult(
+        val collation: String,
+        val parityMetaRows: Int?,
+        val canaryPasses: List<Boolean>,
+    )
+
+    /**
+     * Run every connection-init check in ONE statement / round trip. With [includeParityMeta], the
+     * same SELECT also resolves and counts `trino_meta()` — so default PARITY init no longer runs a
+     * metadata query plus 13 individual comparison queries (especially costly over Quack HTTP).
+     *
+     * This intentionally runs per connection rather than using a process-wide URL/mode cache. A
+     * cache cannot identify a restarted Quack/DuckDB instance: after restart the extension may no
+     * longer be loaded or `default_collation` may have changed, and skipping validation could return
+     * wrong rows. One fresh statement is the small, correctness-preserving cost (EV-C1).
+     */
+    @Throws(SQLException::class)
+    fun probe(connection: Connection, includeParityMeta: Boolean): ProbeResult {
+        connection.createStatement().use { stmt ->
+            stmt.executeQuery(probeSql(includeParityMeta)).use { rs ->
+                if (!rs.next()) {
+                    throw SQLException("DuckBridge consolidated comparison probe returned no row")
+                }
+                var column = 1
+                val collation = rs.getString(column++) ?: ""
+                val parityRows =
+                    if (includeParityMeta) {
+                        val count = rs.getInt(column++)
+                        if (rs.wasNull()) null else count
+                    } else {
+                        null
+                    }
+                val passes = CANARIES.map { rs.getBoolean(column++) && !rs.wasNull() }
+                return ProbeResult(collation, parityRows, passes)
+            }
+        }
+    }
+
+    /** The single SELECT used by [probe], data-exposed for statement-count / shape tests. */
+    internal fun probeSql(includeParityMeta: Boolean): String =
+        buildString {
+            append("SELECT (SELECT value FROM duckdb_settings() WHERE name = 'default_collation') AS default_collation")
+            if (includeParityMeta) {
+                append(", (SELECT count(*) FROM trino_meta()) AS parity_meta_rows")
+            }
+            CANARIES.forEachIndexed { index, canary ->
+                append(", (").append(canary.sql).append(") AS canary_").append(index)
+            }
+        }
+
     /**
      * Verify the connection honors Trino-aligned byte comparison, or throw. FULL mode does NOT call
      * this (caller-asserted); only BINARY and PARITY do.
      */
     @Throws(SQLException::class)
     fun verifyOrThrow(connection: Connection, mode: DuckBridgeStringPushdownMode) {
-        val collation = readDefaultCollation(connection)
-        if (!isBinaryCollation(collation)) {
+        verifyOrThrow(probe(connection, includeParityMeta = false), mode)
+    }
+
+    /** Validate a consolidated [ProbeResult], naming the first failed hazard class. */
+    fun verifyOrThrow(result: ProbeResult, mode: DuckBridgeStringPushdownMode) {
+        if (!isBinaryCollation(result.collation)) {
             throw divergence(
                 mode,
-                "DuckDB default_collation is '$collation' (not binary/empty) — string equality and range " +
+                "DuckDB default_collation is '${result.collation}' (not binary/empty) — string equality and range " +
                     "pushdown would return wrong rows under a non-binary collation",
             )
         }
-        connection.createStatement().use { stmt ->
-            for (canary in CANARIES) {
-                val ok =
-                    stmt.executeQuery("SELECT (${canary.sql})").use { rs ->
-                        rs.next() && rs.getBoolean(1) && !rs.wasNull()
-                    }
-                if (!ok) {
-                    throw divergence(mode, "byte-comparison canary failed for hazard class: ${canary.hazard}")
-                }
-            }
+        val failed = result.canaryPasses.indexOfFirst { !it }
+        if (failed >= 0) {
+            throw divergence(mode, "byte-comparison canary failed for hazard class: ${CANARIES[failed].hazard}")
         }
     }
 
