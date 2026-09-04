@@ -95,14 +95,30 @@ class DuckBridgeParity
         }
 
         private fun initialiseEmbedded(connection: Connection) {
-            val path =
-                resolvedLocalPath
-                    ?: throw parityUnavailable(
-                        "the trino_parity DuckDB extension binary was not found for this platform " +
-                            "(${TrinoParityExtensionResolver.detectPlatform() ?: "unknown platform"})",
-                        remote = false,
-                    )
-            loadAndProbe(connection, path, remote = false)?.let { throw it }
+            val path = resolvedLocalPath
+            val failure =
+                when {
+                    path == null ->
+                        parityUnavailable(
+                            "the trino_parity DuckDB extension binary was not found for this platform " +
+                                "(${TrinoParityExtensionResolver.detectPlatform() ?: "unknown platform"})",
+                            remote = false,
+                        )
+                    // Say precisely what is wrong rather than surfacing DuckDB's generic signature error.
+                    !config.isAllowUnsignedExtensions && TrinoParityExtensionResolver.isUnsigned(path) ->
+                        parityUnavailable(
+                            "the trino_parity binary at '$path' is UNSIGNED (a local build, not the signed " +
+                                "community-extensions release) and duckbridge.allow-unsigned-extensions is false. " +
+                                "Either bundle/point at the signed community binary (`INSTALL trino_parity FROM community` " +
+                                "and set duckbridge.parity-extension-path to it) or, for extension development only, set " +
+                                "duckbridge.allow-unsigned-extensions=true",
+                            remote = false,
+                        )
+                    else -> loadAndProbe(connection, path, remote = false)
+                }
+            if (failure != null) {
+                throw failure
+            }
         }
 
         private fun initialiseQuack(connection: Connection) {
@@ -153,8 +169,9 @@ class DuckBridgeParity
                         "`duckdb -unsigned` and `LOAD` the binary, or set duckbridge.parity-extension-path to a " +
                         "server-side path)"
                 } else {
-                    "Build the extension (`(cd duckdb-trino-parity-extension && make)`) so it is bundled in the " +
-                        "plugin jar, or set duckbridge.parity-extension-path to a valid local binary"
+                    "Bundle the signed community binary (`.github/scripts/fetch-parity-extension.sh`, or build it " +
+                        "locally with `(cd duckdb-trino-parity-extension && make)` + duckbridge.allow-unsigned-extensions=true), " +
+                        "or set duckbridge.parity-extension-path to a valid binary"
                 }
             return TrinoException(
                 NOT_SUPPORTED,

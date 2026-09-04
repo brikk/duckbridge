@@ -20,7 +20,6 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.sql.Statement
-import java.util.Properties
 
 /**
  * SQL-level acceptance + parity tests for the emission-class rework, run against the REAL built
@@ -132,8 +131,7 @@ class TestTrinoFunctionAliases {
                         "trino_parity extension not bundled in plugin jar on this platform — build it first: " +
                             "`(cd duckdb-trino-parity-extension && make)`.",
                     )
-            val props = Properties()
-            props.setProperty("allow_unsigned_extensions", "true")
+            val props = DuckBridgeQueryRunner.duckJdbcProperties()
             val conn = DriverManager.getConnection("jdbc:duckdb:", props)
             TrinoFunctionAliases.loadInProcess(conn, path)
             return conn

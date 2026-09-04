@@ -40,6 +40,18 @@ object DuckBridgeQueryRunner {
 
     fun create(connectionUrl: String): QueryRunner = create(connectionUrl, emptyMap())
 
+    /** True iff the bundled trino_parity binary for this host is a local (unsigned) build. */
+    fun bundledParityIsUnsigned(): Boolean =
+        TrinoParityExtensionResolver.resolveBundledExtensionPath()?.let(TrinoParityExtensionResolver::isUnsigned) == true
+
+    /** JDBC connection properties for opening an embedded DuckDB that will LOAD the bundled binary. */
+    fun duckJdbcProperties(): java.util.Properties =
+        java.util.Properties().also { p ->
+            if (bundledParityIsUnsigned()) {
+                p.setProperty("allow_unsigned_extensions", "true")
+            }
+        }
+
     /**
      * @param connectionUrl the base-jdbc `connection-url` (`jdbc:duckdb:...` embedded or
      *        `jdbc:quack://host:port` remote).
@@ -60,6 +72,13 @@ object DuckBridgeQueryRunner {
                 "duckbridge",
                 buildMap {
                     put("connection-url", connectionUrl)
+                    // The connector verifies extension signatures by default (EV-C4). A developer's
+                    // locally built trino_parity is unsigned, so the harness opts in ONLY when the
+                    // bundled binary actually is unsigned; with the signed community binary (CI /
+                    // release) the tests run with verification on, exactly like production.
+                    if (bundledParityIsUnsigned()) {
+                        put("duckbridge.allow-unsigned-extensions", "true")
+                    }
                     putAll(extraProperties)
                 },
             )

@@ -17,9 +17,11 @@ import io.airlift.log.Logger
 import java.io.IOException
 import java.net.URL
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 
@@ -32,10 +34,19 @@ import java.util.concurrent.atomic.AtomicReference
  *     by the client/module — not this resolver).
  *  2. Otherwise, look for a classpath resource at
  *     `dev/brikk/duckbridge/trino/plugin/duckdb-extensions/<platform>/trino_parity.duckdb_extension`,
- *     extract it to a stable temp path
- *     (`${java.io.tmpdir}/trino-duckbridge/<platform>/trino_parity.duckdb_extension`), and
- *     return that.
+ *     extract it into a PER-PROCESS PRIVATE directory
+ *     (`Files.createTempDirectory("trino-duckbridge-")`, owner-only permissions on POSIX), and return
+ *     `<that dir>/<platform>/trino_parity.duckdb_extension`. The directory is never a fixed,
+ *     predictable path shared with other users of the host: this file is native code the DuckDB
+ *     in the Trino worker will `dlopen`, so a world-writable `/tmp/trino-duckbridge/...` that
+ *     another local user could pre-create or swap (TOCTOU) is not acceptable (EV-C4 in
+ *     dev-docs/TODO-rectify-from-eval.md).
  *  3. If neither is available, return null — the caller decides how to fail.
+ *
+ * Signature: the release/CI bundle is the SIGNED community-extensions binary, which DuckDB verifies
+ * at LOAD when `allow_unsigned_extensions` is off (the default). A locally built binary is unsigned
+ * and needs `duckbridge.allow-unsigned-extensions=true`; [isUnsigned] tells the two apart so the
+ * connector can fail with a precise message instead of DuckDB's generic signature error.
  *
  * Platform detection from `os.name` / `os.arch`:
  * ```
@@ -143,7 +154,7 @@ object TrinoParityExtensionResolver {
             // KEEP THE BASENAME "trino_parity.duckdb_extension" — DuckDB derives the C entrypoint
             // symbol from the filename's stem (`<stem>_duckdb_cpp_init`). Mangling the filename to
             // encode the platform breaks symbol resolution at LOAD. Disambiguate via the parent dir.
-            val tempDir = Path.of(System.getProperty("java.io.tmpdir"), "trino-duckbridge", platform)
+            val tempDir = privateRoot().resolve(platform)
             Files.createDirectories(tempDir)
             val target = tempDir.resolve(RESOURCE_FILE)
             extractAtomically(url, tempDir, target)
@@ -154,9 +165,67 @@ object TrinoParityExtensionResolver {
         }
 
     /**
+     * The process-private extraction root: created once per JVM with an unpredictable name under
+     * `java.io.tmpdir` and owner-only permissions (`rwx------`) where the filesystem supports POSIX
+     * permissions. Removed on JVM exit on a best-effort basis (the loaded binary is mmapped by
+     * DuckDB, so the unlink may be deferred by the OS — harmless).
+     */
+    private val privateRootRef: AtomicReference<Path?> = AtomicReference()
+
+    @Throws(IOException::class)
+    private fun privateRoot(): Path {
+        privateRootRef.get()?.let { return it }
+        synchronized(resolveLock) {
+            privateRootRef.get()?.let { return it }
+            val root =
+                if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+                    Files.createTempDirectory(
+                        "trino-duckbridge-",
+                        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")),
+                    )
+                } else {
+                    Files.createTempDirectory("trino-duckbridge-")
+                }
+            root.toFile().deleteOnExit()
+            privateRootRef.set(root)
+            return root
+        }
+    }
+
+    /**
+     * True when the extension file at [path] carries no DuckDB signature (the trailing 256-byte
+     * signature block of the extension footer is all zeros) — i.e. a locally built binary that
+     * DuckDB will refuse to LOAD unless `allow_unsigned_extensions` is on. False for the signed
+     * community-extensions build, or when the file cannot be inspected (let DuckDB decide).
+     */
+    fun isUnsigned(path: String): Boolean =
+        try {
+            val file = Path.of(path)
+            val size = Files.size(file)
+            size >= SIGNATURE_BYTES && readTail(file, size).all { it == 0.toByte() }
+        } catch (@Suppress("SwallowedException") e: IOException) {
+            false
+        }
+
+    @Throws(IOException::class)
+    private fun readTail(file: Path, size: Long): ByteArray =
+        Files.newByteChannel(file).use { ch ->
+            ch.position(size - SIGNATURE_BYTES)
+            val buf = java.nio.ByteBuffer.allocate(SIGNATURE_BYTES)
+            while (buf.hasRemaining() && ch.read(buf) >= 0) {
+                // fill to SIGNATURE_BYTES or EOF
+            }
+            buf.flip()
+            ByteArray(buf.remaining()).also { buf.get(it) }
+        }
+
+    /** DuckDB extension footer: the last 256 bytes are the RSA signature (zeros when unsigned). */
+    private const val SIGNATURE_BYTES: Int = 256
+
+    /**
      * Extract [url]'s bytes to [target] atomically: stream into a sibling temp file in the same
-     * directory, then move it into place (ATOMIC_MOVE where supported). A reader — including a
-     * separate JVM sharing `java.io.tmpdir` — therefore only ever observes the complete binary.
+     * directory, then move it into place (ATOMIC_MOVE where supported). A concurrent reader in this
+     * JVM therefore only ever observes the complete binary.
      */
     @Throws(IOException::class)
     private fun extractAtomically(url: URL, tempDir: Path, target: Path) {

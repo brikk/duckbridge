@@ -122,8 +122,7 @@ class TestDuckBridgeStringComparisonProbe {
     }
 
     private fun embeddedConnection(): Connection {
-        val props = Properties()
-        props.setProperty("allow_unsigned_extensions", "true")
+        val props = DuckBridgeQueryRunner.duckJdbcProperties()
         return DriverManager.getConnection("jdbc:duckdb:", props)
     }
 

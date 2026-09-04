@@ -35,6 +35,7 @@ class InProcessDuckBridgeExecutor(
     private val connectionUrl: String,
     private val tuning: DuckDbTuning,
     private val parityExtensionPath: String?,
+    private val allowUnsignedExtensions: Boolean = false,
 ) : DuckBridgeExecutor {
     @Throws(SQLException::class)
     override fun openPreparedConnection(duckDbTimeZone: String?): DuckDBConnection {
@@ -56,10 +57,13 @@ class InProcessDuckBridgeExecutor(
     }
 
     private fun openRawConnection(): DuckDBConnection {
-        // allow_unsigned_extensions is a startup setting — pass it as a connection property so the
-        // LOAD '<path>' below works (a runtime SET is rejected and closes the Statement).
+        // allow_unsigned_extensions is a startup setting — pass it as a connection property (a runtime
+        // SET is rejected and closes the Statement). Honours the same catalog flag as the JDBC path:
+        // off by default, so the LOAD '<path>' below is signature-verified (EV-C4).
         val props = Properties()
-        props.setProperty("allow_unsigned_extensions", "true")
+        if (allowUnsignedExtensions) {
+            props.setProperty("allow_unsigned_extensions", "true")
+        }
         return java.sql.DriverManager.getConnection(connectionUrl, props) as DuckDBConnection
     }
 

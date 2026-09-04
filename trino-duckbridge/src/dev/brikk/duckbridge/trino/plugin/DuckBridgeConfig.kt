@@ -26,17 +26,22 @@ import io.airlift.units.DataSize
  */
 class DuckBridgeConfig {
     /**
-     * When true, the in-process DuckDB connection is opened with
-     * `allow_unsigned_extensions=true`, which is required later to `LOAD` the
-     * locally-built (unsigned) `trino_parity.duckdb_extension`. Defaults to true so the
-     * parity extension path works out of the box; operators can flip it off to harden a
-     * deployment that never loads the extension.
+     * When true, the in-process DuckDB is opened with `allow_unsigned_extensions=true`, which
+     * disables DuckDB's signature verification for every `LOAD`. Defaults to FALSE: the release
+     * plugin bundles the SIGNED community-extensions `trino_parity` binary, which loads with
+     * verification on, and the connector fails loud with instructions if the bundled/configured
+     * binary is unsigned. Set to true only to load a locally built (unsigned) extension — e.g. when
+     * developing the extension itself. (EV-C4: the previous default of true meant the worker would
+     * dlopen an unverified binary from a predictable temp path.)
      */
-    var isAllowUnsignedExtensions: Boolean = true
+    var isAllowUnsignedExtensions: Boolean = false
         private set
 
     @Config("duckbridge.allow-unsigned-extensions")
-    @ConfigDescription("Allow the in-process DuckDB to LOAD unsigned extensions (needed for the trino_parity extension)")
+    @ConfigDescription(
+        "Open the embedded DuckDB with allow_unsigned_extensions (disables extension signature checks). " +
+            "Only needed to LOAD a locally built trino_parity binary; the bundled community build is signed.",
+    )
     fun setAllowUnsignedExtensions(allowUnsignedExtensions: Boolean): DuckBridgeConfig {
         this.isAllowUnsignedExtensions = allowUnsignedExtensions
         return this

@@ -78,7 +78,7 @@ from the URL scheme: `jdbc:duckdb:<path>` (embedded) or `jdbc:quack://host:port`
 | `connector.name` | — | Must be `duckbridge`. |
 | `connection-url` | — | `jdbc:duckdb:/path/to.db` (embedded) or `jdbc:quack://host:port` (remote). |
 | `duckbridge.string-pushdown.mode` | `PARITY` | `NULL_ONLY` \| `GUARDED` \| `BINARY` \| `FULL` \| `PARITY` (see dial below). |
-| `duckbridge.allow-unsigned-extensions` | `true` | Open the embedded DuckDB with `allow_unsigned_extensions` (needed to `LOAD` the parity extension by path). |
+| `duckbridge.allow-unsigned-extensions` | `false` | Open the embedded DuckDB with `allow_unsigned_extensions`, disabling extension signature checks. Only needed to `LOAD` a locally built `trino_parity`; the bundled community binary is signed and verified at `LOAD`. |
 | `duckbridge.parity-extension-path` | — | Explicit path to `trino_parity.duckdb_extension`, overriding the bundled binary (embedded) or naming a server-side path (Quack). |
 | `duckbridge.quack.token` / `.token-env` / `.token-file` | — | Quack auth; prefer `-env`/`-file` for secrets. |
 | `duckbridge.quack.tls` | `false` | Use `https` for the Quack transport. |
@@ -191,8 +191,9 @@ How the connector gets it, per transport:
   community (`INSTALL trino_parity FROM community` in a DuckDB CLI of the **same** version) and set
   `duckbridge.parity-extension-path` to the resulting
   `~/.duckdb/extensions/<duckdb-version>/<platform>/trino_parity.duckdb_extension`, or run in
-  `GUARDED` mode. (`duckbridge.allow-unsigned-extensions` defaults to `true` so a `LOAD` by path
-  works; a signed community binary loads either way.)
+  `GUARDED` mode. The binary is extracted to a process-private temp directory and `LOAD`ed with
+  DuckDB's signature verification **on** (`duckbridge.allow-unsigned-extensions` defaults to
+  `false`); an unsigned local build is refused with a message naming the flag to set.
 - **Remote** (`jdbc:quack://`): the extension is a **server-side** concern — the connector never
   installs on the server. Because `quack_serve` serves one shared DuckDB instance and `LOAD` is
   instance-scoped, load it **once at server startup** and every client connection is covered — run

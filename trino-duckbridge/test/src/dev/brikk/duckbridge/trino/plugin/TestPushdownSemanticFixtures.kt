@@ -29,7 +29,6 @@ import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.util.Properties
 
 /**
  * Cross-engine differential harness for [SemanticFixtures] (EV-B1 in
@@ -156,8 +155,7 @@ class TestPushdownSemanticFixtures : AbstractTestQueryFramework() {
         }
 
     private fun openDuck(): Connection {
-        val props = Properties()
-        props.setProperty("allow_unsigned_extensions", "true")
+        val props = DuckBridgeQueryRunner.duckJdbcProperties()
         val conn = DriverManager.getConnection("jdbc:duckdb:", props)
         conn.createStatement().use { it.execute("SET TimeZone = '${SemanticFixtures.ZONE}'") }
         val path =

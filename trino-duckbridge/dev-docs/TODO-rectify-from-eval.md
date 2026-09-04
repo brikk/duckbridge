@@ -198,17 +198,23 @@ common `ln(col) > x` shape still pushes.
   (EV-E1..E4). Remaining action: fold the section-E corpus into EV-B1 so it runs on every
   DuckDB / extension pin bump.
 
-- [ ] **EV-C4 native extension loaded from a predictable tmp path with signatures off** —
-  `TrinoParityExtensionResolver.extractOrNull` writes to
-  `$java.io.tmpdir/trino-duckbridge/<platform>/trino_parity.duckdb_extension`, and the connector
-  `LOAD`s it with `allow_unsigned_extensions=true` by default (`DuckBridgeConfig`,
-  `DuckBridgeClientModule.connectionFactory`). On a shared-`/tmp` host another local user can
-  own that directory and swap the file (TOCTOU) → arbitrary native code in the Trino worker.
-  Fix: extract into a per-process private directory (`Files.createTempDirectory` with 0700, or
-  under the plugin dir), and default `duckbridge.allow-unsigned-extensions` to `false` since
-  the shipped community binary is signed; document that `true` is only for locally built binaries.
-  Related: `.github/scripts/fetch-parity-extension.sh:33` downloads with no checksum pin
-  (acceptable only if signature verification stays on).
+- [x] **EV-C4 native extension loaded from a predictable tmp path with signatures off** — **done.**
+  Was: `TrinoParityExtensionResolver.extractOrNull` wrote to
+  `$java.io.tmpdir/trino-duckbridge/<platform>/trino_parity.duckdb_extension` and the connector
+  `LOAD`ed it with `allow_unsigned_extensions=true` by default — on a shared-`/tmp` host another
+  local user could own that directory and swap the file (TOCTOU) → arbitrary native code in the
+  Trino worker. Now: (1) extraction root is `Files.createTempDirectory("trino-duckbridge-")` with
+  `rwx------`, per process, unpredictable name; (2) `duckbridge.allow-unsigned-extensions` defaults
+  to **false**, so the bundled community binary (signed) is signature-verified by DuckDB at `LOAD`
+  — which also covers the unpinned `curl` in `fetch-parity-extension.sh`; (3) an unsigned binary
+  under the default config fails loud with a message naming the flag
+  (`TrinoParityExtensionResolver.isUnsigned` reads the 256-byte signature footer); (4) the
+  `DUCKDB_LOCAL` Arrow executor no longer hardcodes `allow_unsigned_extensions=true` and honours the
+  same flag. Test harness opts in only when the bundled binary is actually unsigned (dev builds), so
+  CI/release run with verification on. Verified both ways: 433 tests green against the signed
+  community 0.3.0 binary with verification on, and the same suites green with the local unsigned
+  build via the opt-in; the refusal message fires for unsigned + default config.
+  README config table and embedded-transport paragraph updated.
 
 - [ ] **EV-C5 type-mapping coverage vs. claims** — `DuckBridgeClient.toColumnMapping`
   (`:301-357`) maps no `TIMESTAMP WITH TIME ZONE`, `TIME`, `VARBINARY/BLOB`, `UUID`, `HUGEINT`,

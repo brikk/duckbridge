@@ -41,7 +41,12 @@ class DuckBridgeExecutorFactory
                         "DuckBridgeExecutorFactory must not be used for the JDBC engine (no Arrow executor).",
                     )
                 DuckBridgeExecutionEngine.DUCKDB_LOCAL ->
-                    InProcessDuckBridgeExecutor(baseJdbcConfig.connectionUrl, tuning, localParityPathOrNull())
+                    InProcessDuckBridgeExecutor(
+                        baseJdbcConfig.connectionUrl,
+                        tuning,
+                        localParityPathOrNull(),
+                        config.isAllowUnsignedExtensions,
+                    )
                 DuckBridgeExecutionEngine.QUACK -> createQuackExecutor(tuning)
             }
         }
