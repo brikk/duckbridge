@@ -235,14 +235,27 @@ constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non
   build via the opt-in; the refusal message fires for unsigned + default config.
   README config table and embedded-transport paragraph updated.
 
-- [ ] **EV-C5 type-mapping coverage vs. claims** — `DuckBridgeClient.toColumnMapping`
-  (`:301-357`) maps no `TIMESTAMP WITH TIME ZONE`, `TIME`, `VARBINARY/BLOB`, `UUID`, `HUGEINT`,
-  or unsigned types (→ varchar or unsupported). Consequences: Tier C tstz pushdown is reachable
-  only via `with_timezone`/`from_unixtime`; the VARBINARY-shaped entries `md5/sha1/sha256`
-  (`:207-209`), `to_hex/from_hex` (`:177-178`), `to_base64/from_base64` (`:128-129`) are
-  effectively unreachable over table columns (no varbinary column, constant, or `CAST(.. AS
-  VARBINARY)` translates). Either add the mappings (with their own EV-B1 fixtures) or drop the
-  dead entries and correct the "~69 functions push" count in README/pushdown reference.
+- [x] **EV-C5 type-mapping coverage vs. claims** — **done.** `DuckBridgeScalarColumnMappings`
+  adds lossless JDBC mappings, verified embedded + Quack in both directions:
+  - BLOB→VARBINARY; TIMESTAMPTZ→`TIMESTAMP(6) WITH TIME ZONE` carrying the query session zone;
+    TIME→`TIME(6)`; TIMETZ→`TIME(6) WITH TIME ZONE`; UUID→UUID.
+  - UTINYINT→SMALLINT, USMALLINT→INTEGER, UINTEGER→BIGINT; UBIGINT→DECIMAL(20,0), including
+    quack-jdbc's signed-Long physical bits (`2^64-1` arrives as `-1`, decoded with
+    `Long.toUnsignedString`). Quack TIMETZ's packed DuckDB `dtime_tz_t` uint64 is decoded exactly;
+    embedded JDBC returns OffsetTime. Offset-second TIMETZ values fail loud (Trino stores minutes).
+  - HUGEINT/UHUGEINT deliberately remain unsupported: extrema require 39 digits, Trino DECIMAL max
+    is 38. The former ARRAY `HUGEINT→BIGINT` lossy mapping was removed; UBIGINT[] also remains out
+    because Quack's signed-long element cannot be distinguished from DECIMAL(20,0) in that mapper.
+  - Writes: VARBINARY, UUID, TIME/TIMETZ and TIMESTAMPTZ through precision 6; higher precision fails
+    loud. UUID/zoned temporal domain pushdown is disabled pending ordering/bind proofs.
+  - `TestDuckBridgeScalarTypes` proves native DuckDB→Trino reads, NULLs, Trino→DuckDB writes,
+    session-zone extraction above and below the scan, precision refusal, and that BLOB makes
+    `to_hex`/`to_base64` + MD5/SHA1/SHA256/SHA512/xxHash predicates fully pushable. Quack read/write
+    coverage is in `TestDuckBridgeQuackTransport`.
+
+  C5 exposed EV-E2 as a reachable concern: `hmac_sha256` is now explicitly TYPE_GATED OFF until the
+  extension rejects empty keys like Trino. The function remains catalogued for extension lockstep,
+  but no connector predicate can emit it meanwhile.
 
 - [ ] **EV-C6 hourglass timestamp precision** — `Types.TIMESTAMP` → `TIMESTAMP_MICROS`
   unconditionally (`DuckBridgeClient.kt:341-343`); DuckDB `TIMESTAMP_NS` columns are read
@@ -352,10 +365,11 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   `bundleParityExtension` picks them up on a non-linux-amd64 host).
 
 - [ ] **EV-E2 `trino_hmac_sha256` accepts an empty key** — Trino throws
-  `IllegalArgumentException: Empty key` for `hmac_sha256(data, X'')`; the extension returns a
-  digest (`hash_functions.cpp:55-108`). Error-vs-result. Currently unreachable through the
-  connector (no VARBINARY mapping, EV-C5), so low priority; fix in the extension by throwing
-  `InvalidInputException` on a zero-length key when the hashes become reachable.
+  `IllegalArgumentException: Empty key` for `hmac_sha256(data, X'')`; extension 0.3.0 returns a
+  digest (`hash_functions.cpp:55-108`). C5 makes VARBINARY columns reachable, so the connector now
+  TYPE_GATES HMAC OFF for every argument shape (a row-varying key cannot be proven non-empty).
+  Fix in the extension by throwing `InvalidInputException` on a zero-length key, publish the next
+  community build, then remove the gate and add the end-to-end hash predicate alongside the other five.
 
 - [ ] **EV-E3 Unicode-version skew** — the vendored ICU is 66.1 (Unicode 13,
   `duckdb/extension/icu/third_party/icu/common/unicode/uvernum.h:142`); Trino runs on the

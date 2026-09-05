@@ -13,6 +13,7 @@
  */
 package dev.brikk.duckbridge.trino.plugin
 
+import com.gizmodata.quack.jdbc.sql.QuackDriver
 import io.trino.testing.AbstractTestQueryFramework
 import io.trino.testing.QueryRunner
 import org.assertj.core.api.Assertions.assertThat
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import java.util.Properties
 
 /**
  * Stage 1 (T3) integration test: the duckbridge connector talking to a REAL remote DuckDB over the
@@ -65,11 +67,38 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
                 "(1, 'Alice', DATE '1990-05-01'), (2, 'bob', DATE '1985-12-30'), " +
                 "(3, 'straße', DATE '2000-02-29'), (4, 'δοκιμή', DATE '1970-01-01')",
         )
+        quackConnection().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute(
+                    """
+                    CREATE TABLE ${DuckBridgeQueryRunner.SCHEMA}.native_types (
+                        id BIGINT, b BLOB, tz TIMESTAMPTZ, tm TIME, tmz TIME WITH TIME ZONE,
+                        u UUID, ut UTINYINT, us USMALLINT, ui UINTEGER, ub UBIGINT,
+                        h HUGEINT, uh UHUGEINT
+                    )
+                    """.trimIndent(),
+                )
+                stmt.execute(
+                    """
+                    INSERT INTO ${DuckBridgeQueryRunner.SCHEMA}.native_types VALUES (
+                        1, unhex('00ff616263'),
+                        TIMESTAMPTZ '2024-03-01 07:03:04.123456 UTC',
+                        TIME '23:59:58.123456', TIMETZ '23:59:58.123456+05:30',
+                        UUID '123e4567-e89b-12d3-a456-426614174000',
+                        255, 65535, 4294967295, 18446744073709551615,
+                        170141183460469231731687303715884105727,
+                        340282366920938463463374607431768211455
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
     }
 
     @AfterAll
     fun tearDown() {
         computeActual("DROP TABLE IF EXISTS t")
+        computeActual("DROP TABLE IF EXISTS native_types")
         if (::server.isInitialized) {
             server.close()
         }
@@ -91,6 +120,78 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
         assertThat(row.getField(2).toString()).isEqualTo("2000-02-29")
         val count = computeActual("SELECT count(*) FROM t").materializedRows.single()
         assertThat(count.getField(0)).isEqualTo(4L)
+    }
+
+    @Test
+    fun nativeScalarTypesRoundTripOverQuack() {
+        val columns =
+            computeActual("SHOW COLUMNS FROM native_types").materializedRows
+                .associate { it.getField(0) as String to it.getField(1).toString() }
+        assertThat(columns).containsEntry("b", "varbinary")
+        assertThat(columns).containsEntry("tz", "timestamp(6) with time zone")
+        assertThat(columns).containsEntry("tm", "time(6)")
+        assertThat(columns).containsEntry("tmz", "time(6) with time zone")
+        assertThat(columns).containsEntry("u", "uuid")
+        assertThat(columns).containsEntry("ut", "smallint")
+        assertThat(columns).containsEntry("us", "integer")
+        assertThat(columns).containsEntry("ui", "bigint")
+        assertThat(columns).containsEntry("ub", "decimal(20,0)")
+        assertThat(columns).doesNotContainKeys("h", "uh")
+
+        val row =
+            computeActual(
+                """
+                SELECT to_hex(b), to_unixtime(tz), CAST(tm AS varchar), CAST(tmz AS varchar),
+                       CAST(u AS varchar), ut, us, ui, CAST(ub AS varchar)
+                FROM native_types
+                """.trimIndent(),
+            ).materializedRows.single()
+        assertThat(row.getField(0)).isEqualTo("00FF616263")
+        assertThat(row.getField(1)).isEqualTo(1709276584.123456)
+        assertThat(row.getField(2)).isEqualTo("23:59:58.123456")
+        assertThat(row.getField(3)).isEqualTo("23:59:58.123456+05:30")
+        assertThat(row.getField(4)).isEqualTo("123e4567-e89b-12d3-a456-426614174000")
+        assertThat((row.getField(5) as Number).toLong()).isEqualTo(255)
+        assertThat((row.getField(6) as Number).toLong()).isEqualTo(65535)
+        assertThat((row.getField(7) as Number).toLong()).isEqualTo(4294967295L)
+        assertThat(row.getField(8).toString()).isEqualTo("18446744073709551615")
+    }
+
+    @Test
+    fun nativeScalarWritesOverQuack() {
+        computeActual(
+            """
+            CREATE TABLE written_native (
+                id bigint, b varbinary, tz timestamp(6) with time zone,
+                tm time(6), tmz time(6) with time zone, u uuid
+            )
+            """.trimIndent(),
+        )
+        try {
+            computeActual(
+                """
+                INSERT INTO written_native VALUES (
+                    1, X'00FF616263', TIMESTAMP '2024-03-01 07:03:04.123456 UTC',
+                    TIME '23:59:58.123456', TIME '23:59:58.123456+05:30',
+                    UUID '123e4567-e89b-12d3-a456-426614174000'
+                )
+                """.trimIndent(),
+            )
+            val row =
+                computeActual(
+                    """
+                    SELECT to_hex(b), to_unixtime(tz), CAST(tm AS varchar), CAST(tmz AS varchar), CAST(u AS varchar)
+                    FROM written_native
+                    """.trimIndent(),
+                ).materializedRows.single()
+            assertThat(row.getField(0)).isEqualTo("00FF616263")
+            assertThat(row.getField(1)).isEqualTo(1709276584.123456)
+            assertThat(row.getField(2)).isEqualTo("23:59:58.123456")
+            assertThat(row.getField(3)).isEqualTo("23:59:58.123456+05:30")
+            assertThat(row.getField(4)).isEqualTo("123e4567-e89b-12d3-a456-426614174000")
+        } finally {
+            computeActual("DROP TABLE IF EXISTS written_native")
+        }
     }
 
     @Test
@@ -142,4 +243,11 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
         computeActual("EXPLAIN (TYPE DISTRIBUTED) $sql")
             .materializedRows
             .joinToString("\n") { it.getField(0).toString() }
+
+    private fun quackConnection(): java.sql.Connection {
+        val props = Properties()
+        props.setProperty("token", server.token)
+        return QuackDriver().connect(server.connectionUrl(), props)
+            ?: error("quack-jdbc returned no connection for ${server.connectionUrl()}")
+    }
 }

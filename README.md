@@ -94,6 +94,25 @@ Per-query **session properties** (override the catalog default): `string_pushdow
 SET SESSION duckdb.string_pushdown_mode = 'GUARDED';
 ```
 
+### Type mapping
+
+The production JDBC path maps DuckDB's scalar types losslessly as follows (embedded and Quack):
+
+| DuckDB | Trino | Notes |
+|---|---|---|
+| `BLOB` | `VARBINARY` | Exact bytes; enables real table-column hash pushdown. |
+| `TIMESTAMPTZ` | `TIMESTAMP(6) WITH TIME ZONE` | Instant preserved at microseconds; represented in the Trino query session zone. |
+| `TIME` | `TIME(6)` | Microsecond precision. |
+| `TIME WITH TIME ZONE` | `TIME(6) WITH TIME ZONE` | Exact for minute-aligned offsets; DuckDB offset-second values fail loud because Trino cannot represent them. |
+| `UUID` | `UUID` | Exact 128-bit UUID; domain pushdown remains disabled pending an ordering proof. |
+| `UTINYINT` / `USMALLINT` / `UINTEGER` | `SMALLINT` / `INTEGER` / `BIGINT` | Lossless widening. |
+| `UBIGINT` | `DECIMAL(20,0)` | Full unsigned 64-bit range, including Quack's signed-long wire representation. |
+| `HUGEINT` / `UHUGEINT` | unsupported | Their extrema need 39 digits; Trino `DECIMAL` stops at 38. Never truncated or coerced by default. |
+
+Writes support `VARBINARY`, `UUID`, and the temporal types through precision 6. Higher-precision
+time/timestamp-with-zone writes fail loud rather than truncate. `TIMESTAMP_NS` read handling remains
+tracked separately.
+
 ### Dynamic catalogs
 
 With Trino's dynamic catalog management enabled (`catalog.management=dynamic` in `config.properties`),

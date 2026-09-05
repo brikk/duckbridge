@@ -282,6 +282,11 @@ internal object DuckBridgeEmissionCatalog {
             gates[NameArity("concat_ws", arity)] = allVarchar
         }
 
+        // BLOB mapping (EV-C5) makes HMAC predicates reachable. Keep hmac_sha256 off until EV-E2 is
+        // fixed in the extension: Trino throws on an empty key while trino_hmac_sha256 currently
+        // returns a digest. A row-varying key cannot be proven non-empty at planning time.
+        gates[NameArity("hmac_sha256", 2)] = ArgTypeGate { _, _ -> false }
+
         // Regex (EV-A7, EV-A8): the pattern (arg 1) must be a constant that passes the RE2-safe
         // allowlist; regexp_replace/3's replacement (arg 2) must be a constant with no `$` or `\`
         // (Trino group refs are `$1`, RE2's are `\1` — a `$` would be emitted literally by DuckDB).

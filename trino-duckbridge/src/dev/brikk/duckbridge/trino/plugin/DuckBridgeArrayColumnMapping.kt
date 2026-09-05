@@ -32,6 +32,7 @@ import io.trino.spi.type.Decimals
 import io.trino.spi.type.DoubleType.DOUBLE
 import io.trino.spi.type.IntegerType.INTEGER
 import io.trino.spi.type.RealType.REAL
+import io.trino.spi.type.SmallintType.SMALLINT
 import io.trino.spi.type.Type
 import io.trino.spi.type.VarcharType
 import java.math.BigDecimal
@@ -83,7 +84,13 @@ object DuckBridgeArrayColumnMapping {
         return when (elementTypeName.uppercase()) {
             "BOOLEAN" -> BOOLEAN
             "TINYINT", "SMALLINT", "INTEGER", "INT" -> INTEGER
-            "BIGINT", "HUGEINT" -> BIGINT
+            "BIGINT" -> BIGINT
+            "UTINYINT" -> SMALLINT
+            "USMALLINT" -> INTEGER
+            "UINTEGER" -> BIGINT
+            // UBIGINT[] is also left unsupported: quack-jdbc exposes uint64 elements as signed
+            // Long bits, which cannot be distinguished here from a genuine DECIMAL(20,0) element.
+            // HUGEINT/UHUGEINT can need 39 digits; Trino DECIMAL stops at 38 — unsupported.
             "FLOAT", "REAL" -> REAL
             "DOUBLE" -> DOUBLE
             "VARCHAR", "TEXT" -> VarcharType.VARCHAR
@@ -115,19 +122,27 @@ object DuckBridgeArrayColumnMapping {
         when (elementType) {
             BOOLEAN -> BOOLEAN.writeBoolean(builder, element as Boolean)
             INTEGER -> INTEGER.writeLong(builder, (element as Number).toLong())
+            SMALLINT -> SMALLINT.writeLong(builder, (element as Number).toLong())
             BIGINT -> BIGINT.writeLong(builder, (element as Number).toLong())
             REAL -> REAL.writeLong(builder, java.lang.Float.floatToRawIntBits((element as Number).toFloat()).toLong())
             DOUBLE -> DOUBLE.writeDouble(builder, (element as Number).toDouble())
             is VarcharType -> elementType.writeSlice(builder, Slices.utf8Slice(element.toString()))
-            is DecimalType -> {
-                val value = (element as BigDecimal).setScale(elementType.scale)
-                if (elementType.isShort) {
-                    elementType.writeLong(builder, Decimals.encodeShortScaledValue(value, elementType.scale))
-                } else {
-                    elementType.writeObject(builder, Decimals.encodeScaledValue(value, elementType.scale))
-                }
-            }
+            is DecimalType -> appendDecimal(elementType, builder, element)
             else -> throw TrinoException(NOT_SUPPORTED, "Unsupported array element type: $elementType")
+        }
+    }
+
+    private fun appendDecimal(type: DecimalType, builder: BlockBuilder, element: Any) {
+        val value =
+            when (element) {
+                is BigDecimal -> element
+                is java.math.BigInteger -> element.toBigDecimal()
+                else -> BigDecimal(element.toString())
+            }.setScale(type.scale)
+        if (type.isShort) {
+            type.writeLong(builder, Decimals.encodeShortScaledValue(value, type.scale))
+        } else {
+            type.writeObject(builder, Decimals.encodeScaledValue(value, type.scale))
         }
     }
 

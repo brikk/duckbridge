@@ -298,6 +298,8 @@ class DuckBridgeClient
             if (forced.isPresent) {
                 return forced
             }
+            DuckBridgeScalarColumnMappings.byTypeName(typeHandle.jdbcTypeName().orElse(null), session.timeZoneKey)
+                ?.let { return Optional.of(it) }
             when (typeHandle.jdbcType()) {
                 Types.BOOLEAN -> return Optional.of(booleanColumnMapping())
                 Types.TINYINT -> return Optional.of(tinyintColumnMapping())
@@ -365,6 +367,7 @@ class DuckBridgeClient
         override fun toWriteMapping(session: ConnectorSession, type: Type): WriteMapping =
             simpleWriteMapping(type)
                 ?: parametricWriteMapping(type)
+                ?: DuckBridgeScalarColumnMappings.toWriteMapping(type)
                 ?: throw TrinoException(NOT_SUPPORTED, "Unsupported column type: ${type.displayName}")
 
         /** Fixed scalar types whose DuckDB type name carries no precision/scale/length. */

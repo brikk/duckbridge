@@ -24,34 +24,37 @@ needs doing.
 - **TIMESTAMP columns** map to DuckDB microsecond `TIMESTAMP` (`TIMESTAMP_MICROS`),
   read + write.
 - **DATE** read/write (string-rendered write with `CAST(? AS DATE)`).
+- **TIMESTAMPTZ columns** map losslessly to Trino `TIMESTAMP(6) WITH TIME ZONE`, carrying the
+  query session zone so above-scan extraction matches DuckDB below the scan. Read + write over
+  embedded and Quack; predicate domains disabled pending explicit-instant literal proof.
+- **TIME / TIME WITH TIME ZONE** map at microsecond precision in both directions. TIMETZ handles
+  embedded OffsetTime and Quack's packed uint64; offset-second values fail loud because Trino stores
+  offset minutes.
 
 ## Gaps (the remaining shizola)
 
-1. **`TIMESTAMP WITH TIME ZONE` columns are unmapped.** A DuckDB `TIMESTAMPTZ` column
-   falls to unsupported-type handling (error or convert-to-varchar). The DuckLake path
-   read these through its Arrow converter; the JDBC column-mapping equivalent
-   (instant-semantics ↔ Trino `TIMESTAMP(6) WITH TIME ZONE`) was never written.
-2. **`TIMESTAMP` precision > 6.** No write mapping for `TIMESTAMP(7..12)` (throws
+1. **`TIMESTAMP` precision > 6.** No write mapping for `TIMESTAMP(7..12)` (throws
    NOT_SUPPORTED); DuckDB `TIMESTAMP_NS` columns are not read. Decide: round/deny on
    write, map `TIMESTAMP_NS` → `TIMESTAMP(9)` on read.
-3. **`TIME` / `TIME WITH TIME ZONE`** — unmapped in both directions.
-4. **DST edge semantics** — the DuckLake suite had explicit coverage around DST
+2. **TIMESTAMPTZ domain literals** — domains are disabled for now. Before enabling, render
+   explicit UTC instants, never naive timestamps; see the Doris lesson below.
+3. **DST edge semantics** — the DuckLake suite had explicit coverage around DST
    gaps/overlaps for `date_trunc`/day-boundary functions over TIMESTAMPTZ; only part
    of that case matrix was ported into the translator tests. Re-audit against the old
    `TestDucklakeDatetime*` suites and port the missing cases.
-5. **Extreme dates** — DuckDB vs Trino range limits (year 294247 vs 9999 etc.) are
+4. **Extreme dates** — DuckDB vs Trino range limits (year 294247 vs 9999 etc.) are
    untested here; the domain path renders date literals via base-jdbc, verify the
    boundaries round-trip (or are refused) rather than wrap.
-6. **`from_unixtime`/`to_unixtime`/`with_timezone` zone-dependence** — parity fixtures
+5. **`from_unixtime`/`to_unixtime`/`with_timezone` zone-dependence** — parity fixtures
    cover them in UTC-ish zones; add exotic-zone fixtures (Kathmandu +05:45,
    Lord Howe +10:30/DST+11) to the drift/aliases test.
-7. **Arrow engine (`DUCKDB_LOCAL`) date/time coverage** — the Arrow→Page converter
+6. **Arrow engine (`DUCKDB_LOCAL`) date/time coverage** — the Arrow→Page converter
    handles the types the tests exercise; give it the same date/time matrix as the JDBC
    path before promoting it beyond benchmark status.
 
 ## Cross-pollination from the Doris side (2026-07-19)
 
-When gap 1 (TIMESTAMPTZ column mapping) is implemented, apply the lesson from
+When TIMESTAMPTZ domain pushdown is implemented, apply the lesson from
 `doris-duckbridge`'s P3/P6 probe (`REPORT-doris-timezone-probe.md` there): a
 NAIVE timestamp literal compared against a DuckDB `TIMESTAMPTZ` column is
 interpreted in the DuckDB session zone — zone-dependent rows. Domain literals
