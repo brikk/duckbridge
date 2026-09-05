@@ -253,9 +253,9 @@ constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non
     `to_hex`/`to_base64` + MD5/SHA1/SHA256/SHA512/xxHash predicates fully pushable. Quack read/write
     coverage is in `TestDuckBridgeQuackTransport`.
 
-  C5 exposed EV-E2 as a reachable concern: `hmac_sha256` is now explicitly TYPE_GATED OFF until the
-  extension rejects empty keys like Trino. The function remains catalogued for extension lockstep,
-  but no connector predicate can emit it meanwhile.
+  C5 exposed EV-E2 as a reachable concern, so `hmac_sha256` was TYPE_GATED OFF until extension
+  0.4.0 fixed empty-key behavior. EV-E2 is now done and the gate removed; embedded + Quack
+  end-to-end tests prove normal HMAC predicates push and empty-key rows fail remotely like Trino.
 
 - [ ] **EV-C6 hourglass timestamp precision** — `Types.TIMESTAMP` → `TIMESTAMP_MICROS`
   unconditionally (`DuckBridgeClient.kt:341-343`); DuckDB `TIMESTAMP_NS` columns are read
@@ -364,12 +364,15 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   locally (they are untracked; anyone else with an old checkout should do the same, or
   `bundleParityExtension` picks them up on a non-linux-amd64 host).
 
-- [ ] **EV-E2 `trino_hmac_sha256` accepts an empty key** — Trino throws
-  `IllegalArgumentException: Empty key` for `hmac_sha256(data, X'')`; extension 0.3.0 returns a
-  digest (`hash_functions.cpp:55-108`). C5 makes VARBINARY columns reachable, so the connector now
-  TYPE_GATES HMAC OFF for every argument shape (a row-varying key cannot be proven non-empty).
-  Fix in the extension by throwing `InvalidInputException` on a zero-length key, publish the next
-  community build, then remove the gate and add the end-to-end hash predicate alongside the other five.
+- [x] **EV-E2 `trino_hmac_sha256` accepts an empty key** — **fixed in extension 0.4.0 commit
+  `3d6b049`; community-extensions PR #2614.** `TrinoHmacSha256Fun` checks `key.GetSize()==0`
+  and throws `InvalidInputException("Empty key")` before RFC 2104 computation, matching Trino's
+  `SecretKeySpec` API contract. Empty data remains valid. Extension sqllogic pins normal vector,
+  empty data, empty-key error, binary-NUL key/message, >64-byte key hashing, and NULL propagation
+  (82/82; full Linux/macOS/Windows/Wasm + Format/Tidy matrix green, run 33933840257).
+  Connector submodule bumped; temporary TYPE_GATE removed. `TestPushdownSemanticFixtures` compares
+  Trino vs extension empty-key errors; `TestDuckBridgeScalarTypes` and Quack transport tests prove
+  column-key HMAC fully pushes and an empty-key row fails remotely with the same message.
 
 - [ ] **EV-E3 Unicode-version skew** — the vendored ICU is 66.1 (Unicode 13,
   `duckdb/extension/icu/third_party/icu/common/unicode/uvernum.h:142`); Trino runs on the

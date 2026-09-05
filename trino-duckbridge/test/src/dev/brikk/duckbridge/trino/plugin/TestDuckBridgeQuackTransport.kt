@@ -72,7 +72,7 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
                 stmt.execute(
                     """
                     CREATE TABLE ${DuckBridgeQueryRunner.SCHEMA}.native_types (
-                        id BIGINT, b BLOB, tz TIMESTAMPTZ, tm TIME, tmz TIME WITH TIME ZONE,
+                        id BIGINT, b BLOB, key BLOB, tz TIMESTAMPTZ, tm TIME, tmz TIME WITH TIME ZONE,
                         u UUID, ut UTINYINT, us USMALLINT, ui UINTEGER, ub UBIGINT,
                         h HUGEINT, uh UHUGEINT
                     )
@@ -81,7 +81,7 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
                 stmt.execute(
                     """
                     INSERT INTO ${DuckBridgeQueryRunner.SCHEMA}.native_types VALUES (
-                        1, unhex('00ff616263'),
+                        1, unhex('00ff616263'), unhex('6b6579'),
                         TIMESTAMPTZ '2024-03-01 07:03:04.123456 UTC',
                         TIME '23:59:58.123456', TIMETZ '23:59:58.123456+05:30',
                         UUID '123e4567-e89b-12d3-a456-426614174000',
@@ -191,6 +191,26 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
             assertThat(row.getField(4)).isEqualTo("123e4567-e89b-12d3-a456-426614174000")
         } finally {
             computeActual("DROP TABLE IF EXISTS written_native")
+        }
+    }
+
+    @Test
+    fun hmacPushdownOverQuackRejectsEmptyKeysLikeTrino() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(parityAvailable, "parity extension not available")
+        val expected = computeActual("SELECT to_hex(hmac_sha256(X'00FF616263', X'6B6579'))").onlyValue
+        val goodSql = "SELECT id FROM native_types WHERE to_hex(hmac_sha256(b, key)) = '$expected'"
+        assertThat(explain(goodSql)).doesNotContain("filterPredicate")
+        assertThat(computeActual(goodSql).onlyValue).isEqualTo(1L)
+
+        // Write the empty key through the new BLOB mapping, then prove the same column-key predicate
+        // remains fully pushed and fails remotely with Trino's message.
+        computeActual("INSERT INTO native_types (id, b, key) VALUES (2, X'64617461', X'')")
+        try {
+            val emptyKeySql = "SELECT id FROM native_types WHERE to_hex(hmac_sha256(b, key)) = '00'"
+            assertThat(explain(emptyKeySql)).doesNotContain("filterPredicate")
+            assertQueryFails(emptyKeySql, ".*Empty key.*")
+        } finally {
+            computeActual("DELETE FROM native_types WHERE id = 2")
         }
     }
 

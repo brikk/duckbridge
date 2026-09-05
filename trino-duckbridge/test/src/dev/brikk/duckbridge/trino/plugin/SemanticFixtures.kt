@@ -506,8 +506,13 @@ object SemanticFixtures {
                     )
                 }
             }
-            // hmac_sha256 with an EMPTY key: Trino errors ("Empty key"), the extension returns a digest —
-            // EV-E2, open in the extension repo; add the fixture back when it lands.
+            add(
+                fx(
+                    "hmac_sha256", 2, "empty key: both error (EV-E2)", call("hmac_sha256", VARCHAR, str(""), str("")),
+                    wrapBoth = { "to_hex($it)" }, trinoSql = "hmac_sha256(from_hex('61'), from_hex(''))",
+                    duckSqlOverride = "trino_hmac_sha256(unhex('61'), unhex(''))",
+                ),
+            )
         }
 
     // ---- builders ----------------------------------------------------------------------------

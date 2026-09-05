@@ -209,6 +209,9 @@ class TestDuckBridgeScalarTypes {
         val sha256 = queryRunner.execute("SELECT to_hex(sha256(X'00FF616263'))").materializedRows.single().getField(0)
         val sha512 = queryRunner.execute("SELECT to_hex(sha512(X'00FF616263'))").materializedRows.single().getField(0)
         val xxhash = queryRunner.execute("SELECT to_hex(xxhash64(X'00FF616263'))").materializedRows.single().getField(0)
+        val hmac =
+            queryRunner.execute("SELECT to_hex(hmac_sha256(X'00FF616263', X'6B6579'))")
+                .materializedRows.single().getField(0)
         assertFullyPushed("SELECT id FROM native_scalars WHERE to_hex(b) = '00FF616263'")
         assertFullyPushed("SELECT id FROM native_scalars WHERE to_base64(b) = 'AP9hYmM='")
         assertFullyPushed("SELECT id FROM native_scalars WHERE to_hex(md5(b)) = '$md5'")
@@ -216,7 +219,19 @@ class TestDuckBridgeScalarTypes {
         assertFullyPushed("SELECT id FROM native_scalars WHERE to_hex(sha256(b)) = '$sha256'")
         assertFullyPushed("SELECT id FROM native_scalars WHERE to_hex(sha512(b)) = '$sha512'")
         assertFullyPushed("SELECT id FROM native_scalars WHERE to_hex(xxhash64(b)) = '$xxhash'")
-        assertNotPushed("SELECT id FROM native_scalars WHERE to_hex(hmac_sha256(b, key)) = '00'", "hmac_sha256")
+        assertFullyPushed("SELECT id FROM native_scalars WHERE to_hex(hmac_sha256(b, key)) = '$hmac'")
+
+        queryRunner.execute("INSERT INTO native_scalars (id, b, key) VALUES (3, X'64617461', X'')")
+        try {
+            val emptyKeySql = "SELECT id FROM native_scalars WHERE to_hex(hmac_sha256(b, key)) = '00'"
+            val plan =
+                queryRunner.execute("EXPLAIN (TYPE DISTRIBUTED) $emptyKeySql")
+                    .materializedRows.joinToString("\n") { it.getField(0).toString() }
+            assertThat(plan).doesNotContain("filterPredicate")
+            assertThatThrownBy { queryRunner.execute(emptyKeySql) }.hasMessageContaining("Empty key")
+        } finally {
+            queryRunner.execute("DELETE FROM native_scalars WHERE id = 3")
+        }
     }
 
     @Test
@@ -252,15 +267,6 @@ class TestDuckBridgeScalarTypes {
             queryRunner.execute("EXPLAIN (TYPE DISTRIBUTED) $sql")
                 .materializedRows.joinToString("\n") { it.getField(0).toString() }
         assertThat(plan).`as`("hash predicate should be in the remote TableScan").doesNotContain("filterPredicate")
-    }
-
-    private fun assertNotPushed(sql: String, function: String) {
-        val plan =
-            queryRunner.execute("EXPLAIN (TYPE DISTRIBUTED) $sql")
-                .materializedRows.joinToString("\n") { it.getField(0).toString() }
-        assertThat(plan)
-            .`as`("%s must remain in Trino until EV-E2 is fixed", function)
-            .contains("filterPredicate")
     }
 
     private fun session(zone: String): io.trino.Session =
