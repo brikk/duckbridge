@@ -33,9 +33,12 @@ needs doing.
 
 ## Gaps (the remaining shizola)
 
-1. **`TIMESTAMP` precision > 6.** No write mapping for `TIMESTAMP(7..12)` (throws
-   NOT_SUPPORTED); DuckDB `TIMESTAMP_NS` columns are not read. Decide: round/deny on
-   write, map `TIMESTAMP_NS` → `TIMESTAMP(9)` on read.
+1. **`TIMESTAMP` precision > 6.** **Decision implemented (EV-C6): fail closed.** DuckDB JDBC
+   1.5.5 truncates `TIMESTAMP_NS` to microseconds through LocalDateTime, Timestamp *and getString*,
+   so a Trino `TIMESTAMP(9)` mapping cannot be honest. `TIMESTAMP_NS` columns are omitted regardless
+   of generic convert-to-varchar policy; writes at precision 7..12 throw NOT_SUPPORTED. Revisit only
+   when the pinned JDBC driver exposes all 9 digits. `TIMESTAMP_S`/`TIMESTAMP_MS` now map exactly to
+   Trino precision 0/3; ordinary TIMESTAMP remains precision 6.
 2. **TIMESTAMPTZ domain literals** — domains are disabled for now. Before enabling, render
    explicit UTC instants, never naive timestamps; see the Doris lesson below.
 3. **DST edge semantics** — the DuckLake suite had explicit coverage around DST

@@ -23,6 +23,7 @@ import io.trino.plugin.jdbc.SliceWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.longDecimalWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.timeReadFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.timeWriteFunction
+import io.trino.plugin.jdbc.StandardColumnMappings.timestampColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.varbinaryColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.varbinaryWriteFunction
 import io.trino.plugin.jdbc.WriteMapping
@@ -43,6 +44,8 @@ import io.trino.spi.type.TimeWithTimeZoneType
 import io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS
 import io.trino.spi.type.TimestampWithTimeZoneType
 import io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MICROS
+import io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS
+import io.trino.spi.type.TimestampType.TIMESTAMP_SECONDS
 import io.trino.spi.type.Type
 import io.trino.spi.type.UuidType
 import io.trino.spi.type.UuidType.UUID
@@ -77,6 +80,8 @@ internal object DuckBridgeScalarColumnMappings {
     fun byTypeName(typeName: String?, sessionZone: io.trino.spi.type.TimeZoneKey): ColumnMapping? =
         when (typeName?.uppercase()) {
             "BLOB" -> varbinaryColumnMapping()
+            "TIMESTAMP_S" -> timestampColumnMapping(TIMESTAMP_SECONDS)
+            "TIMESTAMP_MS" -> timestampColumnMapping(TIMESTAMP_MILLIS)
             "TIMESTAMP WITH TIME ZONE", "TIMESTAMPTZ" -> timestampWithTimeZoneMapping(sessionZone)
             "TIME" ->
                 ColumnMapping.longMapping(
@@ -93,6 +98,15 @@ internal object DuckBridgeScalarColumnMappings {
             "UBIGINT" -> unsignedBigintMapping()
             // HUGEINT/UHUGEINT: no lossless Trino primitive; leave to configured unsupported handling.
             else -> null
+        }
+
+    /** Types the current JDBC drivers cannot expose losslessly and must never hit a generic mapping. */
+    fun isLossyUnsupported(typeName: String?): Boolean =
+        when (typeName?.uppercase()) {
+            // duckdb_jdbc 1.5.5 truncates TIMESTAMP_NS to micros through getObject, getTimestamp AND
+            // getString; labelling that value TIMESTAMP(9) or TIMESTAMP(6) would silently lose data.
+            "TIMESTAMP_NS" -> true
+            else -> false
         }
 
     /** Write mapping for the same lossless Trino shapes. DuckDB stores temporal values at micros. */

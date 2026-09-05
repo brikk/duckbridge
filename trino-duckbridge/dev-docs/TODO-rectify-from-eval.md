@@ -257,9 +257,16 @@ constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non
   0.4.0 fixed empty-key behavior. EV-E2 is now done and the gate removed; embedded + Quack
   end-to-end tests prove normal HMAC predicates push and empty-key rows fail remotely like Trino.
 
-- [ ] **EV-C6 hourglass timestamp precision** — `Types.TIMESTAMP` → `TIMESTAMP_MICROS`
-  unconditionally (`DuckBridgeClient.kt:341-343`); DuckDB `TIMESTAMP_NS` columns are read
-  truncated. Low priority; document or map by type name.
+- [x] **EV-C6 timestamp precision** — **done, fail closed based on live JDBC probe.** DuckDB
+  JDBC 1.5.5 reports TIMESTAMP_NS by type name but returns `.987654321` as `.987654` through
+  `getObject(LocalDateTime)`, `java.sql.Timestamp`, and `getString`; mapping it to Trino
+  `TIMESTAMP(9)` would merely label already-lost data as nanosecond-precise, while falling through
+  to the old generic `TIMESTAMP_MICROS` path silently truncated it. `DuckBridgeScalarColumnMappings`
+  now identifies `TIMESTAMP_NS` as lossy-unsupported and `DuckBridgeClient` returns no mapping even
+  under generic CONVERT_TO_VARCHAR (the driver truncates that string too). It maps TIMESTAMP_S and
+  TIMESTAMP_MS exactly to Trino TIMESTAMP(0)/(3); ordinary TIMESTAMP remains (6). Writes above
+  precision 6 continue to fail loud. `TestDuckBridgeScalarTypes` pins all three outcomes using an
+  inserted `.987654321` value (`TIMESTAMP_S` rounds to next second, MS to `.988`, NS omitted).
 
 ## D. Build / hygiene
 

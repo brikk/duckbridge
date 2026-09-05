@@ -109,9 +109,13 @@ The production JDBC path maps DuckDB's scalar types losslessly as follows (embed
 | `UBIGINT` | `DECIMAL(20,0)` | Full unsigned 64-bit range, including Quack's signed-long wire representation. |
 | `HUGEINT` / `UHUGEINT` | unsupported | Their extrema need 39 digits; Trino `DECIMAL` stops at 38. Never truncated or coerced by default. |
 
-Writes support `VARBINARY`, `UUID`, and the temporal types through precision 6. Higher-precision
-time/timestamp-with-zone writes fail loud rather than truncate. `TIMESTAMP_NS` read handling remains
-tracked separately.
+`TIMESTAMP_S` / `TIMESTAMP_MS` read as Trino `TIMESTAMP(0)` / `TIMESTAMP(3)`; ordinary DuckDB
+`TIMESTAMP` reads as `TIMESTAMP(6)`. `TIMESTAMP_NS` is deliberately unsupported on the production
+JDBC path: DuckDB JDBC 1.5.5 truncates it to microseconds through `getObject`, `getTimestamp`, and
+even `getString`, so no connector mapping can recover the nanoseconds. It is omitted rather than
+silently mislabeled as `TIMESTAMP(9)` or `TIMESTAMP(6)`, even under generic convert-to-varchar mode.
+Writes support `VARBINARY`, `UUID`, and temporal types through precision 6; higher precision fails
+loud rather than truncate.
 
 ### Dynamic catalogs
 

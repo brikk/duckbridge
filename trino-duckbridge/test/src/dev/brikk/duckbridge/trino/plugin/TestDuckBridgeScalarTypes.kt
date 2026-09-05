@@ -56,6 +56,15 @@ class TestDuckBridgeScalarTypes {
                     """.trimIndent(),
                 )
                 stmt.execute(
+                    "CREATE TABLE ${DuckBridgeQueryRunner.SCHEMA}.timestamp_precision " +
+                        "(s TIMESTAMP_S, ms TIMESTAMP_MS, ns TIMESTAMP_NS)",
+                )
+                stmt.execute(
+                    "INSERT INTO ${DuckBridgeQueryRunner.SCHEMA}.timestamp_precision VALUES " +
+                        "(TIMESTAMP '2024-01-02 03:04:05.987654321', " +
+                        "TIMESTAMP '2024-01-02 03:04:05.987654321', TIMESTAMP '2024-01-02 03:04:05.987654321')",
+                )
+                stmt.execute(
                     "INSERT INTO ${DuckBridgeQueryRunner.SCHEMA}.native_scalars " +
                         "VALUES (2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)",
                 )
@@ -259,6 +268,21 @@ class TestDuckBridgeScalarTypes {
         assertThatThrownBy {
             queryRunner.execute("CREATE TABLE too_precise_time (v time(9))")
         }.hasMessageContaining("Unsupported column type: time(9)")
+    }
+
+    @Test
+    fun timestampVariantsExposeOnlyThePrecisionJdbcCanPreserve() {
+        val columns =
+            queryRunner.execute("SHOW COLUMNS FROM timestamp_precision").materializedRows
+                .associate { it.getField(0) as String to it.getField(1).toString() }
+        assertThat(columns).containsEntry("s", "timestamp(0)")
+        assertThat(columns).containsEntry("ms", "timestamp(3)")
+        assertThat(columns).doesNotContainKey("ns")
+
+        val row = queryRunner.execute("SELECT s, ms FROM timestamp_precision").materializedRows.single()
+        // DuckDB TIMESTAMP_S rounds the inserted fractional value; TIMESTAMP_MS rounds to millis.
+        assertThat(row.getField(0).toString()).isEqualTo("2024-01-02T03:04:06")
+        assertThat(row.getField(1).toString()).isEqualTo("2024-01-02T03:04:05.988")
     }
 
     private fun assertFullyPushed(sql: String) {
