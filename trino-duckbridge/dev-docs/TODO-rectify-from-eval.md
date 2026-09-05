@@ -365,7 +365,7 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   `bundleParityExtension` picks them up on a non-linux-amd64 host).
 
 - [x] **EV-E2 `trino_hmac_sha256` accepts an empty key** — **fixed in extension 0.4.0 commit
-  `3d6b049`; final release ref `e93c6b7`; community-extensions PR #2614.**
+  `3d6b049`; final release ref `0059004`; community-extensions PR #2614.**
   `TrinoHmacSha256Fun` checks `key.GetSize()==0`
   and throws `InvalidInputException("Empty key")` before RFC 2104 computation, matching Trino's
   `SecretKeySpec` API contract. Empty data remains valid. Extension sqllogic pins normal vector,
@@ -374,9 +374,12 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   Connector submodule bumped; temporary TYPE_GATE removed. `TestPushdownSemanticFixtures` compares
   Trino vs extension empty-key errors; `TestDuckBridgeScalarTypes` and Quack transport tests prove
   column-key HMAC fully pushes and an empty-key row fails remotely with the same message.
-  The community PR's DuckDB-latest job exposed a retained sentinel-only scalar `DefaultMacro` array
-  and no-op loader from before the 0.2 native-function shrink. Final ref `e93c6b7` removes that dead
-  API surface (no version shim); `trino_meta()` remains on its separate table-macro path.
+  The community PR's DuckDB-latest jobs exposed two latent contract issues: (1) a retained
+  sentinel-only scalar `DefaultMacro` array and no-op loader from before the 0.2 native-function
+  shrink — `e93c6b7` removes that dead API surface (no version shim; `trino_meta()` remains on its
+  table-macro path); (2) the now-runtime-throwing HMAC scalar was not declared fallible — `0059004`
+  calls `SetFallible()` (API already present in pinned v1.5.5), so latest reports `Empty key` as the
+  intended query error rather than an internal contract violation.
 
 - [ ] **EV-E3 Unicode-version skew** — the vendored ICU is 66.1 (Unicode 13,
   `duckdb/extension/icu/third_party/icu/common/unicode/uvernum.h:142`); Trino runs on the
