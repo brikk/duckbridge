@@ -270,17 +270,23 @@ constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non
 
 ## D. Build / hygiene
 
-- [ ] **EV-D1 dead Arrow pin** — `gradle/libs.versions.toml` pins `arrow = "18.3.0"` and
-  imports `arrow-bom`, but the Trino BOM forces Arrow 19.0.0 (seen in the offline-resolution
-  failure). Drop the catalog pin/`arrow-bom` platform or make it authoritative; don't leave a
-  pin that isn't the version shipped.
+- [x] **EV-D1 dead Arrow pin** — **done.** `dependencyInsight` proved Trino 483's BOM selects
+  Arrow 19.0.0 by constraint/conflict resolution while the local Arrow 18.3 BOM only contributed
+  losing 18.3 constraints. Removed `versions.arrow`, `libraries.arrow-bom`, and the second platform
+  import; unversioned Arrow modules now have one authority (Trino BOM). Build comment records the
+  resolved 19.0.0 contract and why a second BOM must not return.
 
-- [ ] **EV-D2 stale comments** — `gradle.properties` refers to `trino-ducklake`;
-  `DuckBridgeExpressionTranslator.kt:218` comment ("0..999") is wrong (EV-A1).
+- [x] **EV-D2 stale comments** — **done.** `gradle.properties` now names this module and its actual
+  test-heap configuration; the copied `trino-ducklake` Arrow comment in `build.gradle.kts` was
+  replaced with the current execution-engine/Lance/Vortex purpose. The `millisecond` comment was
+  corrected with EV-A1 (`extract('millisecond')` is sub-minute; `% 1000` yields 0..999).
 
-- [ ] **EV-D3 `--offline` build unusable after a warm online build** — arrow 19 /
-  `opentelemetry-jdbc` artifacts weren't cached because they resolve only through the Trino BOM
-  at task time. Minor; note in the dev-docs build section or pre-resolve in CI.
+- [x] **EV-D3 offline build** — **closed as a partial-cache diagnosis, not a workaround.** The
+  original `--offline` run named Arrow 19 and opentelemetry-jdbc artifacts absent from that machine's
+  cache; offline mode correctly refuses to fetch them. After the same compile/detekt task graph was
+  resolved online, the identical command succeeds offline. README now states the honest contract:
+  warm the exact task graph/toolchain online first; a fresh/partial cache fails with the missing
+  artifacts, and network-backed Lance/Vortex extension tests remain separately conditional.
 
 ## E. `trino_parity` extension natives (the 10 `Emission.Alias` entries)
 

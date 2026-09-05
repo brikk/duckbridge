@@ -57,10 +57,10 @@ dependencies {
     // element-type fix). No runtime deps of its own (uses JDK 17 HttpClient). Selected by
     // connection-url prefix (jdbc:quack://...) alongside the embedded DuckDB driver.
     implementation(libs.quack.jdbc)
-    // Arrow — the T2 (execution-engine) data plane decodes DuckDB's arrowExportStream batches to
-    // Trino Pages via DuckBridgeArrowToPageConverter. Also feeds P5's lance PTFs later. Copied from
-    // the trino-ducklake dependency block.
-    implementation(platform(libs.arrow.bom))
+    // Arrow — the experimental execution-engine data plane decodes DuckDB's arrowExportStream
+    // batches to Trino Pages via DuckBridgeArrowToPageConverter and feeds Lance/Vortex functions.
+    // Versions come solely from the Trino 483 BOM (currently Arrow 19.0.0). Do not add a second,
+    // losing Arrow BOM: the former 18.3.0 pin was silently conflict-resolved to 19.0.0 (EV-D1).
     implementation(libs.arrow.vector)
     implementation(libs.arrow.memory.core)
     implementation(libs.arrow.data)

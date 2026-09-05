@@ -282,6 +282,19 @@ use.
 ./gradlew :trino-duckbridge:detekt
 ```
 
+Dependency versions provided by Trino (including Arrow 19 for Trino 483) come from the Trino BOM;
+`gradle/libs.versions.toml` only pins dependencies this project owns independently. An offline build
+is supported after the exact task graph has been resolved online at least once:
+
+```sh
+./gradlew :trino-duckbridge:compileTestKotlin :trino-duckbridge:detekt
+./gradlew --offline :trino-duckbridge:compileTestKotlin :trino-duckbridge:detekt
+```
+
+`--offline` never downloads missing artifacts or JDK toolchains; on a fresh/partial Gradle cache it
+fails and names what must first be resolved online. Network-backed Lance/Vortex tests have their own
+availability assumptions and are not made hermetic by Gradle's offline flag.
+
 ## Parity extension
 
 The `trino_parity` extension is published on the DuckDB
