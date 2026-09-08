@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`1731787677f` (2026-08-25, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`2be8fba29d7` (2026-09-07, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,8 +35,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `1731787677f0199ccdb4fe6318f9116310627c52`
-> - **subject** = `[chore](lance) update lance version to tag 0.1.7 (#67115)`
+> - **`PIN_SHA`** = `2be8fba29d7180f8bb153135d397ed2bda4254fa`
+> - **subject** = `[improvement](snapshot) Add snapshot retained analysis interface (#67616)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
@@ -86,13 +86,16 @@ all.)
   the local repo maven *reads* from, so transitive deps land there too — fine, gradle sources only
   `org.apache.doris` from it).
 - **Parallelism:** `-T` = `min(nproc, 8)` (override with `MAVEN_JOBS`, hard-capped at 8).
-- **thrift codegen:** `fe-thrift` generates Java from `.thrift` IDL with **thrift 0.16.0**
-  (generator `java:fullcamel`). The `thrift-maven-plugin` (0.10.0) does **not** download a binary —
-  it needs an executable. The script probes, in order: `$DORIS_THRIFT`, `thrift` on `$PATH`,
+- **thrift codegen:** `fe-thrift` generates Java from `.thrift` IDL with the version pinned in
+  `fe/pom.xml` (**0.24.0 at this pin**, upgraded from 0.16.0 by #65990; generator
+  `java:fullcamel,generated_annotations=suppress`). The `thrift-maven-plugin` does **not** download
+  a binary — it needs an executable. The script reads the required version, then probes in order:
+  `$DORIS_THRIFT`, `thrift` on `$PATH`,
   `$DORIS_THIRDPARTY/installed/bin/thrift`, then the cache clone's own
-  `thirdparty/installed/bin/thrift`; the first that reports `0.16.x` wins. If none is found it
-  **fails loud** with install instructions (`DORIS_THRIFT=…`, or install 0.16.0, or run the Doris
-  thirdparty build). It passes the chosen binary via `-Ddoris.thrift.executable=…`.
+  `thirdparty/installed/bin/thrift`; the first exact version match wins. If none is found it
+  **fails loud** with install instructions (`DORIS_THRIFT=…`, install the pinned version, or run the Doris
+  thirdparty build). It requires an exact version match and passes the chosen binary via
+  `-Ddoris.thrift.executable=…`.
 
 ---
 
@@ -167,6 +170,35 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-09-08 — re-vendor to apache/doris `master` `2be8fba29d7`** (subject:
+  *"[improvement](snapshot) Add snapshot retained analysis interface (#67616)"*; +134 commits over
+  `1731787677f`). **Two required tool/stamp changes; zero connector source changes.**
+  - **Plugin API major 6→7** via #67182 (`ConnectorCapability` adds
+    `SUPPORTS_STORAGE_PREDICATE_PRUNING`; its javadoc explicitly says row/JDBC connectors must NOT
+    claim it). Bumped `Doris-Connector-Plugin-Api-Version` to 7.0; rebuilt SPI resource reports
+    `api.version=7.0`. No interface method/signature used by duckbridge changed.
+  - **Thrift 0.16→0.24** via #65990. `tools/doris-baseline.sh` now reads `<thrift.version>` from
+    the pinned `fe/pom.xml` instead of hardcoding 0.16 and requires an exact matching compiler.
+    Rebuilt project-local SPI/thrift jars with the static thrift 0.24.0 from
+    `apache/doris:build-env-ldb-toolchain-latest` (reactor green, 23.9s).
+  - **BE patch unchanged and clean:** no upstream jdbc-scanner source changed in the 134-commit
+    window; no upstream `DuckDbTypeHandler`; `git apply --3way --check` clean. Module gate green:
+    62 tests + detekt + jar/pluginZip; manifest stamp 7.0.
+  - **Relevant upstream delta audited:** connector SPI only the capability enum + package docs;
+    metadata-cache framework refactor does not touch duckbridge (it owns no shared cache); Lance
+    0.1.7→0.1.9; Arrow/thrift build fixes; datetime/Arrow behavior fixes. No source adaptation.
+  - **Stock 4.1.4 check:** pre-release `4.1.4-rc04` (`e5ae5ab9d04`) still has neither
+    `fe/fe-connector/fe-connector-spi` nor the new `JdbcJniScanner`/`JdbcTypeHandlerFactory`; our BE
+    patch target does not exist. Despite useful TIMESTAMPTZ/Arrow/JDBC fixes in its release notes,
+    stock 4.1.4 cannot load or execute Route J. Master remains the only compatibility lane.
+  - **Live smoke GREEN on exact-pin FE+BE.** Built FE and BE from `2be8fba` in Doris's build-env
+    (FE required `-j1` after an initial host-memory kill; BE resumed on root disk after `/tmp` tmpfs
+    filled at 13,237/13,380 objects). Full images + current patched scanner: API-7 plugin load,
+    pristine-FE catalog routing, metadata, HUGEINT→LARGEINT, ARRAY/unicode decode, predicate/count,
+    P1 function pushdown, explicit-UTC TIMESTAMPTZ, and 20 sequential + 8 concurrent scans all green;
+    stack torn down. A first attempt to thin-overlay the current scanner onto Sep-2 BE `952bfc` crashed
+    during JNI startup (java-common/native mismatch), proving the stale BE base was no longer valid.
 
 - **2026-08-25 — re-vendor to apache/doris `master` `1731787677f`** (subject: *"[chore](lance) update
   lance version to tag 0.1.7 (#67115)"*). **Non-breaking except one required stamp bump.** Tracks the

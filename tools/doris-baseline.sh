@@ -5,7 +5,7 @@
 # Per PLAN-doris-duckbridge.md §Managing the Doris patches (item 3): there is NO Doris submodule
 # in this repo (a full clone is multi-GB). Instead this script:
 #   1. reads the pin from doris-patches/BASELINE (single source of truth);
-#   2. clones/fetches the brikk/doris fork at that pin into a cache dir;
+#   2. clones/fetches apache/doris master at that pin into a cache dir;
 #   3. `git apply --3way --check` each patch, then (with --apply) applies them, failing loud with
 #      the offending file+hunk on drift;
 #   4. optional, opt-in: --build-fe / --build-be / --install-spi-jars (JDK 17 required).
@@ -65,21 +65,21 @@ Usage: tools/doris-baseline.sh [options]
   --install-spi-jars  CANONICAL BOOTSTRAP. `mvn install` the fe-connector-spi + fe-thrift
                       SPI jars (built from OUR pin) into the project-local repo
                       doris-duckbridge/doris-m2/, which gradle resolves from. Implies --apply.
-                      JDK 17 + a thrift 0.16.x executable required (see DORIS_THRIFT).
+                      JDK 17 + the thrift version pinned in fe/pom.xml required (see DORIS_THRIFT).
   -h, --help          this help.
 
 Env:
   DORIS_SRC     cache checkout dir (default: ~/.cache/duckbridge/doris)
   JAVA_HOME     must point at a JDK 17 for the build/install steps (Doris FE toolchain).
   MVN           mvn command for --install-spi-jars (default: mvn on PATH).
-  DORIS_THRIFT  path to a thrift 0.16.x executable for fe-thrift codegen. If unset, the script
+  DORIS_THRIFT  path to a thrift executable matching fe/pom.xml's <thrift.version>. If unset, the script
                 probes: $PATH `thrift`, then $DORIS_THIRDPARTY/installed/bin/thrift, then the
                 cache clone's own thirdparty/installed/bin/thrift. Fails with install
-                instructions if none is a usable 0.16.x.
+                instructions if none matches fe/pom.xml exactly.
   MAVEN_JOBS    parallel maven jobs for --install-spi-jars (default: min(nproc, 8), capped at 8).
 
-Pin is read from doris-patches/BASELINE. The fork mirror keeps the pinned SHA alive even after
-upstream branch-catalog-spi rebases/GCs it — see doris-patches/PATCHES.md.
+Pin is read from doris-patches/BASELINE. It is a commit on apache/doris master; see
+doris-patches/PATCHES.md.
 USAGE
 }
 
@@ -228,16 +228,17 @@ build_doris() {
     ( cd "${DORIS_SRC}" && DISABLE_BUILD_UI=ON ./build.sh "${targets[@]}" -j "${jobs}" )
 }
 
-# Locate a usable thrift 0.16.x executable for fe-thrift codegen, echoing its path on stdout.
+# Locate a thrift executable matching fe/pom.xml's <thrift.version>, echoing its path on stdout.
 # fe-thrift's thrift-maven-plugin (0.10.0) does NOT download a thrift binary — it requires an
-# executable, and Doris pins thrift 0.16.0 (generator java:fullcamel). Probe order:
+# executable; the required version is read from the pinned Doris checkout (generator java:fullcamel).
+# Probe order:
 #   1. $DORIS_THRIFT (explicit override)
 #   2. `thrift` on $PATH
 #   3. $DORIS_THIRDPARTY/installed/bin/thrift (a doris thirdparty build)
 #   4. the cache clone's own thirdparty/installed/bin/thrift (if a thirdparty build ran there)
-# Fails loud with install instructions if none is a usable 0.16.x.
+# Fails loud with install instructions if none matches exactly.
 detect_thrift() {
-    local candidates=() c ver
+    local required="$1" candidates=() c ver
     [ -n "${DORIS_THRIFT:-}" ] && candidates+=("${DORIS_THRIFT}")
     command -v thrift >/dev/null 2>&1 && candidates+=("$(command -v thrift)")
     [ -n "${DORIS_THIRDPARTY:-}" ] && candidates+=("${DORIS_THIRDPARTY}/installed/bin/thrift")
@@ -246,23 +247,19 @@ detect_thrift() {
     for c in "${candidates[@]}"; do
         [ -x "${c}" ] || continue
         ver="$("${c}" --version 2>/dev/null || true)"
-        case "${ver}" in
-            *0.16.*) printf '%s' "${c}"; return 0 ;;
-        esac
+        case "${ver}" in *"${required}"*) printf '%s' "${c}"; return 0 ;; esac
     done
 
     cat >&2 <<THRIFT_HELP
-error: no usable thrift 0.16.x executable found for fe-thrift codegen.
+error: no thrift ${required} executable found for fe-thrift codegen.
 
-Doris fe-thrift generates Java from .thrift IDL using thrift 0.16.0 (the thrift-maven-plugin does
+Doris fe-thrift generates Java from .thrift IDL using thrift ${required} (read from the pinned
+fe/pom.xml; the thrift-maven-plugin does
 NOT download a binary). Provide one of:
 
-  * Set DORIS_THRIFT=/path/to/thrift   (a thrift 0.16.x executable), OR
-  * Install thrift 0.16.0 on PATH:
-      - macOS:  brew install thrift@0.16   (or build 0.16.0 from source)
-      - Linux:  build from http://archive.apache.org/dist/thrift/0.16.0/thrift-0.16.0.tar.gz
-                (distro packages are usually a different 0.1x — the codegen output must match
-                 thrift 0.16.0; a mismatched compiler can miscompile the generated sources), OR
+  * Set DORIS_THRIFT=/path/to/thrift   (must report ${required}), OR
+  * Build ${required} from https://archive.apache.org/dist/thrift/${required}/thrift-${required}.tar.gz, OR
+  * Extract the static compiler from the Doris build-env image matching this pin, OR
   * Run the Doris thirdparty build once (heavy) and set DORIS_THIRDPARTY to its root, so
     \${DORIS_THIRDPARTY}/installed/bin/thrift exists.
 
@@ -275,11 +272,13 @@ install_spi_jars() {
     [ "${DO_INSTALL_SPI}" -eq 1 ] || return 0
     require_jdk17
 
-    local mvn thrift_bin jobs nproc
+    local mvn thrift_bin thrift_version jobs nproc
     mvn="${MVN:-mvn}"
     command -v "${mvn}" >/dev/null 2>&1 || die "maven ('${mvn}') not found — set MVN or install maven"
 
-    thrift_bin="$(detect_thrift)" || exit 1
+    thrift_version="$(sed -n 's:.*<thrift.version>\([^<]*\)</thrift.version>.*:\1:p' "${DORIS_SRC}/fe/pom.xml" | head -n1)"
+    [ -n "${thrift_version}" ] || die "could not read <thrift.version> from ${DORIS_SRC}/fe/pom.xml"
+    thrift_bin="$(detect_thrift "${thrift_version}")" || exit 1
     info "thrift    : ${thrift_bin} ($("${thrift_bin}" --version 2>/dev/null))"
 
     # Parallelism: min(nproc, 8), overridable via MAVEN_JOBS (hard-capped at 8 per task constraint).
@@ -331,7 +330,7 @@ ensure_checkout
 check_patches
 
 if [ "${MODE_CHECK_ONLY}" -eq 1 ] && [ "${DO_APPLY}" -eq 0 ]; then
-    info "check-only: both patches apply cleanly at the pin. Done."
+    info "check-only: all patches apply cleanly at the pin. Done."
     exit 0
 fi
 

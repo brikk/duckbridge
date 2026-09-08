@@ -197,6 +197,14 @@ patches.
 
 ## Which Doris? We need the new-SPI line, for BOTH FE and BE
 
+> **Current correction (2026-09-08):** the SPI/provider-first FE routing has landed on apache/doris
+> `master`, so the FE is now patch-free; only `DuckDbTypeHandler` remains a BE patch. The current pin
+> and live proof are in `doris-patches/BASELINE` / `PATCHES.md`. The released 4.1 line still cannot
+> run Route J: explicitly rechecked `4.1.4-rc04` (`e5ae5ab9d04`) — no `fe-connector-spi`, no
+> `JdbcJniScanner`/`JdbcTypeHandlerFactory`, and therefore no target for our BE patch. The historical
+> branch/whitelist discussion below records how the project got here; it is not current deployment
+> guidance.
+
 Verified against the checkout (`/home/jayson/DEV/OSS/doris`): **the released 4.1.x line —
 including the `4.1.3` tag and its rc's — does NOT have any of what Route J needs.** In `4.1.3`:
 the entire `fe/fe-connector` SPI is **absent** (0 files) and there is **no `SPI_READY_TYPES`**,

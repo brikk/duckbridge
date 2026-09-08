@@ -12,8 +12,11 @@ Each entry is a pickable upstream ask. **Ordered by what we'd most want fixed if
 | **P2** | `COUNT(*)` pushdown on the BE JDBC scanner | `COUNT(*)` is O(rows) not O(1); helps every JDBC connector | No (interim: `SELECT 1`) |
 | **P3** | Per-scan `connectionInitSql` on the BE JDBC pool | Unblocks tz-sensitive predicate pushdown | No (feature gated off; we render zone-explicit) |
 
-Status **1731787677f (2026-08-25):** all three re-verified open in the master BE source. The FE runs
+Status **2be8fba29d7 (2026-09-07 pin; verified 2026-09-08):** all three re-verified open in the master BE source. The FE runs
 patch-free (#66135 removed `SPI_READY_TYPES`); the only carried patch is BE `DuckDbTypeHandler` (P1).
+Connector API 7's new `SUPPORTS_STORAGE_PREDICATE_PRUNING` capability explicitly excludes row/JDBC
+connectors, so duckbridge correctly does not claim it. Stock 4.1.4-rc04 still lacks the connector SPI
+and `JdbcJniScanner`; it cannot be this plugin's release target.
 The old "Route-J ceiling / no Arrow transport" ask is **resolved** — master ships an ADBC/Arrow
 connector (`fe-connector-adbc` + BE `adbc_driver_registry`); a duckbridge JDBC→ADBC migration is a
 roadmap call in [`PLAN-doris-duckbridge.md`](../../dev-docs/PLAN-doris-duckbridge.md), not a friction

@@ -15,12 +15,12 @@ Unlike `doris-ducklake` (which pairs its branch FE with a **stock** 4.1.x BE bec
 rides the BE's native parquet/iceberg reader), doris-duckbridge rides **`JdbcJniScanner`**,
 which is **absent from stock 4.1.x**. So both images are branch-built:
 
-- **FE** — carries the `SPI_READY_TYPES=duckbridge` patch (routes `type=duckbridge` to our
-  connector).
-- **BE** — carries the `DuckDbTypeHandler` patch (decodes DuckDB result sets) **and** the
-  `JdbcJniScanner` machinery that only exists on `branch-catalog-spi`.
+- **FE** — pristine pinned master; the SPI and provider-first type routing are upstream.
+- **BE** — carries the `DuckDbTypeHandler` patch (decodes DuckDB result sets) plus master’s
+  upstream `JdbcJniScanner` machinery.
 
-See `../../dev-docs/PLAN-doris-duckbridge.md` §Which Doris and `../../doris-patches/`.
+Stock 4.1.4-rc04 still lacks both the SPI and `JdbcJniScanner`; see
+`../../doris-patches/PATCHES.md` re-vendor log. See also the plan's §Which Doris.
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ See `../../dev-docs/PLAN-doris-duckbridge.md` §Which Doris and `../../doris-pat
 
 | Step | Today (scaffold) | Unlocks with |
 |---|---|---|
-| provider registration | `CREATE CATALOG type=duckbridge` not rejected | FE `SPI_READY_TYPES` patch + ServiceLoader |
+| provider registration | `CREATE CATALOG type=duckbridge` not rejected | upstream provider-first routing + ServiceLoader |
 | metadata listing | honestly empty / fail-loud (probe P4) | quack-jdbc `DatabaseMetaData` fidelity |
 | `SELECT` → BE scan | fail-loud P1–P6 message (**this is green**) | `planScan` + `table_type=DUCKDB` handler |
 | pushdown EXPLAIN | n/a | parity/pushdown work (P1) |

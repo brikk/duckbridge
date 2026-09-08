@@ -10,7 +10,7 @@ past listing-nothing fails loud with a pointer to the plan's open probes. See
 - **Kotlin, JDK 17 target.** The plugin runs inside the Doris FE (JDK 17 ABI), so this module
   overrides the repo-wide JDK-25 toolchain to `jvmToolchain(17)` in its `build.gradle.kts`. Gradle's
   foojay-resolver (root `settings.gradle.kts`) downloads the 17 toolchain on demand.
-- **Doris SPI jars** (`org.apache.doris:fe-connector-api`, `fe-connector-spi`, `fe-thrift`, all
+- **Doris SPI jars** (`org.apache.doris:fe-connector-spi`, `fe-thrift`, both
   `1.2-SNAPSHOT`) are `compileOnly` — the FE supplies them via the parent classloader at runtime, so
   the plugin jar must not bundle a shadowing copy.
   - **Self-contained bootstrap (not `~/.m2`).** They resolve from a **project-local** maven repo at
@@ -20,7 +20,7 @@ past listing-nothing fails loud with a pointer to the plan's open probes. See
     `mavenLocal()`: `~/.m2` is shared, and `doris-ducklake` publishes the same `1.2-SNAPSHOT`
     coordinates from a **different** pin (last-build-wins clobbering). Project-local = deterministic,
     fresh-clone-buildable, isolated from other projects. See `doris-patches/PATCHES.md §Bootstrap`
-    for the reactor set (`-pl fe-connector/fe-connector-spi -am -P flatten`), thrift 0.16.0 handling,
+    for the reactor set (`-pl fe-connector/fe-connector-spi -am -P flatten`), pinned thrift handling,
     and parallelism.
   - **Not bootstrapped?** A task-graph guard in `build.gradle.kts` fails any compile/test/detekt task
     with the exact command `tools/doris-baseline.sh --install-spi-jars` — never a cryptic
@@ -72,7 +72,7 @@ already runs it unpatched since #66135). The remaining patch lives at the repo r
   (LARGEINT/HUGEINT + VARBINARY/BLOB + ARRAY/LIST; STRUCT/MAP deferred to STRING/JSON in v1) + a
   `case "DUCKDB"` in `JdbcTypeHandlerFactory`. Emit `table_type = DUCKDB` from `planScan`.
 
-`tools/doris-baseline.sh --check-only` proves both apply at the pin.
+`tools/doris-baseline.sh --check-only` proves the remaining patch applies at the pin.
 
 ## Next real step: the P1–P6 probes (from the plan)
 

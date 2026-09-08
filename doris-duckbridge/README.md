@@ -12,21 +12,19 @@ Scaffold state details: [`dev-docs/NOTES-scaffold.md`](dev-docs/NOTES-scaffold.m
 
 ## Doris baseline & patches
 
-This connector targets Doris's `branch-catalog-spi` line (not in any release) and runs
-only on a patched FE + BE. Everything about that is pinned and scripted:
+This connector targets pinned apache/doris `master` (the connector SPI is upstream, but not yet in
+a release) and runs on a pristine FE plus one patched BE component. Everything is pinned and scripted:
 
-- **Pin**: [`../doris-patches/BASELINE`](../doris-patches/BASELINE) — the exact Doris
-  commit, mirrored as an immutable branch on the `brikk/doris` fork (upstream rebases
-  GC their SHAs; the fork branch never moves).
-- **Patches**: [`../doris-patches/`](../doris-patches/) — FE `SPI_READY_TYPES`
-  whitelist for catalog type `duckbridge`, and the BE `DuckDbTypeHandler`
+- **Pin**: [`../doris-patches/BASELINE`](../doris-patches/BASELINE) — the exact commit on
+  apache/doris master.
+- **Patches**: [`../doris-patches/`](../doris-patches/) — only the BE `DuckDbTypeHandler`
   (LARGEINT/ARRAY/VARBINARY-faithful JDBC value coercion). Rationale, apply procedure,
   and the re-vendor log: [`../doris-patches/PATCHES.md`](../doris-patches/PATCHES.md).
 - **Script**: [`../tools/doris-baseline.sh`](../tools/doris-baseline.sh)
-  - `--check-only` (default) — blobless-clone the fork at the pin into
-    `~/.cache/duckbridge/doris` (`DORIS_SRC` overrides) and verify both patches apply
+  - `--check-only` (default) — blobless-clone master at the pin into
+    `~/.cache/duckbridge/doris` (`DORIS_SRC` overrides) and verify all patches apply
     clean (`git apply --3way --check`, fail loud on drift).
-  - `--install-spi-jars` — build `fe-connector-api` / `fe-connector-spi` / `fe-thrift`
+  - `--install-spi-jars` — build `fe-connector-spi` / `fe-thrift`
     from the **patched pin** into the project-local repo `doris-duckbridge/doris-m2/`
     (~1 min). This is the **required bootstrap** before first build.
   - `--build-fe` / `--build-be` — full patched FE/BE builds (opt-in, long; BE is a
@@ -35,7 +33,7 @@ only on a patched FE + BE. Everything about that is pinned and scripted:
 ## Building this module
 
 ```sh
-# one-time bootstrap (JDK 17 + thrift 0.16.0 required; both probed, fail loud)
+# one-time bootstrap (JDK 17 + thrift version from pinned fe/pom.xml; both probed, fail loud)
 tools/doris-baseline.sh --install-spi-jars
 
 # then, from the repo root
@@ -47,8 +45,8 @@ The module resolves `org.apache.doris:*` **only** from `doris-m2/` (never
 you build before bootstrapping, gradle stops with the exact command to run.
 
 Prerequisites: JDK 17 for the Doris/maven side (the gradle toolchain resolves it for
-the module itself), `thrift` 0.16.0 for `fe-thrift` codegen (`DORIS_THRIFT` env or
-`PATH`), Docker for the (future) integration environment.
+the module itself), matching `thrift` for `fe-thrift` codegen (`DORIS_THRIFT` env or
+`PATH`; 0.24.0 at the current pin), Docker for the integration environment.
 
 ## Test environment
 
