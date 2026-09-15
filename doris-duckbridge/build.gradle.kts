@@ -54,6 +54,15 @@ repositories {
         forRepository { maven { url = uri(dorisLocalRepo) } }
         filter { includeGroup("org.apache.doris") }
     }
+    // VALIDATION-ONLY (quack-jdbc 0.7.0-SNAPSHOT downstream validation): the published snapshot
+    // lives in Sonatype's maven-snapshots repo, not Central. Scoped to the dev.brikk.duckdb group
+    // via content filtering. Remove when the stable quack-jdbc release lands on Central.
+    maven {
+        name = "sonatypeSnapshots"
+        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+        mavenContent { snapshotsOnly() }
+        content { includeGroup("dev.brikk.duckdb") }
+    }
     mavenCentral()
 }
 

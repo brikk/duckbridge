@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Deferred image bake for the doris-duckbridge compose.
 #
-# Stages a MINIMAL build context (copies output/fe + output/be out of the branch build tree)
+# Stages a MINIMAL build context (copies output/fe + output/be out of the build tree)
 # and `docker build`s the two overlay images the compose consumes:
-#   • doris-fe:duckbridge-local   (FROM apache/doris:fe-4.1.0 + output/fe)
-#   • doris-be:duckbridge-local   (FROM apache/doris:be-4.1.0 + output/be)
+#   • doris-fe:duckbridge-local   (FROM apache/doris:fe-4.1.4 + output/fe)
+#   • doris-be:duckbridge-local   (FROM apache/doris:be-4.1.4 + output/be)
 #
-# The compose file NEVER references the ~/.cache/duckbridge/doris build tree directly — this
-# script is the only bridge from that tree to the images. Run it AFTER the branch FE+BE
-# build finishes (tools/doris-baseline.sh --build-fe --build-be).
+# The compose file NEVER references the build tree directly — this script is the only
+# bridge from that tree to the images. Run it AFTER the branch FE+BE build finishes
+# (tools/doris-baseline.sh --build-fe --build-be).
+#
+# Staging uses a temp dir on ROOT DISK ($BAKE_STAGE_DIR, default /home/jayson/DEV/brikk/duckbridge/build/bake-stage),
+# not /tmp (which is a small tmpfs). The large BE context would fill /tmp.
 #
 # Nothing here compiles, so the ≤8-parallelism cap is irrelevant to this script — but note
 # it: the heavy work (FE/BE build) is done separately by doris-baseline.sh, which honors the
@@ -20,19 +23,22 @@
 #   ./bake-images.sh --be         # bake only the BE image (jar-only fast path is TODO)
 #
 # Env:
-#   DORIS_OUTPUT   branch build output dir (default: ~/.cache/duckbridge/doris/output)
-#   FE_BASE_IMAGE  stock FE base   (default: apache/doris:fe-4.1.0)
-#   BE_BASE_IMAGE  stock BE base   (default: apache/doris:be-4.1.0)
-#   DOCKER         container CLI    (default: docker; set to `podman` if needed)
+#   DORIS_OUTPUT    branch build output dir (default: ~/DEV/OSS/doris/output)
+#   FE_BASE_IMAGE   stock FE base   (default: apache/doris:fe-4.1.4)
+#   BE_BASE_IMAGE   stock BE base   (default: apache/doris:be-4.1.4)
+#   BAKE_STAGE_DIR  root-disk staging root (default: repo/build/bake-stage; NOT /tmp)
+#   DOCKER          container CLI    (default: docker; set to `podman` if needed)
 
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 
-DORIS_OUTPUT="${DORIS_OUTPUT:-${HOME}/.cache/duckbridge/doris/output}"
-FE_BASE_IMAGE="${FE_BASE_IMAGE:-apache/doris:fe-4.1.0}"
-BE_BASE_IMAGE="${BE_BASE_IMAGE:-apache/doris:be-4.1.0}"
+DORIS_OUTPUT="${DORIS_OUTPUT:-${HOME}/DEV/OSS/doris/output}"
+FE_BASE_IMAGE="${FE_BASE_IMAGE:-apache/doris:fe-4.1.4}"
+BE_BASE_IMAGE="${BE_BASE_IMAGE:-apache/doris:be-4.1.4}"
 DOCKER="${DOCKER:-docker}"
+# Stage on root disk, never in /tmp (tmpfs too small for BE context).
+BAKE_STAGE_DIR="${BAKE_STAGE_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)/build/bake-stage}"
 
 FE_IMAGE="doris-fe:duckbridge-local"
 BE_IMAGE="doris-be:duckbridge-local"
@@ -65,10 +71,10 @@ fi
 # --- FE ---
 if [ "${DO_FE}" -eq 1 ]; then
     [ -d "${DORIS_OUTPUT}/fe" ] || die "output/fe not found under ${DORIS_OUTPUT} — build the FE first (tools/doris-baseline.sh --build-fe)"
-    S="$(mktemp -d /tmp/duckbridge-feimg.XXXXXX)"
+    S="${BAKE_STAGE_DIR}/fe-$$"
+    rm -rf "${S}"; mkdir -p "${S}/output"
     trap 'rm -rf "${S}"' EXIT
-    info "staging FE context in ${S} ..."
-    mkdir -p "${S}/output"
+    info "staging FE context in ${S} (root-disk) ..."
     cp -r "${DORIS_OUTPUT}/fe" "${S}/output/fe"
     info "docker build ${FE_IMAGE} (base ${FE_BASE_IMAGE}) ..."
     "${DOCKER}" build \
@@ -91,10 +97,10 @@ if [ "${DO_BE}" -eq 1 ]; then
         die "output/be/lib/doris_be missing or empty — the BE build looks incomplete. \
 Confirm tools/doris-baseline.sh --build-be finished cleanly before baking."
     fi
-    S="$(mktemp -d /tmp/duckbridge-beimg.XXXXXX)"
+    S="${BAKE_STAGE_DIR}/be-$$"
+    rm -rf "${S}"; mkdir -p "${S}/output"
     trap 'rm -rf "${S}"' EXIT
-    info "staging BE context in ${S} (this copies the large BE dist) ..."
-    mkdir -p "${S}/output"
+    info "staging BE context in ${S} (root-disk, large) ..."
     cp -r "${DORIS_OUTPUT}/be" "${S}/output/be"
     info "docker build ${BE_IMAGE} (base ${BE_BASE_IMAGE}) ..."
     "${DOCKER}" build \

@@ -24,7 +24,7 @@
 # Rebuild only when the FE itself changes; plugin-only changes are reinstalled into the
 # FE plugin volume by smoke.sh (no image rebuild).
 
-ARG BASE_IMAGE=apache/doris:fe-4.1.0
+ARG BASE_IMAGE=apache/doris:fe-4.1.4
 FROM ${BASE_IMAGE}
 
 ARG OUTPUT_PATH=./output

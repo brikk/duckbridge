@@ -41,11 +41,15 @@ Upstream ask / exit criteria:
   Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
   lands in a release, this patch is deleted and BASELINE points at the tag.
 
-Anchors at pin a82564ced5d (#66345):
+Anchors at pin 96d0ac68e84 (#67439):
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
        (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the
         existing `case "CLICKHOUSE"` arm)
+
+Import rebase (96d0ac68 moved the shared vector contract):
+  OLD  org.apache.doris.common.jni.vec.ColumnType / ColumnValueConverter
+  NEW  org.apache.doris.jni.spi.vec.ColumnType / ColumnValueConverter
 
 Apply:  git apply --3way doris-patches/be/0001-duckdb-type-handler.patch
 --- (patch body below; lines above this marker are commentary ignored by git apply) ---
@@ -74,8 +78,8 @@ index 00000000000..06b1622f9ed
 +
 +package org.apache.doris.jdbc;
 +
-+import org.apache.doris.common.jni.vec.ColumnType;
-+import org.apache.doris.common.jni.vec.ColumnValueConverter;
++import org.apache.doris.jni.spi.vec.ColumnType;
++import org.apache.doris.jni.spi.vec.ColumnValueConverter;
 +
 +import com.google.common.collect.Lists;
 +
@@ -312,11 +316,9 @@ index 00000000000..06b1622f9ed
 +    }
 +}
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
-index 4a6f045fb86..04f575c7a79 100644
 --- a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
 +++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
-@@ -43,6 +43,8 @@ public class JdbcTypeHandlerFactory {
-                 return new PostgreSQLTypeHandler();
+@@ -42,6 +42,8 @@ public class JdbcTypeHandlerFactory {
              case "CLICKHOUSE":
                  return new ClickHouseTypeHandler();
 +            case "DUCKDB":
@@ -324,3 +326,6 @@ index 4a6f045fb86..04f575c7a79 100644
              case "SQLSERVER":
                  return new SQLServerTypeHandler();
              case "DB2":
+                 return new DB2TypeHandler();
+             case "SAP_HANA":
+                 return new SapHanaTypeHandler();
