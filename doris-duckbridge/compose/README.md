@@ -1,13 +1,8 @@
 # doris-duckbridge — live FE + BE + Quack compose
 
-The slow, real-cluster counterpart to `:doris-duckbridge:test`. Brings up a **patched**
-Doris cluster + a DuckDB/Quack server and drives the connector to the current scaffold
-boundary (provider loads, catalog creates, scan fails loud with the P1–P6 probe message —
-that error IS the green state today).
-
-> **WIP:** the compose is scaffolded but the FE/BE images must be **baked first** (below),
-> which needs the branch FE+BE build (`tools/doris-baseline.sh --build-fe --build-be`).
-> Nothing here builds the Doris images at `up` time.
+The slow, real-cluster counterpart to `:doris-duckbridge:test`. It runs a pristine pinned-master
+FE, the matching patched BE, and DuckDB/Quack, then asserts the connector end-to-end. Doris images
+must be baked before `up`; Compose does not compile Doris.
 
 ## Branch FE **and** branch BE — both required
 
@@ -24,7 +19,7 @@ Stock 4.1.4-rc04 still lacks both the SPI and `JdbcJniScanner`; see
 
 ## Prerequisites
 
-1. **Branch build output** at `~/.cache/duckbridge/doris/output/{fe,be}`:
+1. **Pinned build output** at `~/.cache/duckbridge/doris/output/{fe,be}` or another `DORIS_OUTPUT`:
    ```bash
    tools/doris-baseline.sh --build-fe --build-be   # JDK 17; BE is a multi-hour C++ build
    ```
@@ -33,6 +28,12 @@ Stock 4.1.4-rc04 still lacks both the SPI and `JdbcJniScanner`; see
 4. **`.env`** — `cp .env.example .env` and set `QUACK_TOKEN` (smoke.sh auto-copies if absent).
 5. Docker (or podman — set `DOCKER=podman`).
 
+Cluster-free orchestration regression:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
+```
+
 ## Three commands
 
 ```bash
@@ -40,25 +41,24 @@ Stock 4.1.4-rc04 still lacks both the SPI and `JdbcJniScanner`; see
 #    Refuses to run while the `doris-be-build` container is still writing the output tree.
 ./bake-images.sh                 # both; --fe / --be for one
 
-# 2. Up + smoke: build plugin → up → wait healthy → install plugin → CREATE CATALOG →
-#    drive the fail-loud stub (asserts on the P1–P6 message) → down -v.
+# 2. Up + smoke: build/install plugin → restart persisted FE → metadata → lazy JVM →
+#    exact scans, pushdowns and concurrency → down -v.
 ./smoke.sh                       # --up-only to stop after health; --keep to skip teardown
 
 # 3. Down (wipes FE meta + plugin + BE storage volumes).
 ./smoke.sh --down
 ```
 
-## What the smoke asserts today (and what unlocks later)
+## Smoke coverage
 
-| Step | Today (scaffold) | Unlocks with |
-|---|---|---|
-| provider registration | `CREATE CATALOG type=duckbridge` not rejected | upstream provider-first routing + ServiceLoader |
-| metadata listing | honestly empty / fail-loud (probe P4) | quack-jdbc `DatabaseMetaData` fidelity |
-| `SELECT` → BE scan | fail-loud P1–P6 message (**this is green**) | `planScan` + `table_type=DUCKDB` handler |
-| pushdown EXPLAIN | n/a | parity/pushdown work (P1) |
-
-When behavior lands, swap the "expect the stub error" assertions for real result checks —
-`jvm/doris-ducklake/compose/smoke.sh` is the template for that shape.
+- API-version-gated provider registration and real schema/table/type metadata.
+- Persisted FE restart retains `172.31.80.10`.
+- JVM/plugin registry stays uninitialized before the first scan; first use loads only `jdbc` and
+  publishes `doris_be_jvm_*` metrics.
+- Exact unicode, LARGEINT, ARRAY and VARBINARY values; exact count and filtered row IDs.
+- Function, naive TIMESTAMP and explicit-UTC TIMESTAMPTZ pushdown in the emitted query.
+- 20 sequential and 8 concurrent scans with zero failures.
+- Any expected-value mismatch exits nonzero.
 
 ## Notes / gotchas
 
@@ -71,9 +71,6 @@ When behavior lands, swap the "expect the stub error" assertions for real result
   **branch BE too**, so FE/BE thrift matches and the shim is not needed — deliberately
   omitted. If a scan ever hits "Unsupported exec type in pipeline", the BE image is stale
   (not branch-built) — rebake it.
-- **BE dist root** is assumed to be `/opt/apache-doris/be` (the layout doris-ducklake's
-  compose relies on). ⚠ Verify once the image is baked — if the real base image uses a
-  different root, fix `DORIS_BE_HOME` in `docker/doris-be/Dockerfile` **and** the
-  `be-storage`/`be-log` mount paths in `docker-compose.yml` together.
+- **BE dist root** is `/opt/apache-doris/be`; keep the Dockerfile and storage/log mounts aligned.
 - **`.env` and `.fe.conf.runtime` are gitignored.** The token is dev-only; never commit a
   real one.

@@ -15,13 +15,14 @@ CREATE TABLE IF NOT EXISTS sales.customers (
     balance   DECIMAL(18,2),
     signup    DATE,
     big_id    HUGEINT,
-    tags      VARCHAR[]
+    tags      VARCHAR[],
+    payload   BLOB
 );
 
 INSERT INTO sales.customers VALUES
-    (1, 'Alice',  100.50, DATE '2020-01-15', 170141183460469231731687303715884105727, ['vip','eu']),
-    (2, 'straße', 42.00,  DATE '2021-06-30', -5, ['de']),
-    (3, 'δοκιμή', 0.00,   DATE '2022-12-01', 0, []);
+    (1, 'Alice',  100.50, DATE '2020-01-15', 170141183460469231731687303715884105727, ['vip','eu'], encode('A1')),
+    (2, 'straße', 42.00,  DATE '2021-06-30', -5, ['de'], encode('B2')),
+    (3, 'δοκιμή', 0.00,   DATE '2022-12-01', 0, [], NULL);
 
 -- placed_at is a naive TIMESTAMP (zone-independent predicates); shipped_at is a TIMESTAMPTZ so
 -- the smoke can exercise the P3/P6 zone-explicit (`TIMESTAMPTZ '…+00'`) rendering end-to-end.

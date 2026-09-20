@@ -1,14 +1,14 @@
-# doris-duckbridge (WIP)
+# doris-duckbridge
 
 Apache Doris → DuckDB connector: the Doris sibling of `trino-duckbridge`. Doris pushes
 scans/projections/predicates into a user-operated DuckDB (remote via the Quack
 protocol, `jdbc:quack://…`), riding Doris's new `fe-connector` plugin SPI and the BE's
 existing JDBC JNI scanner.
 
-**Status: scaffold.** The SPI wiring compiles and the provider loads; scan planning and
-metadata deliberately fail loud until the plan's open probes (P1–P6) are settled. Design
-and probe list: [`../dev-docs/PLAN-doris-duckbridge.md`](../dev-docs/PLAN-doris-duckbridge.md).
-Scaffold state details: [`dev-docs/NOTES-scaffold.md`](dev-docs/NOTES-scaffold.md).
+**Status:** qualified end-to-end against pinned Doris master `8fc58e929b2` / connector API 9.
+Metadata, JDBC scans, predicate/function pushdown, temporal values, LARGEINT, ARRAY, VARBINARY,
+and concurrent scans run through DuckDB/Quack. Design and probe history:
+[`../dev-docs/PLAN-doris-duckbridge.md`](../dev-docs/PLAN-doris-duckbridge.md).
 
 ## Doris baseline & patches
 
@@ -50,19 +50,15 @@ the module itself), matching `thrift` for `fe-thrift` codegen (`DORIS_THRIFT` en
 
 ## Test environment
 
-Integration/probe testing needs a running patched FE + BE plus a DuckDB/Quack server, all
-containerized. **Scaffolded** in [`compose/`](compose/) (WIP — usable once the FE/BE images
-are baked):
+Integration testing uses the compose environment in [`compose/`](compose/):
 
-- `compose/docker-compose.yml` — `doris-fe` (patched branch FE + our plugin), `doris-be`
-  (patched branch BE — `JdbcJniScanner` is absent from stock 4.1.x, so the BE must be
+- `compose/docker-compose.yml` — `doris-fe` (pristine pinned master FE + our plugin), `doris-be`
+  (patched exact-pin BE — `JdbcJniScanner` is absent from stock 4.1.x, so the BE must be
   branch-built too), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
 - `compose/bake-images.sh` — bakes the FE/BE overlay images from the `--build-fe`/`--build-be`
   output (`~/.cache/duckbridge/doris/output`); refuses to run while the BE build is still going.
-- `compose/smoke.sh` — up → health → install plugin (`:doris-duckbridge:pluginZip`) →
-  `CREATE CATALOG ... type=duckbridge` → drive the fail-loud stub (asserts on the P1–P6 probe
-  message — that error is the correct scaffold state) → `down -v`.
+- `compose/smoke.sh` — install plugin → up → persisted-FE restart → health → catalog/metadata →
+  lazy-JVM transition → exact scan/pushdown/concurrency assertions → `down -v`.
 
 See [`compose/README.md`](compose/README.md) for the three commands and prerequisites. The
-plugin zip (`plugins/connector/duckbridge/` layout) is produced by the `pluginZip` gradle
-task. Real behavioral assertions replace the stub-error checks as the probes (P1–P6) land.
+plugin zip (`plugins/connector/duckbridge/` layout) is produced by the `pluginZip` Gradle task.

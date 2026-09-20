@@ -139,14 +139,16 @@ tasks.withType<JavaCompile>().configureEach {
 // META-INF/doris/connector-plugin-api-version.properties (api.version) baked into fe-connector-spi.
 // The gate compares MAJOR only. Upstream bumped the CONNECTOR plugin API major over time
 // (1->5 in ded91fb9fb3..a82564ced5d; 5->6 at 1731787677f via #66413; 6->7 at 2be8fba29d7 via
-// #67182's connector-capability surface addition). A plugin stamped an older
+// #67182's connector-capability surface addition; 7->8 via #67904's retained-schema snapshot
+// state; 8->9 via #68027's Hive OpenCSV scan-property contract). Duckbridge keeps the new opt-ins
+// at their safe defaults and does not emit Hive text scan properties. A plugin stamped an older
 // major is REJECTED at load (FE summary stage=apiVersion; CREATE CATALOG then fails "No connector
-// plugin claimed catalog type"). We stamp "7.0" to match the master baseline. Sanity-check after a
+// plugin claimed catalog type"). We stamp "9.0" to match the master baseline. Sanity-check after a
 // re-vendor: unzip -p doris-m2/.../fe-connector-spi-1.2-SNAPSHOT.jar \
 //   META-INF/doris/connector-plugin-api-version.properties. Bump when the SPI major changes again.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "7.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "9.0")
     }
 }
 

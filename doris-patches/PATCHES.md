@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`2be8fba29d7` (2026-09-07, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`8fc58e929b2` (2026-09-19, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,8 +35,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `2be8fba29d7180f8bb153135d397ed2bda4254fa`
-> - **subject** = `[improvement](snapshot) Add snapshot retained analysis interface (#67616)`
+> - **`PIN_SHA`** = `8fc58e929b2151c9ff4ae71d07375a7f8e944697`
+> - **subject** = `[fix](iceberg) Reject server planning before snapshot conversion (#68095)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
@@ -122,9 +122,9 @@ JAVA_HOME=<jdk17> tools/doris-baseline.sh --install-spi-jars   # see §Bootstrap
 ```
 
 The FE/BE build steps run Doris's own `build.sh --fe --be`. `--install-spi-jars` is the gradle
-bootstrap (§Bootstrap). The BE patch touches only `be-java-extensions/jdbc-scanner` (Java) — a
-patch-only change can rebuild just that jar and overlay it into an existing BE image without
-re-running the C++ build.
+bootstrap (§Bootstrap). Although the Duckbridge patch touches only
+`be-java-extensions/jdbc-scanner`, a re-vendor must bake the complete matching `output/be`,
+including `output/be/plugins`; never splice the scanner JAR into a BE from another pin.
 
 ### Manual apply (equivalent)
 
@@ -170,6 +170,39 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-09-19 — re-vendor to apache/doris `master` `8fc58e929b2`** (subject:
+  *"[fix](iceberg) Reject server planning before snapshot conversion (#68095)"*; +87 commits over
+  `96d0ac68e84`). Connector API 7→8 via #67904 (`ConnectorMvccSnapshot.retainSchema`, safe default
+  `false`) and 8→9 via #68027 (Hive OpenCSV scan properties, not emitted by Duckbridge). Thrift
+  remains 0.24.0 and Maven revision remains `1.2-SNAPSHOT`.
+  - **SPI/build gates:** project-local SPI reports `api.version=9.0` and SHA-256
+    `6ce0e4fdc3724a220b255b803b819bdeb81eebb2c3c6098b4151a1977661d661`. The local Thrift JAR's
+    extracted content matches the shared reference except for its expected embedded `/doris` versus
+    `/workspace` Maven build paths. Duckbridge: 62 Java-17 tests, Detekt, assembly, API-9 manifest,
+    and host SPI/Thrift ZIP exclusions all green. Plugin JAR SHA-256
+    `fafe17a96aaa14264e38164d9d9eb3c843299bc46c1fb48159eb5d32500449eb`; ZIP
+    `8ac4d05ae3000088c5e2f4f494c4789db1decb2c0e68137a0392cd464426e23b`.
+  - **Patch/build:** the canonical patch includes direct DUCKDB factory-selection coverage; all 7
+    JDBC module tests pass. A clean `-j8` BE build used refreshed build environment
+    `sha256:9baaa76496c90b20ae66ba86d2b99b97234043927d89d7875ffdf0d2a086db65`, created after the
+    Lance-C/BRPC third-party commits. All eight deployed-plugin layout checks pass. `doris_be`
+    SHA-256 is `2580486dc3caccf362632ec3da443054923fbc605d06d2064dcd760d74dfcca6`; the JDBC plugin is
+    `8d688b8cd9a34745003f987203a96d2ede53d88518b843a0a74fe5f9de3fc97b` and contains
+    `DuckDbTypeHandler`. The binary embeds exact source SHA `8fc58e929b2151c9ff4ae71d07375a7f8e944697`.
+  - **Images/runtime:** pristine FE image
+    `sha256:5cf626e0a26bd743de570997e4343d4199591d4ad0e611ca97def2af624045a8`; complete BE image
+    `sha256:97cd972c0a613312001c840d36386c25f703a25ada24c03bf5b6ecfd08f26c39`. Both report
+    `doris-0.0.0-8fc58e929b2`. The persisted FE restart retained `172.31.80.10`; FE plugin logs had
+    zero load failures.
+  - **Live smoke GREEN:** lazy baseline had `registryInitialized=false` and no JVM metrics; first
+    scan loaded only healthy `jdbc` and published `doris_be_jvm_*`. Exact unicode/LARGEINT/ARRAY/
+    VARBINARY values, metadata, count, predicate/function/temporal pushdowns, 20 sequential and 8
+    concurrent scans all passed. With the running container's JDBC plugin deliberately invalidated,
+    the query failed plugin-scoped, status reported `jdbc` FAILED, and the BE remained alive;
+    recreating from the image restored `count(*)=3`. Duckbridge was torn down and the pre-existing
+    DuckLake FE/BE were restarted with their volumes preserved. This is a matching API-9 Duckbridge
+    runtime qualification; the old `96d0ac68` BE is not reusable.
 
 - **2026-09-08 — re-vendor to apache/doris `master` `2be8fba29d7`** (subject:
   *"[improvement](snapshot) Add snapshot retained analysis interface (#67616)"*; +134 commits over

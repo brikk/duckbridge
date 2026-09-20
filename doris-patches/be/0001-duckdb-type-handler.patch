@@ -22,8 +22,8 @@ Why upstream needs it (and why it is BE-only):
   This change touches ONLY be-java-extensions/jdbc-scanner (Java): it needs NO
   thrift TOdbcTableType change and NO FE JdbcDbType change -- those bind only the
   legacy stock-catalog path duckbridge bypasses -- so it is a small,
-  self-contained, reapplyable patch, and (per the plan) can rebuild just the
-  jdbc-scanner jar to overlay into an existing BE image without a C++ rebuild.
+  self-contained, reapplyable patch. Re-vendors still bake the complete matching
+  BE output; they never overlay this jar onto a BE from another source pin.
 
 Coverage (v1):
   - all scalars (bool, tinyint..bigint, float/double, DECIMAL<=38,
@@ -41,11 +41,13 @@ Upstream ask / exit criteria:
   Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
   lands in a release, this patch is deleted and BASELINE points at the tag.
 
-Anchors at pin 96d0ac68e84 (#67439):
+Anchors at pin 8fc58e929b2 (#68095):
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
        (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the
         existing `case "CLICKHOUSE"` arm)
+  EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcPluginTest.java
+       (direct coverage that the DUCKDB factory arm selects DuckDbTypeHandler)
 
 Import rebase (96d0ac68 moved the shared vector contract):
   OLD  org.apache.doris.common.jni.vec.ColumnType / ColumnValueConverter
@@ -329,3 +331,16 @@ diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/j
                  return new DB2TypeHandler();
              case "SAP_HANA":
                  return new SapHanaTypeHandler();
+diff --git a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
+--- a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
++++ b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
+@@ -48,3 +48,9 @@ public class JdbcPluginTest {
++    /** Duckbridge's table_type must select its handler rather than silently falling back. */
++    @Test
++    public void selectsDuckDbTypeHandler() {
++        Assertions.assertTrue(JdbcTypeHandlerFactory.create("DUCKDB") instanceof DuckDbTypeHandler);
++    }
++
+     private static DorisPlugin loadPlugin() {
+         List<DorisPlugin> found = new ArrayList<>();
+         for (DorisPlugin plugin : ServiceLoader.load(DorisPlugin.class,

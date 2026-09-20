@@ -1,9 +1,9 @@
 name: doris-duckbridge-dev
 
 # Three containers for doris-duckbridge probe/integration work:
-#   • doris-fe    — our PATCHED branch-catalog-spi FE (SPI_READY_TYPES=duckbridge) hosting
-#                   the duckbridge connector plugin (mounted, not baked).
-#   • doris-be    — our PATCHED branch BE (carries the DuckDbTypeHandler; JdbcJniScanner is
+#   • doris-fe    — pristine pinned master FE hosting the duckbridge connector plugin
+#                   (mounted, not baked); the connector SPI/type routing are upstream.
+#   • doris-be    — our exact-pin patched master BE (carries the DuckDbTypeHandler; JdbcJniScanner is
 #                   NOT in stock 4.1.x, so — unlike doris-ducklake — the BE MUST be branch-
 #                   built too; plan §Which Doris).
 #   • duckdb-quack — a DuckDB CLI serving the Quack RPC protocol; the connector's scans run
@@ -32,9 +32,9 @@ services:
       - "9020:9020"   # FE RPC
       - "9010:9010"   # FE edit log
     volumes:
-      # Runtime copy of fe.conf (heap 2g etc.). init_fe.sh APPENDS priority_networks at each
-      # boot, so the mount source must be writable AND untracked — smoke.sh stages
-      # .fe.conf.runtime from the pristine tracked fe.conf before `up` (see its header).
+      # Runtime copy of fe.conf (heap 2g etc.). init_fe.sh adds priority_networks only for
+      # new metadata, so smoke.sh stages .fe.conf.runtime with the static election network
+      # on every invocation. The writable mount source is untracked.
       - ./.fe.conf.runtime:/opt/apache-doris/fe/conf/fe.conf
       # Plugin contents (UNZIPPED into plugins/connector/duckbridge). A named volume rather
       # than a host bind mount because Podman's macOS bind mounts don't reliably propagate

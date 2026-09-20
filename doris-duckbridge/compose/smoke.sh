@@ -6,8 +6,8 @@
 #   • the connector LOADS + CREATE CATALOG type=duckbridge passes the FE gate;
 #   • METADATA is REAL (probe P4): SHOW DATABASES/TABLES + DESC resolve the seeded quack schema;
 #   • the SCAN is REAL (probes P5/P2): planScan emits a JDBC scan range so rows flow through the
-#     BE JdbcJniScanner + our patched DuckDbTypeHandler. Asserts EXACT rows (incl. the LARGEINT
-#     and ARRAY columns — the handler's first live exercise), an exact predicate result, count(*),
+#     BE JdbcJniScanner + our patched DuckDbTypeHandler. Asserts EXACT rows (incl. LARGEINT,
+#     ARRAY and VARBINARY), an exact predicate result, count(*),
 #     and EXPLAIN carrying the pushed predicate. Plus a P2 load probe (sequential + concurrent).
 #
 # Usage:
@@ -17,8 +17,8 @@
 #   ./smoke.sh --keep      # drive, but do NOT tear down at the end
 #   ./smoke.sh --down      # tear everything down (-v) and exit
 #
-# What unlocks next: FUNCTION-shape pushdown (P1 divergence audit) — comparisons/IN/IS NULL push
-# today (the domain floor); functions/LIKE/arithmetic are evaluated by Doris above the scan.
+# Function pushdown is allowlist-only: audited identical functions may push; everything else stays
+# above the scan. Comparisons/IN/IS NULL remain the domain floor.
 # A truthful SCAN failure is the DEPLOYMENT SEAM: if the BE can't load the quack-jdbc driver, the
 # smoke fails loud with the fix (driver-jar placement + driver_url).
 
@@ -57,10 +57,12 @@ fi
 set -a; . "${HERE}/.env"; set +a
 QUACK_TOKEN="${QUACK_TOKEN:-duckbridge-doris-token}"
 
-# init_fe.sh appends priority_networks to fe.conf at every boot; mount a gitignored runtime
-# copy (not the tracked file) so those appends never pollute the repo. Stage it fresh so
-# both `up` and `--down` find the mount source present.
+# Doris's init_fe.sh adds priority_networks only while initializing an empty metadata directory.
+# We replace the mounted config on every run, so preserve the static election network ourselves;
+# otherwise a restart can select the wrong IP and fail to rejoin its persisted FE identity.
+# Stage it before --down too, because Compose still resolves the bind-mount source.
 cp "${HERE}/fe.conf" "${HERE}/.fe.conf.runtime"
+printf '\npriority_networks = 172.31.80.0/24\n' >> "${HERE}/.fe.conf.runtime"
 
 if [[ $DOWN -eq 1 ]]; then
     log "Tearing down doris-duckbridge stack…"
@@ -81,9 +83,19 @@ if [[ $DO_BUILD -eq 1 ]]; then
     # JDK-17 toolchain is resolved by gradle). Probe ~/.gradle/jdks when the ambient java
     # is older, fail loud otherwise.
     gradle_java="${JAVA_HOME:-}"
-    if ! "${gradle_java:-/nonexistent}/bin/java" -version 2>&1 | grep -qE '"(2[5-9]|[3-9][0-9])' ; then
-        gradle_java="$(ls -d "${HOME}"/.gradle/jdks/*25*/ 2>/dev/null | head -n1 || true)"
-        gradle_java="${gradle_java%/}"
+    if ! "${gradle_java:-/nonexistent}/bin/java" -version 2>&1 | grep -qE '"(2[5-9]|[3-9][0-9])'; then
+        gradle_java=""
+        path_java="$(command -v java || true)"
+        java_candidates=()
+        [[ -n "${path_java}" ]] && java_candidates+=("$(dirname "$(dirname "${path_java}")")")
+        for candidate in "${java_candidates[@]}" "${HOME}"/.gradle/jdks/*/; do
+            candidate="${candidate%/}"
+            if [[ -x "${candidate}/bin/java" ]] \
+               && "${candidate}/bin/java" -version 2>&1 | grep -qE '"(2[5-9]|[3-9][0-9])'; then
+                gradle_java="${candidate}"
+                break
+            fi
+        done
     fi
     [ -n "${gradle_java}" ] && [ -x "${gradle_java}/bin/java" ] ||
         { log "ERROR: need a JDK 25+ for gradle (set JAVA_HOME); none found in ~/.gradle/jdks"; exit 1; }
@@ -115,27 +127,32 @@ rm -rf "$tmp_extract"
 BE_DRIVER_URL="file:///opt/duckbridge-drivers/quack-jdbc.jar"
 log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driver_url=${BE_DRIVER_URL})"
 
-# 2. Bring up the cluster (FE + BE + Quack).
+# 2. Install the plugin into the FE plugin volume (unzipped → plugins/connector/duckbridge).
+# Populate the named volume before the FE starts so its first plugin scan cannot observe an empty
+# directory and record a transient load failure. docker cp avoids unreliable macOS VM bind mounts.
+log "Installing plugin from $(basename "$zip_path") into the FE plugin volume…"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-dev}"
+VOL_NAME="${PROJECT_NAME}_fe-plugin-duckbridge"
+"${DOCKER}" volume create \
+    --label "com.docker.compose.project=${PROJECT_NAME}" \
+    --label com.docker.compose.volume=fe-plugin-duckbridge \
+    "${VOL_NAME}" >/dev/null
+helper=$("${DOCKER}" create -v "${VOL_NAME}:/dest" alpine \
+    sh -c 'apk add --no-cache unzip >/dev/null 2>&1 && rm -rf /dest/* /dest/.[!.]* 2>/dev/null; cd /dest && unzip -oq /tmp/plugin.zip')
+"${DOCKER}" cp "$zip_path" "$helper":/tmp/plugin.zip
+"${DOCKER}" start -a "$helper"
+"${DOCKER}" rm "$helper" >/dev/null
+
+# 3. Bring up the cluster (FE + BE + Quack).
 # --force-recreate so a stale BE from a prior `--up-only` (created before .be-drivers was staged)
 # is rebuilt with the driver-jar mount in place — otherwise `up -d` reuses the running container
 # and the BE never sees the driver (JdbcJniScanner then fails "Failed to load driver class").
 log "Starting Doris FE + BE + DuckDB/Quack…"
 "${DOCKER}" compose -f "${COMPOSE}" up -d --force-recreate
 
-# 3. Install the plugin into the FE plugin volume (unzipped → plugins/connector/duckbridge).
-# A named volume + docker cp (daemon-API streaming) rather than a bind mount, so Podman's
-# macOS host↔VM file sharing can't drop the jar tree. The FE mounts the same volume at
-# /opt/apache-doris/fe/plugins/connector/duckbridge. Done BEFORE the FE finishes coming up so
-# the connector is present when the plugin loader scans; a restart guarantees a clean load.
-log "Installing plugin from $(basename "$zip_path") into the FE plugin volume…"
-VOL_NAME=doris-duckbridge-dev_fe-plugin-duckbridge
-"${DOCKER}" volume create "${VOL_NAME}" >/dev/null
-helper=$("${DOCKER}" create -v "${VOL_NAME}:/dest" alpine \
-    sh -c 'apk add --no-cache unzip >/dev/null 2>&1 && rm -rf /dest/* /dest/.[!.]* 2>/dev/null; cd /dest && unzip -oq /tmp/plugin.zip')
-"${DOCKER}" cp "$zip_path" "$helper":/tmp/plugin.zip
-"${DOCKER}" start -a "$helper"
-"${DOCKER}" rm "$helper" >/dev/null
-log "Restarting FE so it loads the freshly-installed connector plugin…"
+# Exercise a real restart with persisted metadata. The staged priority_networks setting must keep
+# the FE on the same static identity rather than selecting another container network.
+log "Restarting FE with persisted metadata…"
 "${DOCKER}" compose -f "${COMPOSE}" restart doris-fe
 
 # 4. Wait for FE health (mysql:9030 SHOW FRONTENDS — FE-local, no BE needed).
@@ -151,8 +168,14 @@ while :; do
     sleep 2
 done
 
-# 5. Wait for BE registration (SHOW BACKENDS → Alive). The BE is required for any real scan;
-# the fail-loud stub trips in the FE before that, but we still want a healthy cluster.
+frontend_ip=$(fe_sql -N -e "SHOW FRONTENDS" 2>/dev/null | awk -F'\t' 'NR==1 {print $2}')
+if [[ "${frontend_ip}" != "172.31.80.10" ]]; then
+    log "FE RESTART FAIL: persisted FE identity is '${frontend_ip:-<missing>}' (expected 172.31.80.10)."
+    exit 1
+fi
+log "FE restart retained static identity 172.31.80.10."
+
+# 5. Wait for BE registration (SHOW BACKENDS → Alive). Every real scan requires a healthy BE.
 log "Waiting for BE registration (SHOW BACKENDS → Alive)…"
 deadline=$((SECONDS + 240))
 while :; do
@@ -220,8 +243,7 @@ fi
 log "GATE OK: catalog created — provider registration + type-routing on the pristine master FE both work."
 
 # 8. METADATA is now REAL (probe P4 settled): resolution over quack-jdbc should list the seeded
-# quack schemas/tables and DESC a table's columns with the probe-decided Doris types. The SCAN
-# still fails loud — planScan is gated on P1/P5 — and THAT is the new green.
+# quack schemas/tables and DESC a table's columns with the probe-decided Doris types.
 #
 # ── History (pre-P4 scaffold expectations, kept for the record) ──────────────────────────────
 #   Before P4, listing was honestly EMPTY and resolution-by-name fell to the FE's own "Unknown
@@ -237,8 +259,9 @@ echo "${dbs_out}" | tail -20
 if echo "${dbs_out}" | grep -qiw "sales"; then
     log "METADATA GREEN: SHOW DATABASES lists the seeded quack schema 'sales' (real resolution over quack-jdbc)."
 else
-    log "METADATA CHECK: expected a 'sales' database from the seeded quack server — inspect above + fe.log."
+    log "METADATA FAIL: expected a 'sales' database from the seeded quack server — inspect above + fe.log."
     log "  (Seed file: compose/seed/quack-init.sql; the quack container must have run it.)"
+    exit 1
 fi
 
 log "Metadata resolution: SHOW TABLES FROM duckbridge_test.sales (expect customers, orders)…"
@@ -249,7 +272,8 @@ echo "${tables_out}" | tail -20
 if echo "${tables_out}" | grep -qiw "customers" && echo "${tables_out}" | grep -qiw "orders"; then
     log "METADATA GREEN: SHOW TABLES resolves the seeded tables."
 else
-    log "METADATA CHECK: expected 'customers' + 'orders' — inspect above + fe.log."
+    log "METADATA FAIL: expected 'customers' + 'orders' — inspect above + fe.log."
+    exit 1
 fi
 
 log "Metadata resolution: DESC duckbridge_test.sales.customers (expect the P4 type map)…"
@@ -257,12 +281,14 @@ set +e
 desc_out=$(fe_sql -e "DESC duckbridge_test.sales.customers;" 2>&1)
 set -e
 echo "${desc_out}" | tail -20
-# balance DECIMAL(18,2), big_id HUGEINT→LARGEINT, tags VARCHAR[]→ARRAY<STRING> are the
+# balance DECIMAL(18,2), big_id HUGEINT→LARGEINT, tags VARCHAR[]→ARRAY<STRING>, and BLOB→VARBINARY are the
 # distinctive P4-mapped columns.
-if echo "${desc_out}" | grep -qiE "largeint" && echo "${desc_out}" | grep -qiE "array"; then
-    log "METADATA GREEN: DESC shows the probe-decided types (HUGEINT→LARGEINT, VARCHAR[]→ARRAY)."
+if echo "${desc_out}" | grep -qiE "largeint" && echo "${desc_out}" | grep -qiE "array" \
+   && echo "${desc_out}" | grep -qiE "varbinary"; then
+    log "METADATA GREEN: DESC shows HUGEINT→LARGEINT, VARCHAR[]→ARRAY and BLOB→VARBINARY."
 else
-    log "METADATA CHECK: expected LARGEINT + ARRAY columns from the type map — inspect above."
+    log "METADATA FAIL: expected LARGEINT + ARRAY + VARBINARY columns from the type map — inspect above."
+    exit 1
 fi
 
 # ── SCAN is REAL now (P5/P2): planScan emits a JDBC scan range; rows flow through the BE
@@ -270,9 +296,23 @@ fi
 #    (History: before P5, a SELECT hit the planScan fail-loud stub — that WAS the green then.)
 #    A truthful failure here is the DEPLOYMENT SEAM: if the BE can't load the driver, we say so.
 
-log "SCAN: SELECT ... ORDER BY id (full-row read incl. largeint + array — DuckDbTypeHandler's first live run)…"
+log "JVM LAZY-LOAD: before the first scan, no JNI plugin or JVM metrics may be initialized…"
+jni_before=$("${DOCKER}" exec doris-duckbridge-be curl -fsS \
+    http://127.0.0.1:8040/api/jni_plugin_status)
+if [[ "${jni_before}" != *'"registryInitialized":false'* ]]; then
+    log "JVM LAZY-LOAD FAIL: expected registryInitialized=false before the first scan: ${jni_before}"
+    exit 1
+fi
+metrics_before=$("${DOCKER}" exec doris-duckbridge-be curl -fsS http://127.0.0.1:8040/metrics)
+if [[ "${metrics_before}" == *"doris_be_jvm_"* ]]; then
+    log "JVM LAZY-LOAD FAIL: JVM metrics existed before the first scan."
+    exit 1
+fi
+log "JVM LAZY-LOAD GREEN: registry is uninitialized and no JVM metrics exist before first use."
+
+log "SCAN: SELECT ... ORDER BY id (largeint + array + binary — DuckDbTypeHandler's first live run)…"
 set +e
-sel_out=$(fe_sql -e "SELECT id, name, big_id, tags FROM duckbridge_test.sales.customers ORDER BY id;" 2>&1)
+sel_out=$(fe_sql -N -e "SELECT id, name, big_id, tags, payload FROM duckbridge_test.sales.customers ORDER BY id;" 2>&1)
 sel_status=$?
 set -e
 echo "${sel_out}"
@@ -286,16 +326,32 @@ if [[ $sel_status -ne 0 ]]; then
     log "SCAN FAIL: SELECT errored — inspect above + be.log (fe.log for the plan)."
     exit 1
 fi
-# Expected exact rows (name unicode-preserved; big_id: HUGEINT max, -5, 0; tags: array text).
-if echo "${sel_out}" | grep -q "Alice" && echo "${sel_out}" | grep -q "straße" \
-   && echo "${sel_out}" | grep -q "δοκιμή" \
-   && echo "${sel_out}" | grep -q "170141183460469231731687303715884105727" \
-   && echo "${sel_out}" | grep -qE "\[.?.vip"; then
-    log "SCAN GREEN: full-row SELECT round-tripped — unicode strings, LARGEINT (HUGEINT max) and ARRAY"
+# Exact rows pin row count, ordering, value association, arrays, binary bytes and SQL NULL.
+expected_sel=$(printf '%s\n' \
+    $'1\tAlice\t170141183460469231731687303715884105727\t["vip", "eu"]\tA1' \
+    $'2\tstraße\t-5\t["de"]\tB2' \
+    $'3\tδοκιμή\t0\t[]\tNULL')
+if [[ "${sel_out}" == "${expected_sel}" ]]; then
+    log "SCAN GREEN: full-row SELECT round-tripped — unicode, LARGEINT, ARRAY and VARBINARY"
     log "  all decoded by the BE DuckDbTypeHandler over quack-jdbc. 🎉"
 else
-    log "SCAN CHECK: rows returned but not the exact expected values — inspect above."
+    log "SCAN FAIL: rows returned but not the exact expected values — inspect above."
+    exit 1
 fi
+
+jni_after=$("${DOCKER}" exec doris-duckbridge-be curl -fsS \
+    http://127.0.0.1:8040/api/jni_plugin_status)
+if [[ "${jni_after}" != *'"loadedCount":1'* || "${jni_after}" != *'"failedCount":0'* \
+   || "${jni_after}" != *'"plugins":[{"name":"jdbc","state":"READY"'* ]]; then
+    log "JVM LAZY-LOAD FAIL: first scan did not load exactly the healthy JDBC plugin: ${jni_after}"
+    exit 1
+fi
+metrics_after=$("${DOCKER}" exec doris-duckbridge-be curl -fsS http://127.0.0.1:8040/metrics)
+if [[ "${metrics_after}" != *"doris_be_jvm_"* ]]; then
+    log "JVM LAZY-LOAD FAIL: JVM metrics did not appear after the first scan."
+    exit 1
+fi
+log "JVM LAZY-LOAD GREEN: first scan loaded only JDBC and published JVM metrics."
 
 log "SCAN: predicate SELECT ... WHERE id >= 2 (pushdown; assert exact filtered rows)…"
 set +e
@@ -306,7 +362,8 @@ pred_ids=$(echo "${pred_out}" | grep -oE "^[0-9]+" | tr '\n' ',' | sed 's/,$//')
 if [[ "${pred_ids}" == "2,3" ]]; then
     log "SCAN GREEN: WHERE id>=2 returned exactly rows {2,3}."
 else
-    log "SCAN CHECK: WHERE id>=2 returned ids=[${pred_ids}] (expected 2,3) — inspect above."
+    log "SCAN FAIL: WHERE id>=2 returned ids=[${pred_ids}] (expected 2,3) — inspect above."
+    exit 1
 fi
 
 log "SCAN: EXPLAIN shows the pushed query (a 'stopped pushing' regression would be red)…"
@@ -314,10 +371,12 @@ set +e
 explain_out=$(fe_sql -e "EXPLAIN VERBOSE SELECT id FROM duckbridge_test.sales.customers WHERE id >= 2;" 2>&1)
 set -e
 echo "${explain_out}" | grep -iE "query|WHERE|customers|>=|SELECT" | head -8 | sed 's/^/  /'
-if echo "${explain_out}" | grep -qiE 'id.*>=.*2|WHERE'; then
+explain_query=$(echo "${explain_out}" | grep -im1 'QUERY:' || true)
+if echo "${explain_query}" | grep -qiE 'id.*>=.*2'; then
     log "SCAN GREEN: EXPLAIN carries the pushed predicate in the query."
 else
-    log "SCAN NOTE: could not confirm the pushed predicate in EXPLAIN (format may differ) — inspect above."
+    log "SCAN FAIL: could not confirm the pushed predicate in EXPLAIN — inspect above."
+    exit 1
 fi
 
 log "SCAN: SELECT count(*) (aggregate over the JDBC scan)…"
@@ -327,7 +386,8 @@ set -e
 if [[ "${cnt}" == "3" ]]; then
     log "SCAN GREEN: count(*) = 3."
 else
-    log "SCAN CHECK: count(*) = '${cnt}' (expected 3) — inspect above."
+    log "SCAN FAIL: count(*) = '${cnt}' (expected 3) — inspect above."
+    exit 1
 fi
 
 # ── P1 function pushdown: an allowlisted, audited-IDENTICAL function must appear INSIDE the pushed
@@ -342,9 +402,10 @@ echo "  ${fn_query}"
 if echo "${fn_query}" | grep -qiE "length\("; then
     log "P1 GREEN: the allowlisted function is INSIDE the pushed QUERY (character_length→DuckDB length)."
 else
-    log "P1 CHECK: character_length not found in the pushed QUERY — the plugin may be stale (rebuild) or"
+    log "P1 FAIL: character_length not found in the pushed QUERY — the plugin may be stale (rebuild) or"
     log "  the FE dropped it. Inspect the QUERY line above (a re-filtered-above result is still correct,"
     log "  but the point of P1 is that it PUSHES)."
+    exit 1
 fi
 set +e
 fn_ids=$(fe_sql -N -e "SELECT id FROM duckbridge_test.sales.customers WHERE character_length(name)=6 ORDER BY id;" 2>&1 | grep -oE "^[0-9]+" | tr '\n' ',' | sed 's/,$//')
@@ -352,7 +413,8 @@ set -e
 if [[ "${fn_ids}" == "2,3" ]]; then
     log "P1 GREEN: WHERE character_length(name)=6 returned exactly rows {2,3} (straße, δοκιμή)."
 else
-    log "P1 CHECK: char_length=6 returned ids=[${fn_ids}] (expected 2,3) — inspect above."
+    log "P1 FAIL: char_length=6 returned ids=[${fn_ids}] (expected 2,3) — inspect above."
+    exit 1
 fi
 
 # ── P3/P6 temporal pushdown: naive TIMESTAMP + TIMESTAMPTZ predicates render zone-safely and push.
@@ -368,7 +430,8 @@ echo "  ${tz1_query}"
 if echo "${tz1_query}" | grep -qiE "placed_at.*>=.*TIMESTAMP '2023-03-02" && [[ "${tz1_ids}" == "101" ]]; then
     log "P3/P6 GREEN: naive TIMESTAMP predicate pushed (naive literal) and returned exactly {101}."
 else
-    log "P3/P6 CHECK: naive TIMESTAMP push — QUERY above, ids=[${tz1_ids}] (expected 101). Inspect."
+    log "P3/P6 FAIL: naive TIMESTAMP push — QUERY above, ids=[${tz1_ids}] (expected 101). Inspect."
+    exit 1
 fi
 
 log "P3/P6: WHERE shipped_at >= '2023-03-02 00:00:00' (TIMESTAMPTZ → explicit-UTC pushdown)…"
@@ -383,8 +446,9 @@ if echo "${tz2_query}" | grep -qiE "shipped_at.*>=.*TIMESTAMPTZ '2023-03-02.*\+0
     log "P3/P6 GREEN: TIMESTAMPTZ predicate pushed as explicit-UTC ('…+00') and returned exactly {101} —"
     log "  zone-safe instant comparison, no session-zone dependence (option 2)."
 else
-    log "P3/P6 CHECK: TIMESTAMPTZ push — QUERY above, ids=[${tz2_ids}] (expected 101). Expected the"
+    log "P3/P6 FAIL: TIMESTAMPTZ push — QUERY above, ids=[${tz2_ids}] (expected 101). Expected the"
     log "  literal rendered as TIMESTAMPTZ '…+00'. Inspect (plugin may be stale, or rendering regressed)."
+    exit 1
 fi
 
 # ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
@@ -420,8 +484,9 @@ if [[ "${seq_fail}" -eq 0 && "${conc_fail}" -eq 0 ]]; then
     log "P2 GREEN: 20 sequential + 8 concurrent SELECTs all succeeded — no Quack-pool exhaustion at"
     log "  one-range-per-query. Route J does not need connection-reuse work before real use (record in NOTES)."
 else
-    log "P2 CHECK: ${seq_fail} sequential + ${conc_fail} concurrent failures — possible pool pressure;"
+    log "P2 FAIL: ${seq_fail} sequential + ${conc_fail} concurrent failures — possible pool pressure;"
     log "  inspect be.log for Quack connection errors and record the verdict in NOTES-p5-p2-scan.md."
+    exit 1
 fi
 
 # 9. Teardown.
