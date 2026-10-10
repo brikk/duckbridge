@@ -71,6 +71,9 @@ services:
       # PRIORITY_NETWORKS internally from these.
       FE_SERVERS: fe1:172.31.80.10:9020
       BE_ADDR: 172.31.80.20:9050
+      # Deliberately non-UTC: the smoke proves the JDBC handler transports TIMESTAMPTZ instants
+      # without allowing the embedded JVM default zone to reinterpret their fields.
+      JAVA_TOOL_OPTIONS: -Duser.timezone=America/Los_Angeles
     volumes:
       # ⚠ UNCERTAINTY: storage/log paths assume the stock BE dist root is
       #   /opt/apache-doris/be (the layout doris-ducklake's compose relies on). Verify once
@@ -104,6 +107,9 @@ services:
       QUACK_PORT: "9494"
       # Token comes from ../.env (QUACK_TOKEN). CREATE CATALOG passes the same token.
       QUACK_TOKEN: ${QUACK_TOKEN:?set QUACK_TOKEN in doris-duckbridge/compose/.env (copy .env.example)}
+      # Deliberately differs from the BE JVM zone; pushed temporal predicates and returned values
+      # must remain exact across both session-zone boundaries.
+      TZ: Asia/Tokyo
     ports:
       - "9494:9494"   # Quack RPC (also reachable in-network as duckdb-quack:9494)
     volumes:

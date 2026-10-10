@@ -54,15 +54,6 @@ repositories {
         forRepository { maven { url = uri(dorisLocalRepo) } }
         filter { includeGroup("org.apache.doris") }
     }
-    // VALIDATION-ONLY (quack-jdbc 0.7.0-SNAPSHOT downstream validation): the published snapshot
-    // lives in Sonatype's maven-snapshots repo, not Central. Scoped to the dev.brikk.duckdb group
-    // via content filtering. Remove when the stable quack-jdbc release lands on Central.
-    maven {
-        name = "sonatypeSnapshots"
-        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-        mavenContent { snapshotsOnly() }
-        content { includeGroup("dev.brikk.duckdb") }
-    }
     mavenCentral()
 }
 
@@ -140,15 +131,17 @@ tasks.withType<JavaCompile>().configureEach {
 // The gate compares MAJOR only. Upstream bumped the CONNECTOR plugin API major over time
 // (1->5 in ded91fb9fb3..a82564ced5d; 5->6 at 1731787677f via #66413; 6->7 at 2be8fba29d7 via
 // #67182's connector-capability surface addition; 7->8 via #67904's retained-schema snapshot
-// state; 8->9 via #68027's Hive OpenCSV scan-property contract). Duckbridge keeps the new opt-ins
-// at their safe defaults and does not emit Hive text scan properties. A plugin stamped an older
+// state; 8->9 via #68027's Hive OpenCSV scan-property contract; 9->10 via #66530's statement scan
+// reuse; 10->11 via #68320's generic write framework; 11->12 via #66399's Fluss/nested-pruning
+// surface; 12->13 via #68786's string-write and transformed-partition typing). Duckbridge keeps
+// unsupported write/reuse/nested-pruning opt-ins at their safe defaults. A plugin stamped an older
 // major is REJECTED at load (FE summary stage=apiVersion; CREATE CATALOG then fails "No connector
-// plugin claimed catalog type"). We stamp "9.0" to match the master baseline. Sanity-check after a
+// plugin claimed catalog type"). We stamp "13.0" to match the master baseline. Sanity-check after a
 // re-vendor: unzip -p doris-m2/.../fe-connector-spi-1.2-SNAPSHOT.jar \
 //   META-INF/doris/connector-plugin-api-version.properties. Bump when the SPI major changes again.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "9.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "13.0")
     }
 }
 

@@ -14,10 +14,10 @@ package dev.brikk.duckbridge.doris.plugin
  *   when the driver is already on the BE classpath.
  * @property user optional DuckDB/Quack user.
  * @property password optional DuckDB/Quack credential / Quack token.
- * @property enableTimestampTz mirrors the iceberg/ducklake `enable.mapping.timestamp_tz` knob
- *   (default false). v1 maps TIMESTAMPTZ to naive DATETIMEV2(6) over correct UTC instants either
- *   way (tz-sensitive pushdown gated off, plan §Timezone; see the P4 report §TIMESTAMPTZ) — the
- *   flag is reserved for a future zone-aware mapping once the BE converter + P3 land.
+ * @property enableTimestampTz preserves DuckDB TIMESTAMPTZ as native Doris TIMESTAMPTZ when true;
+ *   false retains the legacy DATETIMEV2 UTC carrier
+ *   (default false). API 13 / JNI 5 provides the native UTC-field carrier used by the opt-in;
+ *   predicate rendering remains explicit-UTC and session-zone independent.
  */
 data class DuckBridgeConnectorConfig(
     val jdbcUrl: String,

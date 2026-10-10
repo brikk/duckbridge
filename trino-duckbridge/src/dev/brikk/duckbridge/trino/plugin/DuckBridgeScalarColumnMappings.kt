@@ -63,7 +63,7 @@ import java.time.ZoneOffset
 /**
  * Lossless DuckDB scalar mappings not covered by the original upstream DuckDbClient port (EV-C5).
  *
- * JDBC 1.5.5 was probed at both `ResultSetMetaData` and value-getter levels before adding these:
+ * JDBC 1.5.6 was probed at both `ResultSetMetaData` and value-getter levels before adding these:
  * BLOB→`getBytes`, TIMESTAMPTZ→[OffsetDateTime], TIME→[LocalTime], TIMETZ raw object→[OffsetTime],
  * UUID→[java.util.UUID], and unsigned integers widened to the next signed Trino type. Predicate
  * domain pushdown is disabled for UUID and zoned temporal values until their ordering/bind semantics
@@ -103,7 +103,7 @@ internal object DuckBridgeScalarColumnMappings {
     /** Types the current JDBC drivers cannot expose losslessly and must never hit a generic mapping. */
     fun isLossyUnsupported(typeName: String?): Boolean =
         when (typeName?.uppercase()) {
-            // duckdb_jdbc 1.5.5 truncates TIMESTAMP_NS to micros through getObject, getTimestamp AND
+            // duckdb_jdbc 1.5.6 truncates TIMESTAMP_NS to micros through getObject, getTimestamp AND
             // getString; labelling that value TIMESTAMP(9) or TIMESTAMP(6) would silently lose data.
             "TIMESTAMP_NS" -> true
             else -> false
@@ -237,7 +237,7 @@ internal object DuckBridgeScalarColumnMappings {
 
     private fun timeWithTimeZoneWriteFunction(): LongWriteFunction =
         object : LongWriteFunction {
-            // DuckDB JDBC 1.5.5 rejects OffsetTime as a prepared parameter ("Unsupported parameter
+            // DuckDB JDBC 1.5.6 rejects OffsetTime as a prepared parameter ("Unsupported parameter
             // type"). Bind its ISO text and make the target cast explicit instead.
             override fun getBindExpression(): String = "CAST(? AS TIME WITH TIME ZONE)"
 

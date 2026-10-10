@@ -67,12 +67,19 @@ class TestDuckDbToDorisTypeMapper {
         assertThat(map("TIMESTAMP_NS").let { it.typeName to it.precision }).isEqualTo("DATETIMEV2" to 6)
         assertThat(map("TIMESTAMP WITH TIME ZONE").let { it.typeName to it.precision })
             .isEqualTo("DATETIMEV2" to 6)
+        assertThat(
+            DuckDbToDorisTypeMapper.toDorisType(
+                "TIMESTAMPTZ",
+                "ts",
+                enableTimestampTz = true,
+            ).let { it.typeName to it.precision },
+        ).isEqualTo("TIMESTAMPTZ" to 6)
     }
 
     @Test
     fun binaryAndSemiStructured() {
         assertThat(map("BLOB").typeName).isEqualTo("VARBINARY")
-        assertThat(map("UUID").typeName).isEqualTo("STRING")
+        assertThat(map("UUID").typeName).isEqualTo("UUID")
         assertThat(map("JSON").typeName).isEqualTo("STRING")
         assertThat(map("STRUCT(a INTEGER, b VARCHAR)").typeName).isEqualTo("STRING")
         assertThat(map("MAP(VARCHAR, INTEGER)").typeName).isEqualTo("STRING")

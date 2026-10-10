@@ -37,10 +37,10 @@ Precisely, from live probes (server run at `Etc/UTC` AND `America/Los_Angeles`, 
 | **`TIMESTAMPTZ` col `>=` explicit-UTC literal** (`TIMESTAMPTZ '…+00'`) | **YES** | instant vs instant; the literal carries its zone. Rows `{1,2}` at both server zones. |
 | **`TIMESTAMPTZ` col `>=` NAIVE literal** (`TIMESTAMP '…'`) | **NO** ⚠ | DuckDB casts the naive literal into the SESSION zone before comparing. Rows `{1,2}` @UTC but `{}` @LA — **zone-DEPENDENT, silently wrong**. |
 
-The last row is the crux: a Doris `WHERE dt >= '2024-06-01 06:30:00'` folds to a **naive** literal, and
-P4 maps a DuckDB `TIMESTAMPTZ` column to Doris `DATETIMEV2` — so a naive naive-literal comparison
-against that column is exactly the zone-DEPENDENT form. **This was a latent correctness bug in the
-pre-P3 query builder** (it pushed all `DATETIMEV2` comparisons with a naive literal).
+The last row is the crux: a Doris `WHERE dt >= '2024-06-01 06:30:00'` folds to a **naive** literal.
+The original P4 mapping represented DuckDB `TIMESTAMPTZ` as Doris `DATETIMEV2`, so a naive-literal
+comparison against that column was exactly the zone-DEPENDENT form. **This was a latent correctness
+bug in the pre-P3 query builder** (it pushed all `DATETIMEV2` comparisons with a naive literal).
 
 ---
 
@@ -77,10 +77,12 @@ approach survives pool reuse.
   `TIMESTAMPTZ '…+00'` comparison and a naive-`TIMESTAMP`/`DATE` comparison both return the SAME rows
   as at UTC. The rendered literal carries all the zone info it needs; the DuckDB session/server zone
   never enters.
-- **The wire VALUE of a TIMESTAMPTZ IS server-zone-dependent** (LA server renders
-  `2024-05-31 23:30:00-07` vs UTC's `…06:30:00+00`) — but that is the BE `DuckDbTypeHandler` decode's
-  concern, not the FILTER's, and P4 already maps TIMESTAMPTZ→DATETIMEV2 reading the UTC instant. Our
-  filter correctness does not depend on it.
+- **The driver's rendered wire VALUE is server-zone-dependent** (LA renders
+  `2024-05-31 23:30:00-07` vs UTC's `…06:30:00+00`), but the handler must preserve the instant.
+  At Doris API 13 / JNI API 5, `enable.mapping.timestamp_tz=true` maps it to native TIMESTAMPTZ and
+  `DuckDbTypeHandler` converts the driver's `OffsetDateTime` to the JNI UTC-field carrier. Live
+  qualification used Quack `Asia/Tokyo`, BE JVM `America/Los_Angeles` and FE `UTC`; both returned
+  instants retained exact microseconds. The compatibility default remains DATETIMEV2.
 
 **So option 2 is the mechanism we adopt** — but ONLY where we can render zone-explicitly, which
 requires knowing the column's DuckDB type.

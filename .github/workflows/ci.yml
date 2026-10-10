@@ -9,7 +9,7 @@
 # The suite is not hermetic: the T3 (quack-jdbc) integration tests spin up a real DuckDB/Quack
 # server via Testcontainers (Docker, preinstalled on ubuntu-latest). PARITY string-pushdown is the
 # default mode, which needs the signed trino_parity extension — we fetch it from the DuckDB
-# community-extensions CDN (INSTALL trino_parity FROM community is published for v1.5.5) and drop
+# community-extensions CDN (INSTALL trino_parity FROM community is published for the pinned DuckDB) and drop
 # it into the bundle paths so bundleParityExtension ships it and the tests exercise the real path.
 name: CI
 

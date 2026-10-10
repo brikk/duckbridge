@@ -122,6 +122,12 @@ if [[ -z "$driver_src" ]]; then
     rm -rf "$tmp_extract"
     exit 1
 fi
+expected_driver="quack-jdbc-0.8.0.jar"
+if [[ "$(basename "$driver_src")" != "${expected_driver}" ]]; then
+    log "ERROR: staged Quack driver is '$(basename "$driver_src")' (expected ${expected_driver})."
+    rm -rf "$tmp_extract"
+    exit 1
+fi
 cp "$driver_src" "${HERE}/.be-drivers/quack-jdbc.jar"
 rm -rf "$tmp_extract"
 BE_DRIVER_URL="file:///opt/duckbridge-drivers/quack-jdbc.jar"
@@ -149,6 +155,14 @@ helper=$("${DOCKER}" create -v "${VOL_NAME}:/dest" alpine \
 # and the BE never sees the driver (JdbcJniScanner then fails "Failed to load driver class").
 log "Starting Doris FE + BE + DuckDB/Quack…"
 "${DOCKER}" compose -f "${COMPOSE}" up -d --force-recreate
+
+duckdb_version=$("${DOCKER}" exec doris-duckbridge-quack \
+    duckdb -csv -noheader -c "SELECT version();" 2>/dev/null | tr -d '\r')
+if [[ "${duckdb_version}" != "v1.5.6" ]]; then
+    log "DUCKDB VERSION FAIL: Quack server is '${duckdb_version:-<missing>}' (expected v1.5.6)."
+    exit 1
+fi
+log "DUCKDB VERSION GREEN: Quack 0.8 driver lane is backed by DuckDB ${duckdb_version}."
 
 # Exercise a real restart with persisted metadata. The staged priority_networks setting must keep
 # the FE on the same static identity rather than selecting another container network.
@@ -189,6 +203,23 @@ while :; do
     sleep 3
 done
 
+# API-major compatibility is not FE/BE wire compatibility. #68785 renumbered master Thrift
+# query options, so require both engines to report this exact source pin before creating fixtures.
+live_version() {
+    local statement="$1"
+    fe_sql -B -e "${statement}" | awk -F'\t' \
+        'NR==1 {for (i=1;i<=NF;i++) {if ($i=="Version") v=i; if ($i=="Alive") a=i}}
+         NR>1 && v && a && $a=="true" {print $v}' | sort -u
+}
+expected_version="doris-0.0.0-dd456ab7a89"
+fe_version=$(live_version "SHOW FRONTENDS")
+be_version=$(live_version "SHOW BACKENDS")
+if [[ "${fe_version}" != "${expected_version}" || "${be_version}" != "${expected_version}" ]]; then
+    log "VERSION FAIL: expected FE+BE ${expected_version}; FE='${fe_version}', BE='${be_version}'."
+    exit 1
+fi
+log "VERSION GREEN: matching FE/BE runtime ${expected_version}."
+
 # 5b. NOTE on the local-shuffle shim: doris-ducklake's smoke SETs
 # enable_local_shuffle_planner=false because it pairs a branch FE with a STOCK 4.1.0 BE whose
 # thrift enum lacks TPlanNodeType.LOCAL_EXCHANGE_NODE=38. doris-duckbridge runs a BRANCH BE
@@ -224,6 +255,7 @@ cat_out=$(fe_sql -e "
         'jdbc_url'     = 'jdbc:quack://duckdb-quack:9494',
         'driver_class' = 'com.gizmodata.quack.jdbc.sql.QuackDriver',
         'driver_url'   = '${BE_DRIVER_URL}',
+        'enable.mapping.timestamp_tz' = 'true',
         'password'     = '${QUACK_TOKEN}'
     );
     SHOW CATALOGS;
@@ -281,13 +313,13 @@ set +e
 desc_out=$(fe_sql -e "DESC duckbridge_test.sales.customers;" 2>&1)
 set -e
 echo "${desc_out}" | tail -20
-# balance DECIMAL(18,2), big_id HUGEINT→LARGEINT, tags VARCHAR[]→ARRAY<STRING>, and BLOB→VARBINARY are the
+# balance DECIMAL, HUGEINT→LARGEINT, LIST→ARRAY, BLOB→VARBINARY and native UUID are the
 # distinctive P4-mapped columns.
 if echo "${desc_out}" | grep -qiE "largeint" && echo "${desc_out}" | grep -qiE "array" \
-   && echo "${desc_out}" | grep -qiE "varbinary"; then
-    log "METADATA GREEN: DESC shows HUGEINT→LARGEINT, VARCHAR[]→ARRAY and BLOB→VARBINARY."
+   && echo "${desc_out}" | grep -qiE "varbinary" && echo "${desc_out}" | grep -qiE "uuid"; then
+    log "METADATA GREEN: DESC shows LARGEINT, ARRAY, VARBINARY and native UUID."
 else
-    log "METADATA FAIL: expected LARGEINT + ARRAY + VARBINARY columns from the type map — inspect above."
+    log "METADATA FAIL: expected LARGEINT + ARRAY + VARBINARY + UUID — inspect above."
     exit 1
 fi
 
@@ -310,9 +342,9 @@ if [[ "${metrics_before}" == *"doris_be_jvm_"* ]]; then
 fi
 log "JVM LAZY-LOAD GREEN: registry is uninitialized and no JVM metrics exist before first use."
 
-log "SCAN: SELECT ... ORDER BY id (largeint + array + binary — DuckDbTypeHandler's first live run)…"
+log "SCAN: exact LARGEINT + ARRAY + arbitrary binary + UUID values…"
 set +e
-sel_out=$(fe_sql -N -e "SELECT id, name, big_id, tags, payload FROM duckbridge_test.sales.customers ORDER BY id;" 2>&1)
+sel_out=$(fe_sql -N -e "SELECT id, name, big_id, tags, HEX(payload), uuid_value FROM duckbridge_test.sales.customers ORDER BY id;" 2>&1)
 sel_status=$?
 set -e
 echo "${sel_out}"
@@ -328,11 +360,11 @@ if [[ $sel_status -ne 0 ]]; then
 fi
 # Exact rows pin row count, ordering, value association, arrays, binary bytes and SQL NULL.
 expected_sel=$(printf '%s\n' \
-    $'1\tAlice\t170141183460469231731687303715884105727\t["vip", "eu"]\tA1' \
-    $'2\tstraße\t-5\t["de"]\tB2' \
-    $'3\tδοκιμή\t0\t[]\tNULL')
+    $'1\tAlice\t170141183460469231731687303715884105727\t["vip", "eu"]\t80FF000100\t00112233-4455-6677-8899-aabbccddeeff' \
+    $'2\tstraße\t-5\t["de"]\t41004200\tffffffff-ffff-4fff-8fff-ffffffffffff' \
+    $'3\tδοκιμή\t0\t[]\tNULL\tNULL')
 if [[ "${sel_out}" == "${expected_sel}" ]]; then
-    log "SCAN GREEN: full-row SELECT round-tripped — unicode, LARGEINT, ARRAY and VARBINARY"
+    log "SCAN GREEN: unicode, LARGEINT, ARRAY, invalid/NUL/trailing-zero binary and UUID round-tripped"
     log "  all decoded by the BE DuckDbTypeHandler over quack-jdbc. 🎉"
 else
     log "SCAN FAIL: rows returned but not the exact expected values — inspect above."
@@ -349,6 +381,13 @@ fi
 metrics_after=$("${DOCKER}" exec doris-duckbridge-be curl -fsS http://127.0.0.1:8040/metrics)
 if [[ "${metrics_after}" != *"doris_be_jvm_"* ]]; then
     log "JVM LAZY-LOAD FAIL: JVM metrics did not appear after the first scan."
+    exit 1
+fi
+jvm_zone=$("${DOCKER}" exec doris-duckbridge-be sh -c \
+    'pid=$(jcmd -l 2>/dev/null | grep " DorisBE$" | cut -d" " -f1); jcmd "$pid" VM.system_properties 2>/dev/null' |
+    awk -F= '$1=="user.timezone" {print $2}')
+if [[ "${jvm_zone}" != "America/Los_Angeles" ]]; then
+    log "JVM ZONE FAIL: embedded JVM zone is '${jvm_zone:-<missing>}' (expected America/Los_Angeles)."
     exit 1
 fi
 log "JVM LAZY-LOAD GREEN: first scan loaded only JDBC and published JVM metrics."
@@ -450,6 +489,22 @@ else
     log "  literal rendered as TIMESTAMPTZ '…+00'. Inspect (plugin may be stale, or rendering regressed)."
     exit 1
 fi
+
+log "P3/P6: exact temporal values with Quack in Asia/Tokyo and BE JVM in America/Los_Angeles…"
+temporal_out=$(fe_sql -N -e "
+    SET time_zone='UTC';
+    SELECT order_id, placed_at, shipped_at
+    FROM duckbridge_test.sales.orders ORDER BY order_id;
+" 2>&1)
+expected_temporal=$(printf '%s\n' \
+    $'100\t2023-03-01 10:00:00.000000\t2023-03-01 18:00:00.000000+00:00' \
+    $'101\t2023-03-02 11:30:00.000000\t2023-03-02 20:00:00.000000+00:00')
+if [[ "${temporal_out}" != "${expected_temporal}" ]]; then
+    echo "${temporal_out}"
+    log "P3/P6 FAIL: temporal values changed across the Quack/JVM/FE timezone boundaries."
+    exit 1
+fi
+log "P3/P6 GREEN: naive wall clocks and TIMESTAMPTZ instants retained exact microsecond values."
 
 # ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
 # Static: the connector emits ONE range per query (a JDBC scan is un-partitionable). Empirical:

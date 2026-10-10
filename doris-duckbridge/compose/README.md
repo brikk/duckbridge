@@ -52,10 +52,12 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
 ## Smoke coverage
 
 - API-version-gated provider registration and real schema/table/type metadata.
+- Exact FE/BE source-version guard before catalog fixture allocation.
 - Persisted FE restart retains `172.31.80.10`.
 - JVM/plugin registry stays uninitialized before the first scan; first use loads only `jdbc` and
   publishes `doris_be_jvm_*` metrics.
-- Exact unicode, LARGEINT, ARRAY and VARBINARY values; exact count and filtered row IDs.
+- Exact unicode, LARGEINT, ARRAY, native UUID and arbitrary VARBINARY bytes; exact count and rows.
+- Native TIMESTAMPTZ transport across Asia/Tokyo Quack, America/Los_Angeles JVM and UTC FE display.
 - Function, naive TIMESTAMP and explicit-UTC TIMESTAMPTZ pushdown in the emitted query.
 - 20 sequential and 8 concurrent scans with zero failures.
 - Any expected-value mismatch exits nonzero.

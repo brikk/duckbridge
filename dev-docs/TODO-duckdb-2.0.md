@@ -18,9 +18,10 @@ version alone:
 - Trino pushdown depends on a version-pinned native `trino_parity` extension.
   Doris instead has its own small, audited SQL-function allowlist.
 
-Current pins are DuckDB/JDBC `1.5.5.0`, `quack-jdbc` `0.6.0`, and a parity
-extension built against DuckDB `v1.5.5` (`gradle/libs.versions.toml` and the
-`duckdb-trino-parity-extension` submodule).
+Current maintained-lane pins are DuckDB/JDBC `1.5.6.0`, `quack-jdbc` `0.8.0`, and signed
+community parity binaries built against DuckDB `v1.5.6`
+(`gradle/libs.versions.toml` and `.github/scripts/fetch-parity-extension.sh`). The source
+submodule has not yet moved its vendored DuckDB beyond v1.5.5.
 
 ## Source material
 
@@ -96,11 +97,11 @@ important are:
 DuckDB version pin, Quack has client/server protocol compatibility, and
 `quack-jdbc` is not the DuckDB Java driver.
 
-- [ ] Create a DuckDB-2.0 preview lane without replacing the 1.5.5 release lane.
+- [ ] Create a DuckDB-2.0 preview lane without replacing the 1.5.6 release lane.
 - [ ] Pin and record all four artifacts independently: `duckdb_jdbc`, DuckDB CLI/
   server, Quack extension, and `quack-jdbc`.
 - [ ] Treat `quack-jdbc` as a code blocker, not just a Maven-version lookup.
-  Released `0.6.0` and current `0.7.0-SNAPSHOT` declare wire protocol v1;
+  Released `0.8.0` still declares wire protocol v1 (while recognizing latest v3);
   DuckDB 2.0 Quack declares v3. Port and release the driver before claiming any
   direct-Quack support.
 - [ ] Implement/prove the v2/v3 protocol additions in `quack-jdbc`: indexed and
@@ -116,9 +117,8 @@ DuckDB version pin, Quack has client/server protocol compatibility, and
   otherwise reject/document mixed versions clearly.
 - [ ] Bump both Quack test-server Dockerfiles, CI extension fetch paths, bundled
   binaries, and compatibility documentation together.
-- [ ] Independently assess `duckdb_jdbc:1.5.5.1` for the maintained 1.5 lane; it
-  fixes a full-materialized-result leak when callers use `execute()` followed by
-  `getResultSet()`.
+- [x] Advance the maintained lane beyond `duckdb_jdbc:1.5.5.1`: `1.5.6.0` passed the full
+  Trino and Doris suites on 2026-10-10.
 
 **Exit:** all supported cells have a live integration test; unsupported cells
 fail clearly rather than returning partially decoded rows.

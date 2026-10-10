@@ -8,12 +8,93 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 
 SOURCE = Path(__file__).resolve().parent
 
 
 class SmokeDriverTests(unittest.TestCase):
+    def test_smoke_rejects_mismatched_fe_be_before_catalog_creation(self):
+        with tempfile.TemporaryDirectory(prefix="duckbridge-version-") as temporary:
+            root = Path(temporary)
+            compose = root / "doris-duckbridge" / "compose"
+            compose.mkdir(parents=True)
+            for name in ("smoke.sh", "fe.conf"):
+                shutil.copyfile(SOURCE / name, compose / name)
+            (compose / ".env").write_text("QUACK_TOKEN=test-token\n")
+            (compose / "docker-compose.yml").write_text("services: {}\n")
+            distributions = compose.parent / "build" / "distributions"
+            distributions.mkdir(parents=True)
+            with zipfile.ZipFile(distributions / "doris-duckbridge-test-plugin.zip", "w") as archive:
+                archive.writestr("lib/quack-jdbc-0.8.0.jar", b"driver")
+
+            fake_docker = root / "docker"
+            fake_docker.write_text(
+                """#!/bin/sh
+set -eu
+if [ "$1" = "create" ]; then echo helper; exit 0; fi
+if [ "$1" = "exec" ] && [ "$2" = "doris-duckbridge-fe" ] && [ "$3" = "mysql" ]; then
+  sql=""
+  no_headers=0
+  while [ "$#" -gt 0 ]; do
+    [ "$1" = "-N" ] && no_headers=1
+    if [ "$1" = "-e" ]; then shift; sql="$1"; break; fi
+    shift
+  done
+  case "$sql" in
+    *"SHOW FRONTENDS"*)
+      if [ "$no_headers" -eq 1 ]; then
+        printf 'fe1\t172.31.80.10\t0\t0\t0\t0\t0\t0\t0\ttrue\t%s\n' "$FAKE_FE_VERSION"
+      else
+        printf 'Name\tHost\tc3\tc4\tc5\tc6\tc7\tc8\tc9\tAlive\tVersion\n'
+        printf 'fe1\t172.31.80.10\t0\t0\t0\t0\t0\t0\t0\ttrue\t%s\n' "$FAKE_FE_VERSION"
+      fi
+      ;;
+    *"SHOW BACKENDS"*)
+      if [ "$no_headers" -eq 1 ]; then
+        printf 'be1\t172.31.80.20\t0\t0\t0\t0\t0\t0\t0\ttrue\t%s\n' "$FAKE_BE_VERSION"
+      else
+        printf 'Name\tHost\tc3\tc4\tc5\tc6\tc7\tc8\tc9\tAlive\tVersion\n'
+        printf 'be1\t172.31.80.20\t0\t0\t0\t0\t0\t0\t0\ttrue\t%s\n' "$FAKE_BE_VERSION"
+      fi
+      ;;
+  esac
+  exit 0
+fi
+if [ "$1" = "exec" ] && [ "$2" = "doris-duckbridge-quack" ]; then
+  echo v1.5.6
+  exit 0
+fi
+exit 0
+"""
+            )
+            fake_docker.chmod(0o755)
+            sleep = root / "sleep"
+            sleep.write_text("#!/bin/sh\nexit 0\n")
+            sleep.chmod(0o755)
+            version = "doris-0.0.0-dd456ab7a89"
+            env = {
+                "PATH": str(root) + os.pathsep + os.defpath,
+                "HOME": temporary,
+                "DOCKER": str(fake_docker),
+                "LC_ALL": "C",
+                "FAKE_FE_VERSION": version,
+                "FAKE_BE_VERSION": "doris-0.0.0-stale-be",
+            }
+            result = subprocess.run(
+                ["bash", str(compose / "smoke.sh"), "--no-build", "--up-only"],
+                cwd=root,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("VERSION FAIL", result.stdout + result.stderr)
+            self.assertNotIn("Creating catalog duckbridge_test", result.stdout + result.stderr)
+
     def test_down_stages_static_fe_election_network(self):
         with tempfile.TemporaryDirectory(prefix="duckbridge-smoke-") as temporary:
             compose = Path(temporary) / "doris-duckbridge" / "compose"

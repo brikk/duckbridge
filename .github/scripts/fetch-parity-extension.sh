@@ -5,14 +5,14 @@
 # cross-repo artifact download needed — `INSTALL trino_parity FROM community` is published per
 # (DuckDB version x platform), and the same signed binary loads by path with allow_unsigned.
 #
-# The DuckDB version is derived from gradle/libs.versions.toml (duckdb = "1.5.5.0" -> v1.5.5) so it
+# The DuckDB version is derived from gradle/libs.versions.toml (duckdb = "1.5.6.0" -> v1.5.6) so it
 # tracks the pinned engine automatically. Bundles linux_amd64 (the CI host) + linux_arm64.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-# duckdb = "1.5.5.0" -> take the first three components -> v1.5.5
+# duckdb = "1.5.6.0" -> take the first three components -> v1.5.6
 jdbc_version="$(sed -n 's/^duckdb = "\([0-9.]*\)".*/\1/p' gradle/libs.versions.toml)"
 if [ -z "${jdbc_version}" ]; then
   echo "::error::could not read duckdb version from gradle/libs.versions.toml" >&2

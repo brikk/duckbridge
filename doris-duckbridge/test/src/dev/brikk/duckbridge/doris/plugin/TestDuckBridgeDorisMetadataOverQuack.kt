@@ -159,7 +159,7 @@ class TestDuckBridgeDorisMetadataOverQuack {
         // TIMESTAMPTZ → naive DATETIMEV2(6) over UTC instants (report §TIMESTAMPTZ).
         assertDecimalLike("c_timestamptz", "DATETIMEV2", 6, 0)
         assertDecimalLike("c_ts_ns", "DATETIMEV2", 6, 0) // nanos degrade to micros
-        assertType("c_uuid", "STRING")
+        assertType("c_uuid", "UUID")
         assertType("c_json", "STRING")
         // LIST → ARRAY<element>.
         assertType("c_list_int", "ARRAY")

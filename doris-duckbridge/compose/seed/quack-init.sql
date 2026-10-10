@@ -16,13 +16,16 @@ CREATE TABLE IF NOT EXISTS sales.customers (
     signup    DATE,
     big_id    HUGEINT,
     tags      VARCHAR[],
-    payload   BLOB
+    payload   BLOB,
+    uuid_value UUID
 );
 
 INSERT INTO sales.customers VALUES
-    (1, 'Alice',  100.50, DATE '2020-01-15', 170141183460469231731687303715884105727, ['vip','eu'], encode('A1')),
-    (2, 'straße', 42.00,  DATE '2021-06-30', -5, ['de'], encode('B2')),
-    (3, 'δοκιμή', 0.00,   DATE '2022-12-01', 0, [], NULL);
+    (1, 'Alice',  100.50, DATE '2020-01-15', 170141183460469231731687303715884105727,
+        ['vip','eu'], from_hex('80FF000100'), UUID '00112233-4455-6677-8899-aabbccddeeff'),
+    (2, 'straße', 42.00,  DATE '2021-06-30', -5,
+        ['de'], from_hex('41004200'), UUID 'ffffffff-ffff-4fff-8fff-ffffffffffff'),
+    (3, 'δοκιμή', 0.00,   DATE '2022-12-01', 0, [], NULL, NULL);
 
 -- placed_at is a naive TIMESTAMP (zone-independent predicates); shipped_at is a TIMESTAMPTZ so
 -- the smoke can exercise the P3/P6 zone-explicit (`TIMESTAMPTZ '…+00'`) rendering end-to-end.

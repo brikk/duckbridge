@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`8fc58e929b2` (2026-09-19, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`dd456ab7a89` (2026-10-10, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,13 +35,13 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `8fc58e929b2151c9ff4ae71d07375a7f8e944697`
-> - **subject** = `[fix](iceberg) Reject server planning before snapshot conversion (#68095)`
+> - **`PIN_SHA`** = `dd456ab7a894f54c6553415223c6d5c9c7d4e035`
+> - **subject** = `[improvement](mtmv) Judge a base table column change by the MV query it reaches (#68646)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
-> **Operating model: local-only, no fork push.** We apply the BE patch LOCALLY against an
-> apache/doris `master` checkout at `PIN_SHA` (the worktree `~/DEV/OSS/doris`) and build the SPI jars
-> from that checkout's `fe/`. Master keeps the SHA alive (no dated fork-mirror branch to maintain
+> **Operating model: local-only, no fork push.** Apply the BE patch LOCALLY in a dedicated clean
+> apache/doris worktree at `PIN_SHA` and build the SPI jars from that checkout's `fe/`. Never reset
+> a shared checkout carrying staged work from another pin. Master keeps the SHA alive
 > anymore). If a re-vendor moves the pin, re-diff the remaining patch (`git apply --3way --check`
 > must be clean), record what moved and why it's benign in the Re-vendor log below, and update
 > `BASELINE`. Keep `BASELINE`, this note, and the Re-vendor log in sync.
@@ -106,9 +106,8 @@ all.)
 default `--check-only` mode) and require **JDK 17** (the Doris FE toolchain):
 
 ```bash
-# 1. Verify the BE patch still applies at the pin (default mode; clones apache/doris master at the pin).
-#    Simplest: skip the clone by pointing DORIS_SRC at the existing apache checkout:
-#      DORIS_SRC=~/DEV/OSS/doris tools/doris-baseline.sh --check-only
+# 1. Verify the BE patch still applies at the pin (default mode clones into its cache).
+#    DORIS_SRC may point at a dedicated clean exact-pin worktree; do not use a shared dirty checkout.
 tools/doris-baseline.sh --check-only
 
 # 2. Apply the BE patch into the cache checkout (the FE builds patch-free at this pin):
@@ -170,6 +169,43 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-10-10 — re-vendor to apache/doris `master` `dd456ab7a89`** (subject:
+  *"[improvement](mtmv) Judge a base table column change by the MV query it reaches (#68646)"*).
+  Connector API **9→13** and BE JNI plugin API **3→5**; Thrift remains 0.24.0 and Maven revision
+  remains `1.2-SNAPSHOT`.
+  - **SPI/build gates:** project-local SPI reports `api.version=13.0` and SHA-256
+    `cfd1ba6da7ae198dfc44c6f42dda8fbab3dfd6563024bdb2d6a518839a773969`. The local Thrift JAR
+    (`681a7623b079cff4ed0dbc34c7cd3bf5c209d93f7b9ef4d088a30144420a6f55`) has the same extracted
+    content as shared reference `da4b1fe352fe281e0f9952ba5e8348c9bf0e0fd1a39c51f02649d132b6326ed3`
+    except for embedded `/doris` versus `/workspace` Maven paths. Duckbridge's 62 Java-17 tests,
+    Detekt, assembly, API-13 manifest and host-jar ZIP exclusions pass. Plugin JAR SHA-256:
+    `24480e571e5424a31f197c87d9b28afc4fc1063b97d287a62b379b63181de942`; ZIP:
+    `148317af35b8dde42e07446eeebcafe75aecd7713eef964ae2c304f712c4e15e` (released Quack JDBC 0.8.0,
+    DuckDB 1.5.6 compatibility lane).
+  - **Patch/JNI gates:** refreshed build environment
+    `sha256:6588fad93b64900fdfe1317772d38e8e67e2f82d9b2fca831b0ba55f578c717d`.
+    The patch adds native UUID and zone-independent TIMESTAMPTZ handling plus direct byte/UUID/UTC
+    tests. The API-13 JDBC reactor passed 58 tests with 18 environment-gated skips. JNI SPI/bootstrap
+    hashes match the qualified clean build (`2a508f5f8d9f9a28109357054310590892d349db8c9eca616266c2182c587bbe` /
+    `4cb4dc06591a0ec4847485138f00c795312b232ab496e930ca6f38c1d875b462`); all nine complete plugin
+    directories pass the six static layout checks. JDBC plugin SHA-256:
+    `5d2f1a329da1bfe5b872d98797cc24953a03f05734d59e40f1103600d601318e`, stamped JNI API 5.0.
+  - **Matching ASAN runtime:** reused exact-pin qualified native executable
+    `35438a615cb79ba9d232fba8d9f6880f72a344b1a8c0d964ec399d9a057c6944`, then rebuilt the entire
+    Java shared layer/plugin tree from patched source. FE image
+    `sha256:4ce1e07eb011ef0e27e0cf4bccb5e4b824d03d83f94450be89e66dbe1197aa6d`; patched BE image
+    `sha256:49516bf84dbf348066e2cf56cea93cf351eb9188358848074d62c8105b42c134`. Both report
+    `doris-0.0.0-dd456ab7a89`; the smoke rejects any other FE/BE pair before fixture allocation.
+  - **Live JDBC smoke GREEN:** persisted FE restart retained `172.31.80.10`; no FE plugin failures;
+    lazy first use loaded only JDBC at JNI API 5. Quack JDBC 0.8 ran against DuckDB 1.5.6. Exact
+    LARGEINT/ARRAY/native UUID and invalid-UTF8,
+    embedded-NUL/trailing-zero BLOB bytes passed. Quack ran in Asia/Tokyo, embedded JVM in
+    America/Los_Angeles, and FE display in UTC: naive timestamps and TIMESTAMPTZ instants retained
+    exact microseconds; temporal/function/predicate pushdowns, count, 20 sequential and 8 concurrent
+    scans passed. Deliberately invalidating JDBC failed only that plugin while BE remained alive;
+    recreating the BE restored `count(*)=3`. No ASAN diagnostic appeared. This is runtime correctness
+    qualification, not performance qualification.
 
 - **2026-09-19 — re-vendor to apache/doris `master` `8fc58e929b2`** (subject:
   *"[fix](iceberg) Reject server planning before snapshot conversion (#68095)"*; +87 commits over

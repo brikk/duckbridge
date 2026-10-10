@@ -12,12 +12,12 @@
 #       absolute path in entrypoint.sh (needs `-unsigned`, see the note there).
 #
 # Base image trixie-slim (GLIBC 2.41): matches the trino fixture. Pin duckdb to the
-# repo-wide duckdb version (libs.versions.toml: duckdb = 1.5.4.0) so the server matches the
+# repo-wide duckdb version (libs.versions.toml: duckdb = 1.5.6.0) so the server matches the
 # quack-jdbc client's dialect.
 
 FROM debian:trixie-slim
 
-ARG DUCKDB_VERSION=v1.5.4
+ARG DUCKDB_VERSION=v1.5.6
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip \

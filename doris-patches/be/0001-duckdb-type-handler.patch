@@ -16,8 +16,9 @@ Why upstream needs it (and why it is BE-only):
     - DefaultTypeHandler : LARGEINT + VARBINARY, but NO ARRAY
     - ClickHouseTypeHandler: LARGEINT + ARRAY, but NO VARBINARY
     - TrinoTypeHandler   : ARRAY + VARBINARY, but DROPS LARGEINT (throws)
-  DuckDB maps HUGEINT/UBIGINT -> LARGEINT, BLOB -> VARBINARY, LIST -> ARRAY, so
-  it needs all three arms at once. One handler is strictly cleaner than
+  DuckDB maps HUGEINT/UBIGINT -> LARGEINT, BLOB -> VARBINARY, LIST -> ARRAY,
+  UUID -> UUID and TIMESTAMPTZ -> TIMESTAMPTZ, so it needs these arms together.
+  One handler is strictly cleaner than
   contorting the FE type map to fit someone else's dialect.
   This change touches ONLY be-java-extensions/jdbc-scanner (Java): it needs NO
   thrift TOdbcTableType change and NO FE JdbcDbType change -- those bind only the
@@ -32,6 +33,8 @@ Coverage (v1):
   - VARBINARY (DuckDB BLOB) -> byte[].
   - ARRAY     (DuckDB LIST) -> List, elements widened like ClickHouseTypeHandler
     (int128/wide-unsigned elements arrive as BigInteger).
+  - UUID      -> java.util.UUID, including UUID list elements.
+  - TIMESTAMPTZ -> UTC LocalDateTime carrier, independent of JVM/session zone.
   - STRUCT / MAP: NOT decoded in v1. The duckbridge FE maps DuckDB
     STRUCT/MAP/JSON to STRING/JSON, so they arrive as strings and take the
     scalar path. First-class nested decode is a follow-up (probe P4).
@@ -41,13 +44,15 @@ Upstream ask / exit criteria:
   Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
   lands in a release, this patch is deleted and BASELINE points at the tag.
 
-Anchors at pin 8fc58e929b2 (#68095):
+Anchors at pin dd456ab7a89 (#68646), connector API 13 / JNI API 5:
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
        (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the
         existing `case "CLICKHOUSE"` arm)
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcPluginTest.java
        (direct coverage that the DUCKDB factory arm selects DuckDbTypeHandler)
+  NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandlerTest.java
+       (UTC TIMESTAMPTZ, native UUID and byte-identity coverage)
 
 Import rebase (96d0ac68 moved the shared vector contract):
   OLD  org.apache.doris.common.jni.vec.ColumnType / ColumnValueConverter
@@ -57,10 +62,10 @@ Apply:  git apply --3way doris-patches/be/0001-duckdb-type-handler.patch
 --- (patch body below; lines above this marker are commentary ignored by git apply) ---
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java
 new file mode 100644
-index 00000000000..06b1622f9ed
+index 00000000000..ac33d0c1be8
 --- /dev/null
 +++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/DuckDbTypeHandler.java
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,301 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -93,8 +98,13 @@ index 00000000000..06b1622f9ed
 +import java.sql.ResultSetMetaData;
 +import java.sql.SQLException;
 +import java.sql.Timestamp;
++import java.time.Instant;
++import java.time.LocalDateTime;
++import java.time.OffsetDateTime;
++import java.time.ZonedDateTime;
 +import java.util.ArrayList;
 +import java.util.List;
++import java.util.UUID;
 +
 +/**
 + * DuckDB-specific type handler for the {@code duckbridge} connector, which runs a verbatim
@@ -178,6 +188,16 @@ index 00000000000..06b1622f9ed
 +            case DATETIMEV2: {
 +                Timestamp ts = rs.getTimestamp(columnIndex);
 +                value = ts != null ? ts.toLocalDateTime() : null;
++                break;
++            }
++            case TIMESTAMPTZ: {
++                OffsetDateTime timestamp = rs.getObject(columnIndex, OffsetDateTime.class);
++                value = timestamp != null ? checkedUtcTimestamp(timestamp.toInstant()) : null;
++                break;
++            }
++            case UUID: {
++                String uuid = rs.getString(columnIndex);
++                value = uuid != null ? UUID.fromString(uuid) : null;
 +                break;
 +            }
 +            case CHAR:
@@ -286,6 +306,20 @@ index 00000000000..06b1622f9ed
 +                }
 +                return result;
 +            }
++            case TIMESTAMPTZ: {
++                List<LocalDateTime> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : toUtcLocalDateTime(element));
++                }
++                return result;
++            }
++            case UUID: {
++                List<UUID> result = Lists.newArrayList();
++                for (Object element : array) {
++                    result.add(element == null ? null : UUID.fromString(element.toString()));
++                }
++                return result;
++            }
 +            case STRING: {
 +                List<String> result = Lists.newArrayList();
 +                for (Object element : array) {
@@ -316,11 +350,29 @@ index 00000000000..06b1622f9ed
 +        }
 +        throw new IllegalArgumentException("Unsupported DuckDB list element type: " + element.getClass());
 +    }
++
++    private static LocalDateTime toUtcLocalDateTime(Object value) {
++        if (value instanceof OffsetDateTime) {
++            return checkedUtcTimestamp(((OffsetDateTime) value).toInstant());
++        }
++        if (value instanceof ZonedDateTime) {
++            return checkedUtcTimestamp(((ZonedDateTime) value).toInstant());
++        }
++        if (value instanceof Instant) {
++            return checkedUtcTimestamp((Instant) value);
++        }
++        if (value instanceof Timestamp) {
++            return checkedUtcTimestamp(((Timestamp) value).toInstant());
++        }
++        throw new IllegalArgumentException("Unsupported DuckDB TIMESTAMPTZ value type: " + value.getClass());
++    }
 +}
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
+index e1a5f1356c2..ab2769d752d 100644
 --- a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
 +++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
-@@ -42,6 +42,8 @@ public class JdbcTypeHandlerFactory {
+@@ -43,6 +43,8 @@ public class JdbcTypeHandlerFactory {
+                 return new PostgreSQLTypeHandler();
              case "CLICKHOUSE":
                  return new ClickHouseTypeHandler();
 +            case "DUCKDB":
@@ -328,10 +380,82 @@ diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/j
              case "SQLSERVER":
                  return new SQLServerTypeHandler();
              case "DB2":
-                 return new DB2TypeHandler();
-             case "SAP_HANA":
-                 return new SapHanaTypeHandler();
+diff --git a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/DuckDbTypeHandlerTest.java b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/DuckDbTypeHandlerTest.java
+new file mode 100644
+index 00000000000..47f39cfe685
+--- /dev/null
++++ b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/DuckDbTypeHandlerTest.java
+@@ -0,0 +1,68 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++package org.apache.doris.jdbc;
++
++import org.apache.doris.jni.spi.vec.ColumnType;
++
++import org.junit.jupiter.api.Assertions;
++import org.junit.jupiter.api.Test;
++import org.mockito.Mockito;
++
++import java.sql.ResultSet;
++import java.time.LocalDateTime;
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++public class DuckDbTypeHandlerTest {
++    private final DuckDbTypeHandler handler = new DuckDbTypeHandler();
++
++    @Test
++    public void readsTimestampTzAsUtcFields() throws Exception {
++        ResultSet result = Mockito.mock(ResultSet.class);
++        Mockito.when(result.getObject(1, OffsetDateTime.class))
++                .thenReturn(OffsetDateTime.parse("2024-06-01T01:02:03.456789-07:00"));
++
++        Object value = handler.getColumnValue(result, 1,
++                new ColumnType("ts", ColumnType.Type.TIMESTAMPTZ, 6, 0), null);
++
++        Assertions.assertEquals(LocalDateTime.parse("2024-06-01T08:02:03.456789"), value);
++    }
++
++    @Test
++    public void readsUuidWithoutStringDowngrade() throws Exception {
++        ResultSet result = Mockito.mock(ResultSet.class);
++        Mockito.when(result.getString(1)).thenReturn("00112233-4455-6677-8899-aabbccddeeff");
++
++        Object value = handler.getColumnValue(result, 1,
++                new ColumnType("uuid", ColumnType.Type.UUID), null);
++
++        Assertions.assertEquals(UUID.fromString("00112233-4455-6677-8899-aabbccddeeff"), value);
++    }
++
++    @Test
++    public void preservesEveryBinaryByte() throws Exception {
++        byte[] expected = new byte[] {(byte) 0x80, (byte) 0xff, 0, 1, 0};
++        ResultSet result = Mockito.mock(ResultSet.class);
++        Mockito.when(result.getBytes(1)).thenReturn(expected);
++
++        Object value = handler.getColumnValue(result, 1,
++                new ColumnType("payload", ColumnType.Type.VARBINARY), null);
++
++        Assertions.assertArrayEquals(expected, (byte[]) value);
++    }
++}
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
+index 78c46c1eacf..e3f77e90a45 100644
 --- a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
 +++ b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
 @@ -48,3 +48,9 @@ public class JdbcPluginTest {

@@ -39,7 +39,7 @@ Both `.tar.gz` and `.zip` are published, each with a `.sha256` sidecar. The vers
 cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin/"
 ```
 
-**Compatibility.** Trino **483**; embedded DuckDB engine **1.5.5** (bundled JDBC driver). A remote
+**Compatibility.** Trino **483**; embedded DuckDB engine **1.5.6** (bundled JDBC driver). A remote
 Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
 see below).
 
@@ -111,7 +111,7 @@ The production JDBC path maps DuckDB's scalar types losslessly as follows (embed
 
 `TIMESTAMP_S` / `TIMESTAMP_MS` read as Trino `TIMESTAMP(0)` / `TIMESTAMP(3)`; ordinary DuckDB
 `TIMESTAMP` reads as `TIMESTAMP(6)`. `TIMESTAMP_NS` is deliberately unsupported on the production
-JDBC path: DuckDB JDBC 1.5.5 truncates it to microseconds through `getObject`, `getTimestamp`, and
+JDBC path: DuckDB JDBC 1.5.6 truncates it to microseconds through `getObject`, `getTimestamp`, and
 even `getString`, so no connector mapping can recover the nanoseconds. It is omitted rather than
 silently mislabeled as `TIMESTAMP(9)` or `TIMESTAMP(6)`, even under generic convert-to-varchar mode.
 Writes support `VARBINARY`, `UUID`, and temporal types through precision 6; higher precision fails
@@ -303,8 +303,15 @@ distribution — operators normally never touch a raw binary (see the transport 
 release build and CI fetch the signed community binary for the pinned DuckDB version and bundle the
 Linux variants into the plugin jar (`.github/scripts/fetch-parity-extension.sh`).
 
+For a reproducible local package matching the root DuckDB pin, fetch those signed binaries first:
+
+```sh
+./.github/scripts/fetch-parity-extension.sh
+```
+
 For **extension development**, the source is pinned as a submodule at
-`duckdb-trino-parity-extension/`; build it locally with:
+`duckdb-trino-parity-extension/`. Its vendored DuckDB must match the root pin before using a local
+build in place of the fetched binary:
 
 ```sh
 cd duckdb-trino-parity-extension && make        # host platform

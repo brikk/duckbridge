@@ -40,8 +40,8 @@ internal object DuckDbToDorisTypeMapper {
      *   `INTEGER[]`, `STRUCT(a INTEGER, b VARCHAR)`, `TIMESTAMP WITH TIME ZONE`.
      * @param columnName only used to make a fail-loud message actionable.
      * @param enableTimestampTz mirrors the iceberg/ducklake `enable.mapping.timestamp_tz` knob;
-     *   v1 default false. See the report §TIMESTAMPTZ — either way v1 maps to naive `DATETIMEV2(6)`
-     *   over correct UTC instants (tz-sensitive pushdown is gated off, plan §Timezone).
+     *   default false for compatibility. At API/JNI 13/5, true preserves the instant as native
+     *   `TIMESTAMPTZ(6)`; false keeps the legacy naive `DATETIMEV2(6)` UTC carrier.
      * @throws DorisConnectorException for a type with no faithful Doris fit (UHUGEINT, INTERVAL,
      *   unmappable ARRAY element, unparseable type).
      */
@@ -75,7 +75,7 @@ internal object DuckDbToDorisTypeMapper {
             return ConnectorType.of("DECIMALV3", precision, scale)
         }
 
-        return mapScalar(normalized, columnName, raw)
+        return mapScalar(normalized, columnName, raw, enableTimestampTz)
     }
 
     private fun isStructMapOrEnum(normalized: String): Boolean {
@@ -85,7 +85,12 @@ internal object DuckDbToDorisTypeMapper {
     }
 
     @Suppress("CyclomaticComplexMethod") // A flat DuckDB-type → Doris-type dispatch; one arm per type.
-    private fun mapScalar(normalized: String, columnName: String, raw: String): ConnectorType =
+    private fun mapScalar(
+        normalized: String,
+        columnName: String,
+        raw: String,
+        enableTimestampTz: Boolean,
+    ): ConnectorType =
         when (normalized) {
             "boolean", "bool" -> ConnectorType.of("BOOLEAN")
 
@@ -126,19 +131,22 @@ internal object DuckDbToDorisTypeMapper {
             // micros — same widen-to-micros doris-ducklake applies.
             "timestamp_ns" -> ConnectorType.of("DATETIMEV2", MICROS_SCALE, 0)
 
-            // TIMESTAMPTZ (report §TIMESTAMPTZ): v1 → naive DATETIMEV2(6) over correct UTC instants,
-            // tz-sensitive pushdown gated off (plan §Timezone). enableTimestampTz reserved for a
-            // future zone-aware mapping once the BE converter + P3 land; today both branches map
-            // to naive DATETIMEV2(6) (we do NOT claim zone-aware semantics we can't honor).
-            "timestamp with time zone", "timestamptz" -> ConnectorType.of("DATETIMEV2", MICROS_SCALE, 0)
+            // API 13 / JNI 5 carries TIMESTAMPTZ as UTC fields without JVM/session-zone reinterpretation.
+            // Keep the compatibility default, but make the existing opt-in truthful now that the carrier
+            // and DuckDbTypeHandler conversion exist.
+            "timestamp with time zone", "timestamptz" -> if (enableTimestampTz) {
+                ConnectorType.of("TIMESTAMPTZ", MICROS_SCALE, 0)
+            } else {
+                ConnectorType.of("DATETIMEV2", MICROS_SCALE, 0)
+            }
             "time with time zone", "timetz" -> ConnectorType.of("STRING")
 
             // JSON → STRING in v1 (plan §The dialect gap); round-trippable as text.
             "json" -> ConnectorType.of("STRING")
 
-            // UUID → STRING in v1: quack-jdbc surfaces UUID as a string and the DuckDbTypeHandler
-            // has no UUID arm yet (report §notes).
-            "uuid" -> ConnectorType.of("STRING")
+            // API 13 / JNI 5 has a native UUID vector carrier; the handler accepts either the driver's
+            // UUID object or canonical text without degrading the schema to STRING.
+            "uuid" -> ConnectorType.of("UUID")
 
             // No faithful Doris fit; DuckDB's interval string isn't a Doris-castable value on the
             // JDBC path → fail loud rather than risk silently-wrong data.
