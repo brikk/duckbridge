@@ -4,7 +4,7 @@ The complete set of predicates and functions the connector pushes down into
 DuckDB.
 
 For open items and deferred functions see
-[TODO-pushdown-duckdb.md](dev-docs/TODO-pushdown-duckdb.md). This doc is the
+[archived pushdown program tracker](dev-docs/archive/TODO-pushdown-duckdb.md). This doc is the
 *current surface*; that one is the *tracker*.
 
 ## Discipline (non-negotiable)

@@ -86,7 +86,7 @@ services:
       # 'file:///opt/duckbridge-drivers/quack-jdbc.jar'. smoke.sh extracts the jar from the built
       # plugin zip into ./ .be-drivers before `up`. DEPLOYMENT EXPECTATION: operators put
       # quack-jdbc where the BE can read it (this dir, or DORIS_HOME/plugins/jdbc_drivers) and set
-      # driver_url accordingly. (No checksum gate on the JNI-reader path — see NOTES-p5-p2-scan.md.)
+      # driver_url accordingly. See dev-docs/DESIGN-jdbc-scan-contract.md.
       - ./.be-drivers:/opt/duckbridge-drivers:ro
     networks:
       doris-net:

@@ -4,7 +4,7 @@ Bring our duckdb-format read path up to the BigQuery / Snowflake connector shape
 
 This file is the **program tracker** (roadmap, history, open items). For the
 **current pushable surface** — every operator, transform, and function that
-pushes today — see [README-duckdb-format-pushdown-reference.md](../README-duckdb-format-pushdown-reference.md).
+pushes today — see [README-pushdown-reference.md](../../README-pushdown-reference.md).
 
 Background and architecture: see [RESEARCH-lance-and-pushdown.md](RESEARCH-lance-and-pushdown.md).
 Function mapping reference: see [RESEARCH-function-mapping.md](RESEARCH-function-mapping.md).
@@ -48,7 +48,7 @@ Function mapping reference: see [RESEARCH-function-mapping.md](RESEARCH-function
    - **`concat` shipped as translator rewrite** (round 6e): `Call(concat, [a,b,c])` → `(a || b || c)` when return type is `VARCHAR`. DuckDB's `concat` skips NULL; the `||` operator NULL-propagates in both engines and matches Trino's `concat` semantics.
    - Not yet shipped: `position` (operator-form; needs translator special case).
    - Regex (Trino Joni vs DuckDB RE2): `regexp_like/2`, `regexp_extract/{2,3}`, `regexp_replace/{2,3}` push only for a constant pattern accepted by `Re2Safety`; extract wraps no-match to NULL and replace/3 additionally rejects `$`/`\` replacement syntax. See EV-A6..A8.
-4. ✅ **Date / time** — complete. Plan in [archive/PLAN-pushdown-datetime.md](archive/PLAN-pushdown-datetime.md). Empirical TZ findings in [archive/REPORT-datetime-tz-handling.md](archive/REPORT-datetime-tz-handling.md). Chunk-by-chunk record in [archive/TODO-pushdown-datetime.md](archive/TODO-pushdown-datetime.md). Shipped: 1 = translator type-gate + Tier A (DATE) + Tier B (TIMESTAMP no-TZ); 2 = session-TZ plumbing + normaliser; 3 = Tier C session-property gate (narrow, `to_unixtime` only); 3.5 = Arrow converter fix unblocks full Tier C surface (year/month/day/hour/...); 4 = `from_unixtime`/`with_timezone` extras + `at_timezone` documented as not-pushable.
+4. ✅ **Date / time** — complete. Plan in [PLAN-pushdown-datetime.md](PLAN-pushdown-datetime.md). Empirical TZ findings in [REPORT-datetime-tz-handling.md](REPORT-datetime-tz-handling.md). Chunk-by-chunk record in [TODO-pushdown-datetime.md](TODO-pushdown-datetime.md). Shipped: 1 = translator type-gate + Tier A (DATE) + Tier B (TIMESTAMP no-TZ); 2 = session-TZ plumbing + normaliser; 3 = Tier C session-property gate (narrow, `to_unixtime` only); 3.5 = Arrow converter fix unblocks full Tier C surface (year/month/day/hour/...); 4 = `from_unixtime`/`with_timezone` extras + `at_timezone` documented as not-pushable.
 5. ⏳ **DuckDB-namespaced exclusives** — vector / JSON / list / struct / regex variants that exist in DuckDB but not in Trino. Register through `ConnectorFunctionProvider`, route through the same translator. Lower-risk than #4 because we own both ends of the semantic contract. Not started.
 6. ✅ **Lance table functions** — shipped (`lance_vector_search` / `lance_fts` / `lance_hybrid_search` via `applyTableFunction`/`applyFilter`/`applyTopN`). Change-feed table functions (`table_insertions`/`table_deletions`/`table_changes`) also shipped on the same scan-rewrite pattern.
 
@@ -193,7 +193,7 @@ Cheap wins. All confirmed aligned via DuckDB docs check; no probe required.
 
 ### Round 6b-core — Core DuckDB hash macros (NO new extension, 3 entries)
 
-**Promoted to front of queue** based on `ProbeHashNullHandling` findings (see [archive/REPORT-hash-null-handling.md](archive/REPORT-hash-null-handling.md)). Core DuckDB ships `md5`, `sha1`, `sha256` returning hex VARCHAR; wrap with `unhex(...)` to match Trino's VARBINARY return. NULL propagation empirically verified aligned (`md5(NULL) → NULL`, `md5('a' || NULL || 'c') → NULL`).
+**Promoted to front of queue** based on `ProbeHashNullHandling` findings (see [REPORT-hash-null-handling.md](REPORT-hash-null-handling.md)). Core DuckDB ships `md5`, `sha1`, `sha256` returning hex VARCHAR; wrap with `unhex(...)` to match Trino's VARBINARY return. NULL propagation empirically verified aligned (`md5(NULL) → NULL`, `md5('a' || NULL || 'c') → NULL`).
 
 | Trino | DuckDB macro body | Notes |
 |---|---|---|
@@ -264,7 +264,7 @@ Note: NetQuack also ships `base64_encode`/`base64_decode` overlapping core DuckD
 
 These need translator-level work because the shape change can't be expressed as a single macro substitution:
 
-- ✅ **`concat(a, b, c, ...)` → `(a || b || c || ...)` operator chain — SHIPPED.** Empirically verified ([archive/REPORT-hash-null-handling.md](archive/REPORT-hash-null-handling.md)): DuckDB's `concat` skips NULL while Trino's NULL-propagates, but the `||` operator NULL-propagates on both sides. `DuckDbExpressionTranslator` rewrites `Call(concat, [args])` into a parenthesized `||` chain when the return type is `VARCHAR` (gates out the `concat(array, array)` overload, which has different NULL semantics). Variadic, any arity ≥ 2. End-to-end coverage in `TestDucklakeDuckDbReadMode#testConcatPredicatePushesDownAsOperatorChain` and `#testConcatWithNullPropagatesTrinoSemantics` (the second pins the NULL-propagation guarantee on the duckdb-format path).
+- ✅ **`concat(a, b, c, ...)` → `(a || b || c || ...)` operator chain — SHIPPED.** Empirically verified ([REPORT-hash-null-handling.md](REPORT-hash-null-handling.md)): DuckDB's `concat` skips NULL while Trino's NULL-propagates, but the `||` operator NULL-propagates on both sides. `DuckDbExpressionTranslator` rewrites `Call(concat, [args])` into a parenthesized `||` chain when the return type is `VARCHAR` (gates out the `concat(array, array)` overload, which has different NULL semantics). Variadic, any arity ≥ 2. End-to-end coverage in `TestDucklakeDuckDbReadMode#testConcatPredicatePushesDownAsOperatorChain` and `#testConcatWithNullPropagatesTrinoSemantics` (the second pins the NULL-propagation guarantee on the duckdb-format path).
 - `contains(network, address)` → emit `network >>= addr` operator form (inet extension).
 - `url_extract_parameter(url, name)` → emit correlated subquery through `extract_query_parameters(url)` table function (netquack extension).
 - IPADDRESS / IPPREFIX type → connector-side type plumbing.

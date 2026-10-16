@@ -2,7 +2,7 @@
 #
 # doris-baseline.sh — manage the Doris baseline the duckbridge FE/BE patches apply against.
 #
-# Per PLAN-doris-duckbridge.md §Managing the Doris patches (item 3): there is NO Doris submodule
+# Per doris-patches/PATCHES.md: there is NO Doris submodule
 # in this repo (a full clone is multi-GB). Instead this script:
 #   1. reads the pin from doris-patches/BASELINE (single source of truth);
 #   2. clones/fetches apache/doris master at that pin into a cache dir;

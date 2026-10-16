@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
 /**
  * Item 2 — the Quack token rides `jdbc_password`; our OWN `toString`s must never print it. (At the
  * pin, FE-core already masks `password` in SHOW CREATE CATALOG / EXPLAIN VERBOSE / the audit log —
- * documented in NOTES-p5-p2-scan.md; this test guards the surfaces that ARE ours to redact.)
+ * documented in DESIGN-jdbc-scan-contract.md; this test guards the surfaces that ARE ours to redact.)
  */
 class TestDuckBridgeTokenRedaction {
 

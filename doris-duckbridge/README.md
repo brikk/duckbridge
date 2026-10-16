@@ -9,8 +9,8 @@ existing JDBC JNI scanner.
 JNI plugin API 5. The matching ASAN runtime passed exact JDBC values, native UUID/TIMESTAMPTZ,
 pushdowns, concurrency, lazy plugin loading, persisted-FE restart and plugin-scoped failure recovery.
 Metadata, JDBC scans, predicate/function pushdown, temporal values, LARGEINT, ARRAY, VARBINARY,
-and concurrent scans run through DuckDB/Quack. Design and probe history:
-[`../dev-docs/PLAN-doris-duckbridge.md`](../dev-docs/PLAN-doris-duckbridge.md).
+and concurrent scans run through DuckDB/Quack. Internal design:
+[`dev-docs/DESIGN-jdbc-scan-contract.md`](dev-docs/DESIGN-jdbc-scan-contract.md).
 
 ## Doris baseline & patches
 

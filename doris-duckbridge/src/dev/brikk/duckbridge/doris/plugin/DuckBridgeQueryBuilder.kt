@@ -34,7 +34,7 @@ import java.time.temporal.ChronoField
  * start ≠ 0). Float-**returning** functions are excluded even when audited-identical: a float result
  * inside `WHERE f(x)=<literal>` is print-precision-fragile across the wire.
  *
- * Correctness contract (see NOTES-p5-p2-scan.md): the FE keeps every conjunct for BE-side
+ * Correctness contract (see `dev-docs/DESIGN-jdbc-scan-contract.md`): the FE keeps every conjunct for BE-side
  * re-evaluation (we do not implement `applyFilter`), so a DROPPED conjunct is safe — Doris
  * re-filters. But a PUSHED conjunct must be exactly equivalent: if our WHERE wrongly excludes a
  * matching row, the BE re-filter cannot resurrect it. So we only render predicates we can prove

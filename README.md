@@ -262,14 +262,17 @@ Details, function signatures, and examples:
   `lance_vector_search`, `lance_fts`, `lance_hybrid_search`
 - [README-vortex.md](trino-duckbridge/README-vortex.md) — `vortex_scan`
 
+## Apache Doris
+
+The [`doris-duckbridge`](doris-duckbridge/README.md) sibling connects Doris to remote DuckDB/Quack
+through Doris's connector SPI and matching JNI plugin runtime.
+
 ## Future development
 
 - **Arrow columnar engine** — a columnar data plane that decodes DuckDB Arrow streams
   directly into Trino pages instead of row-by-row JDBC. Present in the codebase behind
   `duckbridge.execution-engine` for local benchmarking; not the production path yet.
 - **Aggregate pushdown** (`COUNT`/`MIN`/`MAX`/`SUM`), parity-verified per aggregate.
-- **Doris connector** — a `doris-duckbridge` sibling bringing the same parity-backed
-  pushdown to Apache Doris (see [dev-docs/PLAN-doris-duckbridge.md](dev-docs/PLAN-doris-duckbridge.md)).
 
 ## Build & test
 

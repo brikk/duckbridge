@@ -4,7 +4,7 @@ SPI / FE / BE gaps hit building the `duckbridge` `fe-connector` plugin (Route J:
 against apache/doris `master` (the SPI is upstreamed; the pre-merge `branch-catalog-spi` fork is
 retired). Pin: `doris-patches/BASELINE`.
 
-Each entry is a pickable upstream ask. **Ordered by what we'd most want fixed if 4.2 ships:**
+Each entry is a pickable upstream ask, ordered by what most reduces the out-of-tree runtime delta.
 
 | # | Ask | Why it matters to us | Blocking? |
 |---|---|---|---|
@@ -12,19 +12,17 @@ Each entry is a pickable upstream ask. **Ordered by what we'd most want fixed if
 | **P2** | `COUNT(*)` pushdown on the BE JDBC scanner | `COUNT(*)` is O(rows) not O(1); helps every JDBC connector | No (interim: `SELECT 1`) |
 | **P3** | Per-scan `connectionInitSql` on the BE JDBC pool | Unblocks tz-sensitive predicate pushdown | No (feature gated off; we render zone-explicit) |
 
-Status **2be8fba29d7 (2026-09-07 pin; verified 2026-09-08):** all three re-verified open in the master BE source. The FE runs
-patch-free (#66135 removed `SPI_READY_TYPES`); the only carried patch is BE `DuckDbTypeHandler` (P1).
-Connector API 7's new `SUPPORTS_STORAGE_PREDICATE_PRUNING` capability explicitly excludes row/JDBC
-connectors, so duckbridge correctly does not claim it. Stock 4.1.4-rc04 still lacks the connector SPI
-and `JdbcJniScanner`; it cannot be this plugin's release target.
+Status **dd456ab7a89 (2026-10-10, connector API 13 / JNI API 5):** all three remain open. The FE runs
+patch-free (#66135 removed `SPI_READY_TYPES`); the only carried source patch is BE
+`DuckDbTypeHandler` (P1). Row/JDBC connectors correctly keep storage/nested-pruning capabilities
+off. `branch-4.2` still lacks the connector SPI; master/5.x remains the target.
 The old "Route-J ceiling / no Arrow transport" ask is **resolved** — master ships an ADBC/Arrow
 connector (`fe-connector-adbc` + BE `adbc_driver_registry`); a duckbridge JDBC→ADBC migration is a
-roadmap call in [`PLAN-doris-duckbridge.md`](../../dev-docs/PLAN-doris-duckbridge.md), not a friction
-(our perf probe found quack-jdbc actually *faster* than the alpha ADBC driver — transport isn't the
+roadmap choice rather than a current blocker (the original probe found JDBC transport was not the
 bottleneck).
 
-Sister docs: [`PLAN`](../../dev-docs/PLAN-doris-duckbridge.md) ·
-[`NOTES-p5-p2-scan`](./NOTES-p5-p2-scan.md) · [`PATCHES.md`](../../doris-patches/PATCHES.md).
+Sister docs: [`scan contract`](./DESIGN-jdbc-scan-contract.md) ·
+[`PATCHES.md`](../../doris-patches/PATCHES.md).
 
 ---
 
@@ -37,8 +35,9 @@ No stock handler fits DuckDB, which needs all three of LARGEINT + VARBINARY + AR
 LARGEINT.
 
 **What we do.** [`be/0001-duckdb-type-handler.patch`](../../doris-patches/be/0001-duckdb-type-handler.patch):
-a `DuckDbTypeHandler extends DefaultTypeHandler` (HUGEINT/UBIGINT→BigInteger, BLOB→byte[], LIST→list)
-+ one `case "DUCKDB"`. BE-only, self-contained, no thrift/FE change.
+a `DuckDbTypeHandler extends DefaultTypeHandler` (HUGEINT/UBIGINT→BigInteger, BLOB→byte[], LIST→list,
+native UUID and UTC-field TIMESTAMPTZ) + one `case "DUCKDB"`. BE-only, self-contained, no thrift/FE
+change.
 
 **Ask (either deletes the patch).** Resolve the `TypeHandler` via `ServiceLoader` / a
 connector-declared class on `jdbc_params` instead of the switch — **or** just upstream

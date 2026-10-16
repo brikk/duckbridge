@@ -708,10 +708,10 @@ behavior, no duplicate non-idempotent requests, and no connection/result leaks.
 - [ ] Run the protocol-v3 conformance suite against both the DuckDB-extension
   client and the released `quack-jdbc`; direct Quack remains unsupported until
   this is green.
-- [ ] Preserve the 1.5.5 lane until storage rollback, remote protocol support,
+- [ ] Preserve the 1.5.6 lane until storage rollback, remote protocol support,
   and extension availability are documented and the 2.0 artifacts are published.
 - [ ] Update `README.md`, deployment examples, extension install instructions,
-  Docker pins, and the old `TODO-duckdb-1.5.5-upgrade.md` status together.
+  Docker pins, and the archived 1.5.5-upgrade evidence together.
 
 ## Existing canaries to extend
 
@@ -724,6 +724,8 @@ behavior, no duplicate non-idempotent requests, and no connection/result leaks.
   `TestDuckBridgeDorisMetadataOverQuack`,
   `TestDuckBridgeTimezonePushdownCanary`, and
   `TestDuckBridgeFunctionPushdownCanary`.
-- Prior context: `trino-duckbridge/dev-docs/TODO-duckdb-1.5.5-upgrade.md`,
-  `TODO-upstream-quack-jdbc.md`, `TODO-datetime-timezones.md`, and Doris's
-  `REPORT-quack-jdbc-metadata-probe.md` / `REPORT-doris-timezone-probe.md`.
+- Prior context: `trino-duckbridge/dev-docs/archive/TODO-duckdb-1.5.5-upgrade.md`,
+  `trino-duckbridge/dev-docs/TODO-quack-protocol-v3.md`,
+  `trino-duckbridge/dev-docs/TODO-datetime-timezones.md`, and Doris's
+  `doris-duckbridge/dev-docs/REPORT-quack-jdbc-metadata-probe.md` /
+  `doris-duckbridge/dev-docs/REPORT-doris-timezone-probe.md`.

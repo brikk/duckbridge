@@ -5,8 +5,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 /**
- * Config-holder tests. Honest scope: this covers the property parsing the scaffold actually
- * implements — NOT metadata/scan behavior (which fails loud pending probes P1–P6).
+ * Config-holder tests. This covers the catalog-property parsing the connector
+ * implements; metadata and scan behavior are covered by their integration suites.
  */
 class TestDuckBridgeConnectorConfig {
 

@@ -108,7 +108,7 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
       type ... LIST"). Fixed in `dev.brikk.duckdb:quack-jdbc:0.3.0` (Maven Central) — our maintained fork
       of gizmodata's driver — which recurses into the LIST/ARRAY child type in `JdbcTypeMap.typeName`;
       duckbridge depends on it, so arrays work over QUACK. See
-      [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md) (Q1) and
+      [archived Quack driver history](archive/TODO-upstream-quack-jdbc.md) (Q1) and
       [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6). Original probe of both
       drivers on the same queries:
       | query | duckdb-jdbc `getColumnTypeName` | quack-jdbc |
@@ -125,7 +125,7 @@ base image. (In-process P2/P1 tests were unaffected — the host has GLIBC 2.43.
         `java.util.ArrayList` (not a typed `java.sql.Array` with a base type). So the fix belongs in
         **gizmodata's quack-jdbc**, not duckdb/duckdb-quack. Filed:
         [gizmodata/quack-jdbc#6](https://github.com/gizmodata/quack-jdbc/issues/6); tracked in
-        [TODO-upstream-quack-jdbc.md](TODO-upstream-quack-jdbc.md).
+        [TODO-quack-protocol-v3.md](TODO-quack-protocol-v3.md).
       - The fix belonged in **gizmodata's quack-jdbc**, not duckdb/duckdb-quack — the element type is on
         the wire; the driver just wasn't surfacing it. Now fixed in the brikk snapshot (see above).
         Verified by `arrayElementTypePreservedByQuackJdbc` (quack-jdbc reports `INTEGER[]`, parity with

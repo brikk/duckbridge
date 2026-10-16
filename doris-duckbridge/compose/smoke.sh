@@ -276,12 +276,6 @@ log "GATE OK: catalog created — provider registration + type-routing on the pr
 
 # 8. METADATA is now REAL (probe P4 settled): resolution over quack-jdbc should list the seeded
 # quack schemas/tables and DESC a table's columns with the probe-decided Doris types.
-#
-# ── History (pre-P4 scaffold expectations, kept for the record) ──────────────────────────────
-#   Before P4, listing was honestly EMPTY and resolution-by-name fell to the FE's own "Unknown
-#   database" (the connector stubs were structurally unreachable behind FE-side resolution). The
-#   old smoke asserted that. Now listing is real, so we assert the seeded schema/tables appear.
-# ─────────────────────────────────────────────────────────────────────────────────────────────
 
 log "Metadata resolution: SHOW DATABASES (expect the seeded quack schema 'sales')…"
 set +e
@@ -352,7 +346,7 @@ if [[ $sel_status -ne 0 ]]; then
     if echo "${sel_out}" | grep -qiE "driver|ClassNotFound|No suitable driver|jdbc_driver|quack-jdbc|resolve"; then
         log "SCAN DEPLOYMENT-SEAM: the BE could not load the quack-jdbc driver. Fix: ensure the jar is"
         log "  mounted where the BE reads it (.be-drivers → /opt/duckbridge-drivers) and driver_url points"
-        log "  at it (file:///opt/duckbridge-drivers/quack-jdbc.jar). See NOTES-p5-p2-scan.md §driver-jar."
+        log "  at it (file:///opt/duckbridge-drivers/quack-jdbc.jar). See DESIGN-jdbc-scan-contract.md."
         exit 1
     fi
     log "SCAN FAIL: SELECT errored — inspect above + be.log (fe.log for the plan)."
@@ -508,8 +502,7 @@ log "P3/P6 GREEN: naive wall clocks and TIMESTAMPTZ instants retained exact micr
 
 # ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
 # Static: the connector emits ONE range per query (a JDBC scan is un-partitionable). Empirical:
-# hammer the stack sequentially and concurrently to watch for Quack 1.5.4 server-pool exhaustion
-# (the trino side saw the fixed pool exhaust under churn).
+# hammer the stack sequentially and concurrently to catch pool exhaustion or connection leaks.
 log "P2: N=20 sequential SELECTs (pool reuse — watch for connection errors)…"
 seq_fail=0
 for _ in $(seq 1 20); do
@@ -540,7 +533,7 @@ if [[ "${seq_fail}" -eq 0 && "${conc_fail}" -eq 0 ]]; then
     log "  one-range-per-query. Route J does not need connection-reuse work before real use (record in NOTES)."
 else
     log "P2 FAIL: ${seq_fail} sequential + ${conc_fail} concurrent failures — possible pool pressure;"
-    log "  inspect be.log for Quack connection errors and record the verdict in NOTES-p5-p2-scan.md."
+    log "  inspect be.log for Quack connection errors and update the scan-contract evidence."
     exit 1
 fi
 

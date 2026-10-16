@@ -16,6 +16,9 @@ Path-based table functions under `duckbridge.system.*`, gated by `duckbridge.lan
 Vector search appends `_distance REAL` (asc); FTS `_score REAL` (desc); hybrid `_distance`, `_score`,
 `_hybrid_score` (desc).
 
+User-facing behavior is documented in [`../README-lance.md`](../README-lance.md) and
+[`../README-vortex.md`](../README-vortex.md). The completed implementation plans are archived.
+
 ## The self-contained seam (key architectural decision)
 
 The DuckLake connector runs these through a custom `FunctionProvider` + `TableFunctionProcessorProvider`

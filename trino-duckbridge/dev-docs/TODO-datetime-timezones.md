@@ -34,7 +34,7 @@ needs doing.
 ## Gaps (the remaining shizola)
 
 1. **`TIMESTAMP` precision > 6.** **Decision implemented (EV-C6): fail closed.** DuckDB JDBC
-   1.5.5 truncates `TIMESTAMP_NS` to microseconds through LocalDateTime, Timestamp *and getString*,
+   1.5.6 truncates `TIMESTAMP_NS` to microseconds through LocalDateTime, Timestamp *and getString*,
    so a Trino `TIMESTAMP(9)` mapping cannot be honest. `TIMESTAMP_NS` columns are omitted regardless
    of generic convert-to-varchar policy; writes at precision 7..12 throw NOT_SUPPORTED. Revisit only
    when the pinned JDBC driver exposes all 9 digits. `TIMESTAMP_S`/`TIMESTAMP_MS` now map exactly to

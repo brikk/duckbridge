@@ -8,7 +8,7 @@ import java.util.ServiceLoader
 /**
  * Proves the SPI wiring: `ServiceLoader` discovers [DuckBridgeConnectorProvider] via the
  * `META-INF/services` file, and it declares the whitelisted catalog type `"duckbridge"`. This is
- * the scaffold's load-bearing test — it guards the mechanics (registration + type), not behavior.
+ * This guards the load-bearing registration/type mechanics; behavioral suites cover metadata/scans.
  */
 class TestDuckBridgeConnectorProviderLoads {
 

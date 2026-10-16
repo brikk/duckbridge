@@ -16,12 +16,13 @@ import java.util.Optional
  * carrying `{query_sql, jdbc_url, jdbc_user, jdbc_password, jdbc_driver_class, jdbc_driver_url,
  * table_type=DUCKDB, catalog_id}` for the BE's `JdbcJniScanner` to run via quack-jdbc.
  *
- * Probe P5 (see NOTES-p5-p2-scan.md): the FE re-evaluates every conjunct above the scan (we do NOT
+ * The FE re-evaluates every conjunct above the scan (see
+ * `dev-docs/DESIGN-jdbc-scan-contract.md`; we do NOT
  * implement `applyFilter`), so the WHERE we render is a pure optimization — dropped conjuncts are
  * safe, but a PUSHED conjunct must be exactly faithful (the builder enforces the domain floor +
  * NUL refusal). Probe P2: exactly one range per query (a JDBC scan is un-partitionable).
  *
- * Scope: the DOMAIN FLOOR only (no function-shape pushdown — that's P1).
+ * Scope: the domain floor plus the small audited function allowlist.
  */
 internal class DuckBridgeScanPlanProvider(
     private val config: DuckBridgeConnectorConfig,

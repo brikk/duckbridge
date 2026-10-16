@@ -3,11 +3,6 @@ package dev.brikk.duckbridge.doris.plugin
 /**
  * Immutable holder for the catalog properties duckbridge reads off `CREATE CATALOG`.
  *
- * WIP scaffold: only the DuckDB/Quack JDBC connection coordinates are modeled so far — the
- * pushdown/parity and type-mapping properties land as the P1–P6 probes settle (see
- * `dev-docs/NOTES-scaffold.md`). Kept a plain, tested value object so the SPI wiring has
- * something honest to hold without pretending at behavior.
- *
  * @property jdbcUrl the quack-jdbc URL for the user's DuckDB/Quack server (`jdbc:quack://host:port`).
  * @property driverClass the JDBC driver class name (defaults to quack-jdbc's driver).
  * @property driverUrl optional checksum-gated driver jar URL (Doris `jdbc_drivers_dir` flow); null

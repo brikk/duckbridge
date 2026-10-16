@@ -360,7 +360,7 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   values; `TestDuckBridgeArrowEngine`, `TestDuckBridgeInProcessExecutor`,
   `TestDuckBridgeQuackArrowEngine`, `TestDuckBridgeQuackTransport` changed from
   `upper(name) = 'STRASSE'` (which Trino itself would never match) to `= 'STRAßE'`;
-  `README-pushdown-reference.md`, `TODO-pushdown-duckdb.md`, `P3-NOTES.md` corrected.
+  `README-pushdown-reference.md`, archived `TODO-pushdown-duckdb.md`, and `P3-NOTES.md` corrected.
   Re-ran the differential corpus against the rebuilt binary: **1 mismatch over 518
   evaluations** (down from 16/441), the survivor being the EV-E3 Unicode-version case
   (`lower(U+2C2F)`); end-to-end `WHERE upper(s)=…`/`lower(s)=…` in `PARITY` mode now returns
