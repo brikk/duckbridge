@@ -43,10 +43,10 @@ import java.util.concurrent.atomic.AtomicReference
  *     dev-docs/TODO-rectify-from-eval.md).
  *  3. If neither is available, return null — the caller decides how to fail.
  *
- * Signature: the release/CI bundle is the SIGNED community-extensions binary, which DuckDB verifies
- * at LOAD when `allow_unsigned_extensions` is off (the default). A locally built binary is unsigned
- * and needs `duckbridge.allow-unsigned-extensions=true`; [isUnsigned] tells the two apart so the
- * connector can fail with a precise message instead of DuckDB's generic signature error.
+ * Signature: [isUnsigned] inspects the extension footer so the connector can fail precisely instead
+ * of surfacing DuckDB's generic signature error. Signed community artifacts load with verification
+ * on; local builds and the temporary DuckDB-2.0 CI artifact require the explicit
+ * `duckbridge.allow-unsigned-extensions=true` opt-in.
  *
  * Platform detection from `os.name` / `os.arch`:
  * ```

@@ -6,28 +6,28 @@
 # Base image: debian:trixie-slim (GLIBC 2.41). The DuckLake test image uses
 # bookworm (GLIBC 2.36), but the locally-built trino_parity.duckdb_extension
 # links against GLIBC 2.38, so it fails to LOAD on bookworm ("GLIBC_2.38 not
-# found"). trixie's 2.41 satisfies it. Pin duckdb to match duckdb_jdbc:1.5.6.0
+# found"). trixie's 2.41 satisfies it. Pin duckdb to match duckdb_jdbc:2.0.0.0
 # on the client side.
 
 FROM debian:trixie-slim
 
-ARG DUCKDB_VERSION=v1.5.6
+ARG DUCKDB_VERSION=v2.0.0
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
 # Detect arch via `uname -m` (TARGETARCH is buildkit-only and unreliable under
-# podman / vanilla docker build). DuckDB release assets use amd64 / arm64.
+# podman / vanilla docker build). DuckDB 2 release assets are tarballs using amd64 / arm64.
 RUN set -eu; \
     case "$(uname -m)" in \
         x86_64)  DUCKDB_ARCH=amd64 ;; \
         aarch64) DUCKDB_ARCH=arm64 ;; \
         *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-${DUCKDB_ARCH}.zip" -o /tmp/duckdb.zip; \
-    unzip /tmp/duckdb.zip -d /usr/local/bin; \
-    rm /tmp/duckdb.zip; \
+    curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb-cli-linux-${DUCKDB_ARCH}.tar.gz" -o /tmp/duckdb.tar.gz; \
+    tar -xzf /tmp/duckdb.tar.gz -C /usr/local/bin duckdb; \
+    rm /tmp/duckdb.tar.gz; \
     chmod +x /usr/local/bin/duckdb
 
 # Pre-pull the Quack core extension at build time so container startup pays no

@@ -1,9 +1,8 @@
 # TODO: DuckDB 2.0 readiness
 
-**Status:** research and issue collection, 2026-08-28. DuckDB 2.0 is still a
-preview targeted for fall 2026; preview APIs and the final breaking-change list
-may move. This is a readiness tracker, not an instruction to upgrade production
-before the release is cut.
+**Status:** DuckDB 2.0.0 released and adopted as the qualified Trino lane on 2026-10-21. This now
+tracks remaining protocol-v3, stable-ABI, storage and advanced-feature follow-ups. Doris remains on
+its independent 1.5.6 lane pending the required Doris-5.x runtime.
 
 Duckbridge is exposed to this release in more places than the embedded JDBC
 version alone:
@@ -18,10 +17,10 @@ version alone:
 - Trino pushdown depends on a version-pinned native `trino_parity` extension.
   Doris instead has its own small, audited SQL-function allowlist.
 
-Current maintained-lane pins are DuckDB/JDBC `1.5.6.0`, `quack-jdbc` `0.8.0`, and signed
-community parity binaries built against DuckDB `v1.5.6`
-(`gradle/libs.versions.toml` and `.github/scripts/fetch-parity-extension.sh`). The source
-submodule has not yet moved its vendored DuckDB beyond v1.5.5.
+The Trino maintained lane now pins DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.9.0`, parity source
+`b216dc13a9` and the qualified unsigned Linux-amd64 CI binary from run `39636617710`. Doris remains
+on its independently qualified DuckDB 1.5.6 / Quack JDBC 0.8 runtime while its Doris-5.x boundary is
+unavailable.
 
 ## Source material
 
@@ -56,7 +55,7 @@ important are:
 
 | Change | Upstream evidence | Duckbridge consequence |
 |---|---|---|
-| Quack wire protocol is now v3; our `quack-jdbc` is v1 | `duckdb-quack` PRs [#229](https://github.com/duckdb/duckdb-quack/pull/229), [#245](https://github.com/duckdb/duckdb-quack/pull/245); `QuackConstants.QUACK_VERSION = 1` in our fork | Direct remote Trino and all Doris scans need a real driver protocol port before 2.0. |
+| Quack wire protocol has v3 features; `quack-jdbc` 0.9 still selects v1 | `duckdb-quack` PRs [#229](https://github.com/duckdb/duckdb-quack/pull/229), [#245](https://github.com/duckdb/duckdb-quack/pull/245); driver constants `QUACK_VERSION=1`, `LATEST_QUACK_VERSION=3` | DuckDB 2.0 retains v1 compatibility and Trino's full remote suite passes. v3-only lease/fetch behavior remains follow-up work. |
 | Untyped `NULL` remains `SQLNULL` at result/table boundaries | DuckDB [#23017](https://github.com/duckdb/duckdb/pull/23017), `b0f224ed` | New JDBC/Arrow/Quack metadata and vector type; current host maps do not handle it explicitly. |
 | Every error invalidates an explicit transaction by default | DuckDB [#22674](https://github.com/duckdb/duckdb/pull/22674), `a2044776` | Retry and pooled-connection code must rollback/reset or replace connections after failure. |
 | Prepared statements now use SQL `PREPARE`/`EXECUTE`/`DEALLOCATE` internally | DuckDB [#24273](https://github.com/duckdb/duckdb/pull/24273), `b5e4f5be` | Re-test bindings, schema changes, close/cancel, and Quack execution timing. |
@@ -97,26 +96,24 @@ important are:
 DuckDB version pin, Quack has client/server protocol compatibility, and
 `quack-jdbc` is not the DuckDB Java driver.
 
-- [ ] Create a DuckDB-2.0 preview lane without replacing the 1.5.6 release lane.
-- [ ] Pin and record all four artifacts independently: `duckdb_jdbc`, DuckDB CLI/
-  server, Quack extension, and `quack-jdbc`.
-- [ ] Treat `quack-jdbc` as a code blocker, not just a Maven-version lookup.
-  Released `0.8.0` still declares wire protocol v1 (while recognizing latest v3);
-  DuckDB 2.0 Quack declares v3. Port and release the driver before claiming any
-  direct-Quack support.
+- [x] Adopt DuckDB 2.0.0 as Trino's main lane while retaining Doris's independent 1.5.6 lane.
+- [x] Pin and record `duckdb_jdbc`, DuckDB CLI/server, Quack driver and parity extension independently
+  in the 2026-10-21 qualification report.
+- [x] Qualify released `quack-jdbc` 0.9.0 against the DuckDB-2.0 server's retained protocol-v1
+  compatibility. Protocol-v3 features remain follow-up work.
 - [ ] Implement/prove the v2/v3 protocol additions in `quack-jdbc`: indexed and
   acknowledged fetch batches, terminal batch counts, read-ahead ordering, the
   heartbeat request/lease handshake, and new error/cleanup behavior. Do not
   simply change the version constant.
-- [ ] Re-vendor `duckdb-trino-parity-extension/duckdb` and its extension CI tools
-  at refs intended for 2.0; do not infer one ref from the other.
-- [ ] Exercise Trino embedded JDBC, Trino direct `quack-jdbc`, Trino embedded
-  Arrow, Trino Quack/Arrow, Doris metadata-over-Quack, and Doris scan-over-Quack.
+- [x] Re-vendor `duckdb-trino-parity-extension` to `b216dc13a9`, including DuckDB v2.0.0 and matching
+  CI tools.
+- [x] Exercise Trino embedded JDBC, direct `quack-jdbc`, embedded Arrow and Quack/Arrow.
+- [ ] Exercise Doris metadata/JNI scans after the required Doris-5.x runtime boundary is available.
 - [ ] Probe 1.5-client/2.0-server and 2.0-client/1.5-server Quack combinations.
   Support only combinations the protocol and parity-extension results prove;
   otherwise reject/document mixed versions clearly.
-- [ ] Bump both Quack test-server Dockerfiles, CI extension fetch paths, bundled
-  binaries, and compatibility documentation together.
+- [x] Bump Trino's Quack test server, CI/release extension fetch path, bundled binary and compatibility
+  documentation together. Doris remains deliberately pinned separately.
 - [x] Advance the maintained lane beyond `duckdb_jdbc:1.5.5.1`: `1.5.6.0` passed the full
   Trino and Doris suites on 2026-10-10.
 
@@ -217,11 +214,10 @@ old `remote.query(...)` workaround and may also replace our analogous
 server. This affects only the local-DuckDB Quack executor directly; production
 direct `quack-jdbc` and Doris still need their own protocol qualification.
 
-- [ ] Qualify `quack-jdbc` 0.6.0 (or its 2.0-compatible successor) against the 2.0
-  server: metadata, prepared parameters, cancellation, errors, auth/TLS, arrays,
-  wide integers, timestamps, JSON, and concurrent result streams.
-- [ ] Block the direct-Quack test lanes until a protocol-v3 driver exists. The
-  current protocol-v1 driver cannot be made compatible by configuration.
+- [x] Qualify `quack-jdbc` 0.9.0 against the 2.0 server for metadata, prepared parameters,
+  errors, token auth, arrays, wide integers, timestamps and concurrent result streams.
+- [x] Confirm DuckDB 2.0's retained protocol-v1 compatibility through the direct Quack suite.
+- [ ] Add explicit cancellation, TLS and long-running/retained-result qualification.
 - [ ] Re-run pool/churn and long-running-result tests; use the new Quack metrics
   and logs to distinguish server execution, result transport, and client decode.
 - [ ] Prototype `CONNECT engine` in `QuackDuckBridgeExecutor` and compare it with
@@ -705,13 +701,11 @@ behavior, no duplicate non-idempotent requests, and no connection/result leaks.
 - [ ] With Doris baseline artifacts bootstrapped, run
   `./gradlew :doris-duckbridge:test` plus the compose smoke against the final
   Quack server and driver.
-- [ ] Run the protocol-v3 conformance suite against both the DuckDB-extension
-  client and the released `quack-jdbc`; direct Quack remains unsupported until
-  this is green.
-- [ ] Preserve the 1.5.6 lane until storage rollback, remote protocol support,
-  and extension availability are documented and the 2.0 artifacts are published.
-- [ ] Update `README.md`, deployment examples, extension install instructions,
-  Docker pins, and the archived 1.5.5-upgrade evidence together.
+- [ ] Run a protocol-v3 conformance suite against both the DuckDB-extension client and a future
+  v3-selecting `quack-jdbc`; this gates v3-only behavior, not current DuckDB-2.0 support.
+- [ ] Preserve Doris's 1.5.6 lane until a Doris-5.x runtime is available and separately qualified.
+- [x] Update `README.md`, deployment examples, extension instructions, Docker pins and archived
+  1.5.5 evidence together for the Trino lane.
 
 ## Existing canaries to extend
 

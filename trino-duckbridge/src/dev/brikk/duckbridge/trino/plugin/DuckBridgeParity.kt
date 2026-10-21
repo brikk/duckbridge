@@ -141,10 +141,10 @@ class DuckBridgeParity
                     // Say precisely what is wrong rather than surfacing DuckDB's generic signature error.
                     !config.isAllowUnsignedExtensions && TrinoParityExtensionResolver.isUnsigned(path) ->
                         parityUnavailable(
-                            "the trino_parity binary at '$path' is UNSIGNED (a local build, not the signed " +
-                                "community-extensions release) and duckbridge.allow-unsigned-extensions is false. " +
+                            "the trino_parity binary at '$path' is UNSIGNED and " +
+                                "duckbridge.allow-unsigned-extensions is false. " +
                                 "Either bundle/point at the signed community binary (`INSTALL trino_parity FROM community` " +
-                                "and set duckbridge.parity-extension-path to it) or, for extension development only, set " +
+                                "and set duckbridge.parity-extension-path to it) or explicitly set " +
                                 "duckbridge.allow-unsigned-extensions=true",
                             remote = false,
                         )
@@ -182,8 +182,8 @@ class DuckBridgeParity
                         "`duckdb -unsigned` and `LOAD` the binary, or set duckbridge.parity-extension-path to a " +
                         "server-side path)"
                 } else {
-                    "Bundle the signed community binary (`.github/scripts/fetch-parity-extension.sh`, or build it " +
-                        "locally with `(cd duckdb-trino-parity-extension && make)` + duckbridge.allow-unsigned-extensions=true), " +
+                    "Fetch the matching binary with `.github/scripts/fetch-parity-extension.sh` (set " +
+                        "duckbridge.allow-unsigned-extensions=true when it is unsigned), " +
                         "or set duckbridge.parity-extension-path to a valid binary"
                 }
             return TrinoException(

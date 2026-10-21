@@ -1,7 +1,8 @@
 [versions]
 kotlin = "2.3.10"
-duckdb = "1.5.6.0"
-quack-jdbc = "0.8.0"
+duckdb = "2.0.0.0"
+quack-jdbc = "0.9.0"
+doris-quack-jdbc = "0.8.0"
 junit = "5.12.2"
 assertj = "3.27.3"
 trino = "483"
@@ -18,6 +19,7 @@ arrow-data = { module = "org.apache.arrow:arrow-c-data" }
 
 duckdb-jdbc = { module = "org.duckdb:duckdb_jdbc", version.ref = "duckdb" }
 quack-jdbc = { module = "dev.brikk.duckdb:quack-jdbc", version.ref = "quack-jdbc" }
+doris-quack-jdbc = { module = "dev.brikk.duckdb:quack-jdbc", version.ref = "doris-quack-jdbc" }
 trino-bom = { module = "io.trino:trino-root", version.ref = "trino" }
 
 testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "containers" }

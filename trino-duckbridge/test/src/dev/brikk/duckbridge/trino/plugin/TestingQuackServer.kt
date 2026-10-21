@@ -45,6 +45,14 @@ internal class TestingQuackServer : AutoCloseable {
 
     init {
         container.start()
+        val version = container.execInContainer(
+            "duckdb",
+            "-csv",
+            "-noheader",
+            "-c",
+            "SELECT version();",
+        ).stdout.trim()
+        check(version == "v2.0.0") { "Quack test server version is '$version', expected v2.0.0" }
     }
 
     val host: String get() = container.host

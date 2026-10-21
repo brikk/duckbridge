@@ -103,7 +103,7 @@ dependencies {
     // schemas/tables/columns through it at plan time; the BE loads it in its own JVM to run the
     // scan. Version from the repo-wide catalog. Bundled in the plugin zip (the FE classloader has
     // no such driver of its own).
-    implementation(libs.quack.jdbc)
+    implementation(libs.doris.quack.jdbc)
 
     // Tests instantiate the provider / connector, so the SPI types are needed at test time too.
     testImplementation("org.apache.doris:fe-connector-spi:$dorisVersion")
@@ -114,7 +114,7 @@ dependencies {
     // time. quack-jdbc is `implementation` above (bundled in the plugin); tests need it on the
     // test classpath explicitly too.
     testImplementation(libs.testcontainers.core)
-    testImplementation(libs.quack.jdbc)
+    testImplementation(libs.doris.quack.jdbc)
 }
 
 tasks.withType<JavaCompile>().configureEach {

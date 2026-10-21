@@ -39,7 +39,7 @@ Both `.tar.gz` and `.zip` are published, each with a `.sha256` sidecar. The vers
 cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin/"
 ```
 
-**Compatibility.** Trino **483**; embedded DuckDB engine **1.5.6** (bundled JDBC driver). A remote
+**Compatibility.** Trino **483**; embedded DuckDB engine **2.0.0** (bundled JDBC driver). A remote
 Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
 see below).
 
@@ -78,7 +78,7 @@ from the URL scheme: `jdbc:duckdb:<path>` (embedded) or `jdbc:quack://host:port`
 | `connector.name` | — | Must be `duckbridge`. |
 | `connection-url` | — | `jdbc:duckdb:/path/to.db` (embedded) or `jdbc:quack://host:port` (remote). |
 | `duckbridge.string-pushdown.mode` | `PARITY` | `NULL_ONLY` \| `GUARDED` \| `BINARY` \| `FULL` \| `PARITY` (see dial below). |
-| `duckbridge.allow-unsigned-extensions` | `false` | Open the embedded DuckDB with `allow_unsigned_extensions`, disabling extension signature checks. Only needed to `LOAD` a locally built `trino_parity`; the bundled community binary is signed and verified at `LOAD`. |
+| `duckbridge.allow-unsigned-extensions` | `false` | Open embedded DuckDB with `allow_unsigned_extensions`, disabling extension signature checks. Required temporarily for the bundled DuckDB-2.0 CI parity binary; remove the opt-in after the signed community build is published. |
 | `duckbridge.parity-extension-path` | — | Explicit path to `trino_parity.duckdb_extension`, overriding the bundled binary (embedded) or naming a server-side path (Quack). |
 | `duckbridge.quack.token` / `.token-env` / `.token-file` | — | Quack auth; prefer `-env`/`-file` for secrets. |
 | `duckbridge.quack.tls` | `false` | Use `https` for the Quack transport. |
@@ -111,7 +111,7 @@ The production JDBC path maps DuckDB's scalar types losslessly as follows (embed
 
 `TIMESTAMP_S` / `TIMESTAMP_MS` read as Trino `TIMESTAMP(0)` / `TIMESTAMP(3)`; ordinary DuckDB
 `TIMESTAMP` reads as `TIMESTAMP(6)`. `TIMESTAMP_NS` is deliberately unsupported on the production
-JDBC path: DuckDB JDBC 1.5.6 truncates it to microseconds through `getObject`, `getTimestamp`, and
+JDBC path: DuckDB JDBC 2.0.0 truncates it to microseconds through `getObject`, `getTimestamp`, and
 even `getString`, so no connector mapping can recover the nanoseconds. It is omitted rather than
 silently mislabeled as `TIMESTAMP(9)` or `TIMESTAMP(6)`, even under generic convert-to-varchar mode.
 Writes support `VARBINARY`, `UUID`, and temporal types through precision 6; higher precision fails
@@ -210,23 +210,20 @@ database-instance identity with which to detect a restarted/replaced instance sa
 
 How the connector gets it, per transport:
 
-- **Embedded** (`jdbc:duckdb:`): on **Linux amd64/arm64** the signed binary is bundled in the
-  release plugin jar and `LOAD`ed automatically on every connection — nothing to do. On other
-  worker platforms (macOS / Windows) the release ships no binary; either install it once from
-  community (`INSTALL trino_parity FROM community` in a DuckDB CLI of the **same** version) and set
-  `duckbridge.parity-extension-path` to the resulting
-  `~/.duckdb/extensions/<duckdb-version>/<platform>/trino_parity.duckdb_extension`, or run in
-  `GUARDED` mode. The binary is extracted to a process-private temp directory and `LOAD`ed with
-  DuckDB's signature verification **on** (`duckbridge.allow-unsigned-extensions` defaults to
-  `false`); an unsigned local build is refused with a message naming the flag to set.
+- **Embedded** (`jdbc:duckdb:`): the current DuckDB-2.0 package bundles the already-qualified
+  **unsigned Linux amd64** CI binary. Set `duckbridge.allow-unsigned-extensions=true` until the
+  signed community artifact is published. Other platforms must provide a matching binary through
+  `duckbridge.parity-extension-path` or run in `GUARDED` mode. The binary is extracted into a
+  process-private directory; unsigned loading remains an explicit operator opt-in.
 - **Remote** (`jdbc:quack://`): the extension is a **server-side** concern — the connector never
   installs on the server. Because `quack_serve` serves one shared DuckDB instance and `LOAD` is
   instance-scoped, load it **once at server startup** and every client connection is covered — run
   the `LOAD` in the same session that starts the server:
 
   ```sql
-  INSTALL trino_parity FROM community;   -- once per machine
-  LOAD   trino_parity;                   -- once per instance; covers all connections
+  -- Temporary DuckDB 2.0 lane, until the signed community build is published:
+  -- start `duckdb -unsigned`, then load the qualified CI binary by absolute path.
+  LOAD '/path/to/trino_parity.duckdb_extension';
   CALL   quack_serve(...);
   ```
 
@@ -300,13 +297,12 @@ availability assumptions and are not made hermetic by Gradle's offline flag.
 
 ## Parity extension
 
-The `trino_parity` extension is published on the DuckDB
-[community-extensions](https://duckdb.org/community_extensions/) repository, which is the primary
-distribution — operators normally never touch a raw binary (see the transport table above). The
-release build and CI fetch the signed community binary for the pinned DuckDB version and bundle the
-Linux variants into the plugin jar (`.github/scripts/fetch-parity-extension.sh`).
+The `trino_parity` extension normally ships through DuckDB
+[community-extensions](https://duckdb.org/community_extensions/). The formal DuckDB-2.0 build is
+still pending, so CI/release currently fetches the qualified unsigned Linux-amd64 binary from parity
+CI run `39636617710` (`.github/scripts/fetch-parity-extension.sh`).
 
-For a reproducible local package matching the root DuckDB pin, fetch those signed binaries first:
+For a reproducible local package matching the root DuckDB pin, fetch the qualified binary first:
 
 ```sh
 ./.github/scripts/fetch-parity-extension.sh

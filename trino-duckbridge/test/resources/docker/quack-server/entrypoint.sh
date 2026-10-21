@@ -17,7 +17,7 @@ TOKEN="${QUACK_TOKEN:-duckbridge-test-token}"
     # allow_other_hostname is required to bind to 0.0.0.0 — Quack refuses
     # non-localhost binds by default. Safe here because the container network
     # namespace makes 0.0.0.0 mean "this container's interfaces only".
-    printf "SELECT * FROM quack_serve('quack://0.0.0.0:%s/', token := '%s', allow_other_hostname := true);\n" "$PORT" "$TOKEN"
+    printf "SELECT * FROM quack_serve('quack://0.0.0.0:%s/', token := '%s', allow_other_hostname := true, disable_ssl := true);\n" "$PORT" "$TOKEN"
     exec sleep infinity
 # -unsigned: server-side LOAD of the locally-built (unsigned)
 # trino_parity.duckdb_extension requires allow_unsigned_extensions at process

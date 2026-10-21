@@ -43,6 +43,14 @@ class TestDuckBridgeSmoke {
     }
 
     @Test
+    fun embeddedDuckDbVersionIsPinned() {
+        val result = queryRunner.execute(
+            "SELECT * FROM TABLE(${DuckBridgeQueryRunner.CATALOG}.system.query(query => 'SELECT version() AS version'))",
+        )
+        assertThat(result.materializedRows.single().getField(0)).isEqualTo("v2.0.0")
+    }
+
+    @Test
     fun showTables() {
         queryRunner.execute("CREATE TABLE show_tables_probe (id integer)")
         try {

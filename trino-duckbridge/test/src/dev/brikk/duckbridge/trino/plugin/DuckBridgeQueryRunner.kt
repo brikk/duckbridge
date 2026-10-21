@@ -73,9 +73,8 @@ object DuckBridgeQueryRunner {
                 buildMap {
                     put("connection-url", connectionUrl)
                     // The connector verifies extension signatures by default (EV-C4). A developer's
-                    // locally built trino_parity is unsigned, so the harness opts in ONLY when the
-                    // bundled binary actually is unsigned; with the signed community binary (CI /
-                    // release) the tests run with verification on, exactly like production.
+                    // Opt in ONLY when the bundled binary is actually unsigned. This covers local
+                    // builds and the temporary DuckDB-2.0 CI artifact without weakening the signed lane.
                     if (bundledParityIsUnsigned()) {
                         put("duckbridge.allow-unsigned-extensions", "true")
                     }

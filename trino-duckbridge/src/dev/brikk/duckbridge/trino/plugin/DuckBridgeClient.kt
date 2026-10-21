@@ -203,8 +203,8 @@ class DuckBridgeClient
             throw TrinoException(NOT_SUPPORTED, "This connector does not support renaming schemas")
         }
 
-        // DuckDB 1.5.4.0's JDBC metadata reports base tables as "TABLE" (upstream Trino 476 used
-        // "BASE TABLE", which this driver version no longer emits — matching on it finds nothing,
+        // DuckDB 2.0.0 JDBC metadata reports base tables as "TABLE" (upstream Trino used
+        // "BASE TABLE", which this driver does not emit — matching on it finds nothing,
         // so base-jdbc's metadata lookups all miss). See DuckDBDatabaseMetaData#getTables.
         override fun getTableTypes(): Optional<List<String>> = Optional.of(ImmutableList.of("TABLE", "VIEW"))
 
@@ -447,7 +447,7 @@ class DuckBridgeClient
          * (numeric/date/boolean) are byte-exact across engines in every mode. String (VARCHAR/CHAR)
          * sort keys are only safe at string-pushdown mode >= BINARY, where the init probe has proven
          * DuckDB's ORDER BY is pure UTF-8 byte order (== Trino's VARCHAR codepoint order) including
-         * NULLS placement (REPORT-string-comparison-probe-duckdb-1.5.5.md "ORDER BY"). Below BINARY a
+         * NULLS placement (REPORT-string-comparison-probe-duckdb-2.0.0.md "ORDER BY"). Below BINARY a
          * string sort key blocks the whole TopN push (base-jdbc has no per-key partial TopN).
          */
         override fun supportsTopN(session: ConnectorSession, handle: JdbcTableHandle, sortOrder: List<JdbcSortItem>): Boolean =
