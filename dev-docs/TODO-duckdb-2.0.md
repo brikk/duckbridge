@@ -696,8 +696,8 @@ behavior, no duplicate non-idempotent requests, and no connection/result leaks.
   this preview-derived tracker, especially storage and lambda syntax.
 - [ ] Complete DB20-01 through DB20-06, DB20-10/11, and DB20-15 through DB20-19
   for enabled production capabilities.
-- [ ] Run `./gradlew :trino-duckbridge:test` and the parity extension's full CI
-  platform matrix against the final tag.
+- [x] Run `./gradlew :trino-duckbridge:test` and the signed parity extension's native platform
+  matrix against the final tag; v483-0.2.0 passed 642 connector tests plus four platform jobs.
 - [ ] With Doris baseline artifacts bootstrapped, run
   `./gradlew :doris-duckbridge:test` plus the compose smoke against the final
   Quack server and driver.

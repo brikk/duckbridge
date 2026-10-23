@@ -2,9 +2,9 @@
 
 **Date:** 2026-10-23
 
-**Verdict:** the signed community extension is suitable for a self-contained Trino Duckbridge
-release. Signature verification remains enabled. Doris remains on its independent DuckDB-1.5.6 /
-Quack-JDBC-0.8 lane.
+**Verdict:** released as [v483-0.2.0](https://github.com/brikk/duckbridge/releases/tag/v483-0.2.0).
+The package is self-contained and keeps signature verification enabled. Doris remains on its
+independent DuckDB-1.5.6 / Quack-JDBC-0.8 lane.
 
 ## Published inputs
 
@@ -49,6 +49,12 @@ builds retain a separate, explicit opt-in path.
 - Detekt, build, plugin assembly and assembly verification pass.
 - The release workflow requires successful Linux AMD64, Linux ARM64, macOS ARM64 and Windows AMD64
   preparation jobs before packaging can begin.
+- Release workflow [39991930213](https://github.com/brikk/duckbridge/actions/runs/39991930213)
+  passed all four native preparation jobs and the complete connector gate.
+- The published ZIP checksum was independently verified after download, and its connector JAR
+  contains all four binary/`.info` pairs. GitHub reports archive digests:
+  - ZIP: `e2abb4bb2062f76c8e9505860fb2828d537bb67455c205c22e3fead332bb1ffb`
+  - tar.gz: `d5b0d45db0969d5ef57064aacf32698fa941372274eb52f1911feb44570a4d90`
 
 Historical qualification of the temporary unsigned CI binary is archived in
 [`archive/REPORT-duckdb-2.0.0-quack-0.9.0-2026-10-21.md`](archive/REPORT-duckdb-2.0.0-quack-0.9.0-2026-10-21.md).
