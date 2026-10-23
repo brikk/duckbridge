@@ -43,17 +43,19 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
 
     override fun createQueryRunner(): QueryRunner {
         server = TestingQuackServer()
-        parityAvailable = server.installParityExtension()
+        val parityInstallation = server.installParityExtension()
+        parityAvailable = parityInstallation != null
         val extra =
             buildMap {
                 put("duckbridge.execution-engine", "QUACK")
                 put("duckbridge.quack.token", server.token)
-                if (parityAvailable) {
-                    put("duckbridge.parity-extension-path", TestingQuackServer.IN_CONTAINER_PARITY_PATH)
+                if (parityInstallation?.serverPath != null) {
+                    put("duckbridge.parity-extension-path", parityInstallation.serverPath)
                 } else {
-                    // No matching binary for the container arch: run without the parity extension so
-                    // the Arrow path still exercises scan/projection/predicate inlining over the wire.
-                    put("duckbridge.string-pushdown.mode", "GUARDED")
+                    if (!parityAvailable) {
+                        // No matching binary: retain Arrow transport coverage without PARITY assertions.
+                        put("duckbridge.string-pushdown.mode", "GUARDED")
+                    }
                 }
             }
         val runner = DuckBridgeQueryRunner.create(server.connectionUrl(), extra)

@@ -39,13 +39,14 @@ class TestDuckBridgeInProcessExecutor {
                 }
             }
 
-            val parityPath = TrinoParityExtensionResolver.resolveBundledExtensionPath()
+            val parityExtension = TrinoParityExtensionResolver.resolveBundledExtension()
             val executor =
                 InProcessDuckBridgeExecutor(
                     "jdbc:duckdb:$dbFile",
                     DuckDbTuning.defaults(),
-                    parityPath,
+                    parityExtension?.path,
                     DuckBridgeQueryRunner.bundledParityIsUnsigned(),
+                    parityExtension?.extensionDirectory,
                 )
             val request = DuckBridgeExecutor.ExecutionRequest("SELECT id, name FROM t ORDER BY id", "UTC")
 
@@ -82,15 +83,16 @@ class TestDuckBridgeInProcessExecutor {
                     s.execute("INSERT INTO t VALUES ('straße'), ('abc')")
                 }
             }
-            val parityPath =
-                TrinoParityExtensionResolver.resolveBundledExtensionPath()
+            val parityExtension =
+                TrinoParityExtensionResolver.resolveBundledExtension()
                     ?: return // no bundled binary for this platform — skip (parity SQL can't resolve)
             val executor =
                 InProcessDuckBridgeExecutor(
                     "jdbc:duckdb:$dbFile",
                     DuckDbTuning.defaults(),
-                    parityPath,
+                    parityExtension.path,
                     DuckBridgeQueryRunner.bundledParityIsUnsigned(),
+                    parityExtension.extensionDirectory,
                 )
             // The T2 SQL carries the parity function; the extension LOADed by the executor resolves it.
             val request = DuckBridgeExecutor.ExecutionRequest("SELECT trino_upper(name) AS u FROM t ORDER BY name", null)

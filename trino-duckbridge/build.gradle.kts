@@ -1,3 +1,4 @@
+import java.io.RandomAccessFile
 import java.util.zip.ZipFile
 
 plugins {
@@ -123,24 +124,22 @@ tasks.withType<JavaCompile> {
 
 // ---- Bundle trino_parity DuckDB extension into the plugin jar ----
 //
-// The connector requires the trino_parity.duckdb_extension binary to be
-// LOAD-able by the in-process DuckDB (later phases). We bundle every
-// locally-built platform variant into the plugin jar's classpath resources,
-// keyed by platform name. A runtime resolver (later phase) detects the runtime
-// platform and extracts the matching binary.
+// DuckDB 2 community signatures require the binary AND DuckDB-generated .info provenance. Signed
+// release inputs live under build/community/<platform>; local unsigned development builds remain a
+// binary-only fallback. The runtime resolver extracts signed pairs into a private standard DuckDB
+// extension tree and LOADs by name, while unsigned development builds retain direct-path loading.
 //
-// Source paths (one per platform, each independently optional), relative to the
-// repo-root duckdb-trino-parity-extension submodule:
+// Local development source paths (each independently optional), relative to the parity submodule:
 //   duckdb-trino-parity-extension/build/release/extension/...    host platform
 //                                                                  (output of `make`)
 //   duckdb-trino-parity-extension/build/linux-arm64/release/...  output of `make linux-arm64`
 //   duckdb-trino-parity-extension/build/linux-amd64/release/...  output of `make linux-amd64`
 //
-// Bundled to: parity-extension/dev/brikk/duckbridge/trino/plugin/duckdb-extensions/<platform>/trino_parity.duckdb_extension
+// Community release inputs:
+//   duckdb-trino-parity-extension/build/community/<platform>/trino_parity.duckdb_extension{,.info}
 //
-// Missing binaries are non-fatal at build time; the plugin jar just ships
-// without that platform's variant and operators on that platform have to wire
-// the path manually (or build the extension first).
+// Missing platform pairs are non-fatal for local builds. The release workflow populates and verifies
+// every published native platform before assembling its artifact.
 
 val parityExtensionRoot: File =
     rootProject.projectDir.resolve("duckdb-trino-parity-extension")
@@ -162,39 +161,91 @@ val hostPlatform: String = run {
     "$osPart-$archPart"
 }
 
-// (platform-name, source path) — the host build lands in build/release;
-// cross-built variants land in build/<platform>/release/.
-val parityExtensionSources: List<Pair<String, File>> = listOf(
-    hostPlatform to parityExtensionRoot.resolve("build/release/extension/trino_parity/trino_parity.duckdb_extension"),
+data class ParityExtensionSource(
+    val platform: String,
+    val communityDirectory: File,
+    val localBinary: File?,
+)
+
+val communityRoot = parityExtensionRoot.resolve("build/community")
+val localParityBinaries = mutableMapOf(
     "linux-arm64" to parityExtensionRoot.resolve("build/linux-arm64/release/extension/trino_parity/trino_parity.duckdb_extension"),
     "linux-amd64" to parityExtensionRoot.resolve("build/linux-amd64/release/extension/trino_parity/trino_parity.duckdb_extension"),
-).distinctBy { it.first }  // host might equal linux-arm64 on Linux CI; dedupe
+)
+localParityBinaries[hostPlatform] =
+    parityExtensionRoot.resolve("build/release/extension/trino_parity/trino_parity.duckdb_extension")
+val parityExtensionSources =
+    (listOf("linux-amd64", "linux-arm64", "darwin-arm64", "windows-amd64", hostPlatform))
+        .distinct()
+        .map { platform ->
+            ParityExtensionSource(platform, communityRoot.resolve(platform), localParityBinaries[platform])
+        }
 
 val parityExtensionResourcePrefix =
     "generated-resources/parity-extension/dev/brikk/duckbridge/trino/plugin/duckdb-extensions"
 
-val bundleParityExtension by tasks.registering {
-    description = "Copy every available trino_parity.duckdb_extension into the plugin's classpath resources."
-    group = "build"
-    val outputs = parityExtensionSources.map { (platform, _) ->
-        layout.buildDirectory.file("$parityExtensionResourcePrefix/$platform/trino_parity.duckdb_extension")
+fun File.isUnsignedDuckDbExtension(): Boolean {
+    val signatureBytes = 256
+    if (length() < signatureBytes) return false
+    return RandomAccessFile(this, "r").use { file ->
+        file.seek(length() - signatureBytes)
+        ByteArray(signatureBytes).also(file::readFully).all { it == 0.toByte() }
     }
-    inputs.files(parityExtensionSources.map { it.second }).withPropertyName("sources").optional()
-    this.outputs.files(outputs).withPropertyName("bundled")
+}
+
+val bundleParityExtension by tasks.registering {
+    description = "Bundle available signed trino_parity binary/.info pairs or local unsigned binaries."
+    group = "build"
+    val sourceFiles = parityExtensionSources.flatMap { source ->
+        listOf(
+            source.communityDirectory.resolve("trino_parity.duckdb_extension"),
+            source.communityDirectory.resolve("trino_parity.duckdb_extension.info"),
+        ) + listOfNotNull(source.localBinary)
+    }
+    inputs.files(sourceFiles).withPropertyName("sources").optional()
+    outputs.dir(layout.buildDirectory.dir(parityExtensionResourcePrefix)).withPropertyName("bundled")
     doLast {
+        val outputRoot = layout.buildDirectory.dir(parityExtensionResourcePrefix).get().asFile
+        outputRoot.deleteRecursively()
         var bundled = 0
-        for ((platform, source) in parityExtensionSources) {
-            if (!source.isFile) {
-                logger.lifecycle("trino_parity: $platform binary missing at ${source.relativeToOrSelf(rootProject.projectDir)} — skipping (build it with `(cd duckdb-trino-parity-extension && make ${if (platform == hostPlatform) "" else platform})`).")
-                continue
+        for (source in parityExtensionSources) {
+            val communityBinary = source.communityDirectory.resolve("trino_parity.duckdb_extension")
+            val communityInfo = source.communityDirectory.resolve("trino_parity.duckdb_extension.info")
+            val hasCommunityBinary = communityBinary.isFile
+            val hasCommunityInfo = communityInfo.isFile
+            if (hasCommunityBinary != hasCommunityInfo) {
+                throw GradleException(
+                    "trino_parity: incomplete signed pair for ${source.platform}; binary and .info must both exist"
+                )
             }
-            val target = layout.buildDirectory.file(
-                "$parityExtensionResourcePrefix/$platform/trino_parity.duckdb_extension"
-            ).get().asFile
-            target.parentFile.mkdirs()
-            source.copyTo(target, overwrite = true)
+            val targetDirectory = outputRoot.resolve(source.platform)
+            when {
+                hasCommunityBinary -> {
+                    targetDirectory.mkdirs()
+                    communityBinary.copyTo(targetDirectory.resolve(communityBinary.name), overwrite = true)
+                    communityInfo.copyTo(targetDirectory.resolve(communityInfo.name), overwrite = true)
+                    logger.info("trino_parity: bundled signed community pair for ${source.platform}")
+                }
+                source.localBinary?.isFile == true -> {
+                    if (!source.localBinary.isUnsignedDuckDbExtension()) {
+                        throw GradleException(
+                            "trino_parity: signed binary for ${source.platform} has no .info provenance; " +
+                                "run .github/scripts/fetch-parity-extension.sh on that platform"
+                        )
+                    }
+                    targetDirectory.mkdirs()
+                    source.localBinary.copyTo(
+                        targetDirectory.resolve("trino_parity.duckdb_extension"),
+                        overwrite = true,
+                    )
+                    logger.info("trino_parity: bundled local binary for ${source.platform}")
+                }
+                else -> {
+                    logger.lifecycle("trino_parity: ${source.platform} binary missing — skipping")
+                    continue
+                }
+            }
             bundled++
-            logger.info("trino_parity: bundled $platform from ${source.relativeToOrSelf(rootProject.projectDir)}")
         }
         if (bundled == 0) {
             logger.lifecycle("trino_parity: NO platform binaries bundled — plugin jar will require the parity-extension path to be set at deploy time.")

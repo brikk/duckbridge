@@ -125,15 +125,15 @@ class TestTrinoFunctionAliases {
     companion object {
         @Throws(SQLException::class)
         private fun openConnectionWithExtension(): Connection {
-            val path =
-                TrinoParityExtensionResolver.resolveBundledExtensionPath()
+            val extension =
+                TrinoParityExtensionResolver.resolveBundledExtension()
                     ?: throw AssertionError(
                         "trino_parity extension not bundled in plugin jar on this platform — build it first: " +
                             "`(cd duckdb-trino-parity-extension && make)`.",
                     )
             val props = DuckBridgeQueryRunner.duckJdbcProperties()
             val conn = DriverManager.getConnection("jdbc:duckdb:", props)
-            TrinoFunctionAliases.loadInProcess(conn, path)
+            TrinoFunctionAliases.loadBundled(conn, extension)
             return conn
         }
 

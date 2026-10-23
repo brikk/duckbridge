@@ -32,21 +32,21 @@ import java.util.concurrent.atomic.AtomicReference
  *
  *  1. Callers with an explicit `duckbridge.parity-extension-path` use that directly (handled
  *     by the client/module — not this resolver).
- *  2. Otherwise, look for a classpath resource at
+ *  2. Otherwise, look for classpath resources at
  *     `dev/brikk/duckbridge/trino/plugin/duckdb-extensions/<platform>/trino_parity.duckdb_extension`,
- *     extract it into a PER-PROCESS PRIVATE directory
- *     (`Files.createTempDirectory("trino-duckbridge-")`, owner-only permissions on POSIX), and return
- *     `<that dir>/<platform>/trino_parity.duckdb_extension`. The directory is never a fixed,
+ *     plus its `.info` provenance when this is a signed community build. Extract into a PER-PROCESS
+ *     PRIVATE directory (`Files.createTempDirectory("trino-duckbridge-")`, owner-only permissions on
+ *     POSIX). Signed pairs use DuckDB's standard `<version>/<platform>/` tree and are loaded by name;
+ *     unsigned local development builds use a direct path. The directory is never a fixed,
  *     predictable path shared with other users of the host: this file is native code the DuckDB
  *     in the Trino worker will `dlopen`, so a world-writable `/tmp/trino-duckbridge/...` that
  *     another local user could pre-create or swap (TOCTOU) is not acceptable (EV-C4 in
  *     dev-docs/TODO-rectify-from-eval.md).
  *  3. If neither is available, return null — the caller decides how to fail.
  *
- * Signature: [isUnsigned] inspects the extension footer so the connector can fail precisely instead
- * of surfacing DuckDB's generic signature error. Signed community artifacts load with verification
- * on; local builds and the temporary DuckDB-2.0 CI artifact require the explicit
- * `duckbridge.allow-unsigned-extensions=true` opt-in.
+ * Signature: DuckDB 2 only trusts a community signature when the extension is loaded from an
+ * installed layout carrying its `.info` origin. [isUnsigned] still distinguishes local development
+ * builds, which require the explicit `duckbridge.allow-unsigned-extensions=true` opt-in.
  *
  * Platform detection from `os.name` / `os.arch`:
  * ```
@@ -61,19 +61,29 @@ import java.util.concurrent.atomic.AtomicReference
  * cross-built linux variants that exist. Multi-platform bundling needs a CI matrix that builds
  * the extension on each target.
  *
- * P3 note (Quack remote): a server-side execution engine evaluates SQL in a separate process,
- * so this resolver — which extracts to the Trino worker's local filesystem — is meaningless
- * there. Operators running a remote DuckDB must set `duckbridge.parity-extension-path` to a
- * path the server can resolve, and the LOAD must be issued server-side.
+ * P3 note (Quack remote): a server-side execution engine evaluates SQL in a separate process, so
+ * this resolver's worker-local extraction is meaningless there. Production servers install and
+ * LOAD the signed community extension by name; a configured path is only for a directly loadable
+ * server-side development binary.
  */
 object TrinoParityExtensionResolver {
     private val log: Logger = Logger.get(TrinoParityExtensionResolver::class.java)
 
     private const val RESOURCE_DIR: String = "dev/brikk/duckbridge/trino/plugin/duckdb-extensions"
     private const val RESOURCE_FILE: String = "trino_parity.duckdb_extension"
+    private const val INFO_FILE: String = "$RESOURCE_FILE.info"
+    private const val DUCKDB_VERSION_DIRECTORY: String = "v2.0.0"
 
     /** Result holder so the cache can distinguish "not resolved yet" from "resolved to nothing". */
-    private class Resolution(val path: String?)
+    private class Resolution(val extension: BundledExtension?)
+
+    data class BundledExtension(
+        val path: String,
+        val infoPath: String?,
+        val extensionDirectory: String?,
+        val duckDbPlatform: String,
+        val extractionRoot: String,
+    )
 
     private val cached: AtomicReference<Resolution?> = AtomicReference()
     private val resolveLock: Any = Any()
@@ -84,12 +94,12 @@ object TrinoParityExtensionResolver {
      * process, guarded by a double-checked synchronized region so parallel test/split runners
      * only run one `Files.copy`.
      */
-    fun resolveBundledExtensionPath(): String? {
-        cached.get()?.let { return it.path }
+    fun resolveBundledExtension(): BundledExtension? {
+        cached.get()?.let { return it.extension }
         return synchronized(resolveLock) {
             val inner = cached.get()
             if (inner != null) {
-                inner.path
+                inner.extension
             } else {
                 val resolved = doResolve()
                 cached.set(Resolution(resolved))
@@ -98,12 +108,14 @@ object TrinoParityExtensionResolver {
         }
     }
 
+    fun resolveBundledExtensionPath(): String? = resolveBundledExtension()?.path
+
     /**
      * Resolve a specific platform's bundled binary, regardless of the running host. Used by test
      * fixtures that need to mount the Linux binary into a Linux container even though the JVM runs
      * on macOS. Result is NOT cached — different platforms have different paths.
      */
-    fun resolveBundledExtensionPathFor(platform: String): String? {
+    fun resolveBundledExtensionFor(platform: String): BundledExtension? {
         return synchronized(resolveLock) {
             val resourcePath = "$RESOURCE_DIR/$platform/$RESOURCE_FILE"
             val url = TrinoParityExtensionResolver::class.java.classLoader.getResource(resourcePath)
@@ -115,12 +127,16 @@ object TrinoParityExtensionResolver {
                 )
                 null
             } else {
-                extractOrNull(url, platform)
+                val infoUrl =
+                    TrinoParityExtensionResolver::class.java.classLoader.getResource("$RESOURCE_DIR/$platform/$INFO_FILE")
+                extractOrNull(url, infoUrl, platform)
             }
         }
     }
 
-    private fun doResolve(): String? {
+    fun resolveBundledExtensionPathFor(platform: String): String? = resolveBundledExtensionFor(platform)?.path
+
+    private fun doResolve(): BundledExtension? {
         val platform =
             detectPlatform() ?: run {
                 log.info(
@@ -142,26 +158,54 @@ object TrinoParityExtensionResolver {
             )
             return null
         }
-        val extracted = extractOrNull(url, platform)
+        val infoUrl = TrinoParityExtensionResolver::class.java.classLoader.getResource("$RESOURCE_DIR/$platform/$INFO_FILE")
+        val extracted = extractOrNull(url, infoUrl, platform)
         if (extracted != null) {
-            log.info("trino_parity: extracted bundled extension for platform %s to %s", platform, extracted)
+            log.info("trino_parity: extracted bundled extension for platform %s to %s", platform, extracted.path)
         }
         return extracted
     }
 
-    private fun extractOrNull(url: URL, platform: String): String? =
+    private fun extractOrNull(binaryUrl: URL, infoUrl: URL?, platform: String): BundledExtension? =
         try {
             // KEEP THE BASENAME "trino_parity.duckdb_extension" — DuckDB derives the C entrypoint
             // symbol from the filename's stem (`<stem>_duckdb_cpp_init`). Mangling the filename to
             // encode the platform breaks symbol resolution at LOAD. Disambiguate via the parent dir.
-            val tempDir = privateRoot().resolve(platform)
+            val root = privateRoot()
+            val duckDbPlatform = duckDbPlatform(platform)
+            val tempDir =
+                if (infoUrl == null) {
+                    root.resolve("direct").resolve(platform)
+                } else {
+                    root.resolve(DUCKDB_VERSION_DIRECTORY).resolve(duckDbPlatform)
+                }
             Files.createDirectories(tempDir)
             val target = tempDir.resolve(RESOURCE_FILE)
-            extractAtomically(url, tempDir, target)
-            target.toAbsolutePath().toString()
+            extractAtomically(binaryUrl, tempDir, target)
+            val infoTarget =
+                infoUrl?.let {
+                    tempDir.resolve(INFO_FILE).also { info -> extractAtomically(it, tempDir, info) }
+                }
+            BundledExtension(
+                path = target.toAbsolutePath().toString(),
+                infoPath = infoTarget?.toAbsolutePath()?.toString(),
+                extensionDirectory = if (infoTarget == null) null else root.toAbsolutePath().toString(),
+                duckDbPlatform = duckDbPlatform,
+                extractionRoot = root.toAbsolutePath().toString(),
+            )
         } catch (e: IOException) {
             log.warn(e, "trino_parity: failed to extract bundled extension for platform %s", platform)
             null
+        }
+
+    private fun duckDbPlatform(platform: String): String =
+        when (platform) {
+            "linux-amd64" -> "linux_amd64"
+            "linux-arm64" -> "linux_arm64"
+            "darwin-amd64" -> "osx_amd64"
+            "darwin-arm64" -> "osx_arm64"
+            "windows-amd64" -> "windows_amd64"
+            else -> error("Unsupported trino_parity platform: $platform")
         }
 
     /**
@@ -229,7 +273,7 @@ object TrinoParityExtensionResolver {
      */
     @Throws(IOException::class)
     private fun extractAtomically(url: URL, tempDir: Path, target: Path) {
-        val tmp = Files.createTempFile(tempDir, RESOURCE_FILE, ".tmp")
+        val tmp = Files.createTempFile(tempDir, target.fileName.toString(), ".tmp")
         try {
             url.openStream().use { input ->
                 Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)

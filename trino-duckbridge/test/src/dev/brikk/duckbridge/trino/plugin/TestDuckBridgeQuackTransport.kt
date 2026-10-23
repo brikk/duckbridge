@@ -27,13 +27,13 @@ import java.util.Properties
  * Stage 1 (T3) integration test: the duckbridge connector talking to a REAL remote DuckDB over the
  * Quack protocol via gizmo's `quack-jdbc` driver (`connection-url=jdbc:quack://host:port`).
  *
- * The server is a testcontainer ([TestingQuackServer]) running `duckdb -unsigned` hosting
- * `quack_serve`; the built `trino_parity.duckdb_extension` is copied in and LOADed server-side (via
- * `duckbridge.parity-extension-path` pointing at the in-container path), so the parity pushdown path
- * is genuinely exercised over the wire — not just result correctness.
+ * The server is a testcontainer ([TestingQuackServer]) hosting `quack_serve`; the bundled
+ * signed `trino_parity` binary + provenance are copied into DuckDB's installed-extension tree and
+ * LOADed by name, so the parity pushdown path is genuinely exercised over the wire with signature
+ * verification enabled — not just result correctness.
  *
- * Requires Docker. The container base is debian:trixie (GLIBC 2.41) because the extension links
- * against GLIBC 2.38 and won't LOAD on the DuckLake fixture's bookworm image.
+ * Signed release binaries are loaded with signature verification enabled. Local unsigned builds
+ * require the test fixture's explicit development opt-in.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
@@ -42,16 +42,18 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
 
     override fun createQueryRunner(): QueryRunner {
         server = TestingQuackServer()
-        parityAvailable = server.installParityExtension()
+        val parityInstallation = server.installParityExtension()
+        parityAvailable = parityInstallation != null
         val extra = buildMap {
             put("duckbridge.quack.token", server.token)
-            if (parityAvailable) {
-                // Server-side path — DuckBridgeParity LOADs it over the pass-through connection.
-                put("duckbridge.parity-extension-path", TestingQuackServer.IN_CONTAINER_PARITY_PATH)
+            if (parityInstallation?.serverPath != null) {
+                // Unsigned local development binary: load its server-side direct path.
+                put("duckbridge.parity-extension-path", parityInstallation.serverPath)
             } else {
-                // No matching binary for the container arch: run without parity so the transport
-                // tests still exercise the wire path (domain/limit pushdown, round-trip, metadata).
-                put("duckbridge.string-pushdown.mode", "GUARDED")
+                if (!parityAvailable) {
+                    // No matching binary: retain transport coverage without PARITY assertions.
+                    put("duckbridge.string-pushdown.mode", "GUARDED")
+                }
             }
         }
         val runner = DuckBridgeQueryRunner.create(server.connectionUrl(), extra)

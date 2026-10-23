@@ -29,8 +29,43 @@ permissions:
   contents: write  # gh release create pushes a tag + uploads assets
 
 jobs:
+  parity-extension:
+    name: signed parity (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: windows-2025
+            platform: windows-amd64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Stock DuckDB performs FORCE INSTALL + LOAD with signature verification enabled and emits
+      # the binary/.info pair needed for an offline installed-extension layout.
+      - name: Install and verify signed trino_parity
+        shell: bash
+        run: ./.github/scripts/fetch-parity-extension.sh
+
+      - name: Upload signed extension pair
+        uses: actions/upload-artifact@v4
+        with:
+          name: trino-parity-${{ matrix.platform }}
+          path: duckdb-trino-parity-extension/build/community
+          if-no-files-found: error
+          retention-days: 3
+
   release:
     name: gated build + plugin release (:trino-duckbridge)
+    needs: parity-extension
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -77,8 +112,21 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Fetch trino_parity extension
-        run: ./.github/scripts/fetch-parity-extension.sh
+      - name: Download verified parity platform pairs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: trino-parity-*
+          path: duckdb-trino-parity-extension/build/community
+          merge-multiple: true
+
+      - name: Verify complete native parity matrix
+        run: |
+          set -euo pipefail
+          for platform in linux-amd64 linux-arm64 darwin-arm64 windows-amd64; do
+            base="duckdb-trino-parity-extension/build/community/${platform}/trino_parity.duckdb_extension"
+            test -s "${base}"
+            test -s "${base}.info"
+          done
 
       # GATE: same full build + tests as CI, with the release version wired in via -Pversion. If
       # this fails, no later step runs -> no artifact, no release.

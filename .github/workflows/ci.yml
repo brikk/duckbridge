@@ -8,8 +8,7 @@
 #
 # The suite is not hermetic: the T3 (quack-jdbc) integration tests spin up a real DuckDB/Quack
 # server via Testcontainers (Docker, preinstalled on ubuntu-latest). PARITY string-pushdown is the
-# default mode, which needs trino_parity. DuckDB 2.0.0 currently uses the qualified unsigned CI
-# binary; the fetch script will switch back to signed community artifacts after publication.
+# default mode, which needs the signed trino_parity community extension matching the DuckDB pin.
 name: CI
 
 on:
@@ -56,8 +55,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Fetch the exact parity binary matching the pinned DuckDB. The current DuckDB 2.0.0 artifact
-      # is an unsigned, already-tested linux-amd64 CI binary.
+      # Fetch the signed community parity binaries matching the pinned DuckDB.
       - name: Fetch trino_parity extension
         run: ./.github/scripts/fetch-parity-extension.sh
 

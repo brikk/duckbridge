@@ -29,12 +29,12 @@ import java.nio.file.attribute.PosixFilePermission
 class TestTrinoParityExtensionResolver {
     @Test
     fun bundledExtensionIsExtractedIntoAPrivateUnpredictableDirectory() {
-        val path = TrinoParityExtensionResolver.resolveBundledExtensionPath()
-        assumeTrue(path != null, "no bundled trino_parity for this platform — build or fetch it first")
-        val file = Path.of(path!!)
+        val extension = TrinoParityExtensionResolver.resolveBundledExtension()
+        assumeTrue(extension != null, "no bundled trino_parity for this platform — build or fetch it first")
+        val file = Path.of(extension!!.path)
         assertThat(file.fileName.toString()).isEqualTo("trino_parity.duckdb_extension")
-        // <tmpdir>/trino-duckbridge-<random>/<platform>/trino_parity.duckdb_extension
-        val root = file.parent.parent
+        val root = Path.of(extension.extractionRoot)
+        assertThat(file).startsWith(root)
         assertThat(root.fileName.toString()).startsWith("trino-duckbridge-")
         assertThat(root.fileName.toString()).isNotEqualTo("trino-duckbridge") // the old fixed, shared path
         assertThat(root.parent).isEqualTo(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath())
@@ -50,7 +50,13 @@ class TestTrinoParityExtensionResolver {
                 )
         }
         // Idempotent within the process: the same path comes back, no second extraction root.
-        assertThat(TrinoParityExtensionResolver.resolveBundledExtensionPath()).isEqualTo(path)
+        assertThat(TrinoParityExtensionResolver.resolveBundledExtensionPath()).isEqualTo(extension.path)
+        if (extension.infoPath != null) {
+            assertThat(Path.of(extension.infoPath)).isRegularFile()
+            assertThat(extension.extensionDirectory).isEqualTo(extension.extractionRoot)
+            assertThat(file.parent.fileName.toString()).isEqualTo(extension.duckDbPlatform)
+            assertThat(file.parent.parent.fileName.toString()).isEqualTo("v2.0.0")
+        }
     }
 
     @Test

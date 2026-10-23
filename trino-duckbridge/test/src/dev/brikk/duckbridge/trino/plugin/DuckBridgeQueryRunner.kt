@@ -73,8 +73,8 @@ object DuckBridgeQueryRunner {
                 buildMap {
                     put("connection-url", connectionUrl)
                     // The connector verifies extension signatures by default (EV-C4). A developer's
-                    // Opt in ONLY when the bundled binary is actually unsigned. This covers local
-                    // builds and the temporary DuckDB-2.0 CI artifact without weakening the signed lane.
+                    // Opt in ONLY for a local unsigned development build. Release bundles retain
+                    // community provenance and run with signature verification enabled.
                     if (bundledParityIsUnsigned()) {
                         put("duckbridge.allow-unsigned-extensions", "true")
                     }

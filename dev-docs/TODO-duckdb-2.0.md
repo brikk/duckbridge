@@ -17,10 +17,10 @@ version alone:
 - Trino pushdown depends on a version-pinned native `trino_parity` extension.
   Doris instead has its own small, audited SQL-function allowlist.
 
-The Trino maintained lane now pins DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.9.0`, parity source
-`b216dc13a9` and the qualified unsigned Linux-amd64 CI binary from run `39636617710`. Doris remains
-on its independently qualified DuckDB 1.5.6 / Quack JDBC 0.8 runtime while its Doris-5.x boundary is
-unavailable.
+The Trino maintained lane pins DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.9.0`, parity source
+`b216dc13a9`, and signed `trino_parity` 0.5.1 community binaries for Linux amd64/arm64, macOS arm64
+and Windows amd64. Doris remains on its independently qualified DuckDB 1.5.6 / Quack JDBC 0.8
+runtime while its Doris-5.x boundary is unavailable.
 
 ## Source material
 

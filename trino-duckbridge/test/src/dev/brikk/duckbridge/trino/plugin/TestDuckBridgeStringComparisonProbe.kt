@@ -84,9 +84,9 @@ class TestDuckBridgeStringComparisonProbe {
     @Test
     fun consolidatedParityProbeUsesOneStatement() {
         embeddedConnection().use { conn ->
-            val path = TrinoParityExtensionResolver.resolveBundledExtensionPath()
-            assumeTrue(path != null, "no bundled trino_parity for this platform")
-            TrinoFunctionAliases.loadInProcess(conn, path!!)
+            val extension = TrinoParityExtensionResolver.resolveBundledExtension()
+            assumeTrue(extension != null, "no bundled trino_parity for this platform")
+            TrinoFunctionAliases.loadBundled(conn, extension!!)
 
             val executeQueries = AtomicInteger()
             val counting = countingConnection(conn, executeQueries)

@@ -78,8 +78,8 @@ from the URL scheme: `jdbc:duckdb:<path>` (embedded) or `jdbc:quack://host:port`
 | `connector.name` | — | Must be `duckbridge`. |
 | `connection-url` | — | `jdbc:duckdb:/path/to.db` (embedded) or `jdbc:quack://host:port` (remote). |
 | `duckbridge.string-pushdown.mode` | `PARITY` | `NULL_ONLY` \| `GUARDED` \| `BINARY` \| `FULL` \| `PARITY` (see dial below). |
-| `duckbridge.allow-unsigned-extensions` | `false` | Open embedded DuckDB with `allow_unsigned_extensions`, disabling extension signature checks. Required temporarily for the bundled DuckDB-2.0 CI parity binary; remove the opt-in after the signed community build is published. |
-| `duckbridge.parity-extension-path` | — | Explicit path to `trino_parity.duckdb_extension`, overriding the bundled binary (embedded) or naming a server-side path (Quack). |
+| `duckbridge.allow-unsigned-extensions` | `false` | Open embedded DuckDB with `allow_unsigned_extensions`, disabling extension signature checks. Only needed for locally built, unsigned development binaries; release packages bundle signed community artifacts. |
+| `duckbridge.parity-extension-path` | — | Development override for a directly loadable extension path (embedded or server-side Quack). Community-signed builds must use their installed layout and are bundled automatically on supported platforms. |
 | `duckbridge.quack.token` / `.token-env` / `.token-file` | — | Quack auth; prefer `-env`/`-file` for secrets. |
 | `duckbridge.quack.tls` | `false` | Use `https` for the Quack transport. |
 | `duckbridge.lance.enabled` | `false` | Enable the Lance scan/search table functions ([README-lance.md](trino-duckbridge/README-lance.md)). |
@@ -210,20 +210,19 @@ database-instance identity with which to detect a restarted/replaced instance sa
 
 How the connector gets it, per transport:
 
-- **Embedded** (`jdbc:duckdb:`): the current DuckDB-2.0 package bundles the already-qualified
-  **unsigned Linux amd64** CI binary. Set `duckbridge.allow-unsigned-extensions=true` until the
-  signed community artifact is published. Other platforms must provide a matching binary through
-  `duckbridge.parity-extension-path` or run in `GUARDED` mode. The binary is extracted into a
-  process-private directory; unsigned loading remains an explicit operator opt-in.
+- **Embedded** (`jdbc:duckdb:`): release packages bundle the signed DuckDB-2.0 community binaries
+  for **Linux amd64/arm64, macOS arm64, and Windows amd64**. They are extracted into a
+  process-private directory and loaded with signature verification enabled. Platforms without a
+  published community build must use a local development binary with the explicit unsigned opt-in,
+  or run in `GUARDED` mode.
 - **Remote** (`jdbc:quack://`): the extension is a **server-side** concern — the connector never
   installs on the server. Because `quack_serve` serves one shared DuckDB instance and `LOAD` is
   instance-scoped, load it **once at server startup** and every client connection is covered — run
   the `LOAD` in the same session that starts the server:
 
   ```sql
-  -- Temporary DuckDB 2.0 lane, until the signed community build is published:
-  -- start `duckdb -unsigned`, then load the qualified CI binary by absolute path.
-  LOAD '/path/to/trino_parity.duckdb_extension';
+  INSTALL trino_parity FROM community;  -- once per machine
+  LOAD trino_parity;                    -- once per server instance
   CALL   quack_serve(...);
   ```
 
@@ -297,12 +296,13 @@ availability assumptions and are not made hermetic by Gradle's offline flag.
 
 ## Parity extension
 
-The `trino_parity` extension normally ships through DuckDB
-[community-extensions](https://duckdb.org/community_extensions/). The formal DuckDB-2.0 build is
-still pending, so CI/release currently fetches the qualified unsigned Linux-amd64 binary from parity
-CI run `39636617710` (`.github/scripts/fetch-parity-extension.sh`).
+The signed `trino_parity` 0.5.1 extension ships through DuckDB
+[community-extensions](https://duckdb.org/community_extensions/). The release matrix runs
+`.github/scripts/fetch-parity-extension.sh` natively on Linux amd64/arm64, macOS arm64 and Windows
+amd64, then combines the verified binary/provenance pairs into one plugin package.
 
-For a reproducible local package matching the root DuckDB pin, fetch the qualified binary first:
+For a reproducible local package matching the root DuckDB pin, fetch the signed binary for the
+current host first:
 
 ```sh
 ./.github/scripts/fetch-parity-extension.sh

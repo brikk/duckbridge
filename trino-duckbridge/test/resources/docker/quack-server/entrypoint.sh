@@ -12,6 +12,14 @@ set -eu
 PORT="${QUACK_PORT:-9494}"
 TOKEN="${QUACK_TOKEN:-duckbridge-test-token}"
 
+if [ "${DUCKDB_ALLOW_UNSIGNED_EXTENSIONS:-false}" = "true" ]; then
+    # Local extension development only. This is a startup setting; a runtime SET is rejected.
+    DUCKDB_ARGS="-unsigned"
+else
+    # Release qualification keeps signature verification enabled.
+    DUCKDB_ARGS=""
+fi
+
 {
     printf "LOAD quack;\n"
     # allow_other_hostname is required to bind to 0.0.0.0 — Quack refuses
@@ -19,7 +27,4 @@ TOKEN="${QUACK_TOKEN:-duckbridge-test-token}"
     # namespace makes 0.0.0.0 mean "this container's interfaces only".
     printf "SELECT * FROM quack_serve('quack://0.0.0.0:%s/', token := '%s', allow_other_hostname := true, disable_ssl := true);\n" "$PORT" "$TOKEN"
     exec sleep infinity
-# -unsigned: server-side LOAD of the locally-built (unsigned)
-# trino_parity.duckdb_extension requires allow_unsigned_extensions at process
-# start (a runtime SET is rejected). No-op for a server never asked to LOAD one.
-} | duckdb -unsigned
+} | duckdb $DUCKDB_ARGS

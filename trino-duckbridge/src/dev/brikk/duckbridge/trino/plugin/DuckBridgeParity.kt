@@ -32,8 +32,8 @@ import java.sql.SQLException
  * a mysterious perf cliff, not a misconfiguration).
  *
  * Transport-aware (P3):
- *  - EMBEDDED (T1): resolve a worker-local binary (bundled extraction or the configured path) and
- *    `LOAD '<local-path>'` over the in-process DuckDB connection.
+ *  - EMBEDDED (T1): extract a bundled signed binary + install provenance into a private DuckDB
+ *    extension directory and `LOAD trino_parity` by name. Explicit development paths load directly.
  *  - QUACK (T3): the worker cannot extract a binary for the *remote* server. If
  *    `duckbridge.parity-extension-path` is set it is treated as a SERVER-SIDE path and LOADed over
  *    the pass-through connection; otherwise we assume the server pre-loaded the extension and just
@@ -52,8 +52,8 @@ class DuckBridgeParity
          * extraction). Computed lazily and memoised. Never consulted for the Quack transport — a
          * worker-local binary can't be LOADed into a remote server.
          */
-        private val resolvedLocalPath: String? by lazy {
-            config.parityExtensionPath ?: TrinoParityExtensionResolver.resolveBundledExtensionPath()
+        private val resolvedBundledExtension: TrinoParityExtensionResolver.BundledExtension? by lazy {
+            if (config.parityExtensionPath == null) TrinoParityExtensionResolver.resolveBundledExtension() else null
         }
 
         /**
@@ -129,7 +129,9 @@ class DuckBridgeParity
         }
 
         private fun loadEmbedded(connection: Connection) {
-            val path = resolvedLocalPath
+            val explicitPath = config.parityExtensionPath
+            val bundled = resolvedBundledExtension
+            val path = explicitPath ?: bundled?.path
             val failure =
                 when {
                     path == null ->
@@ -143,12 +145,13 @@ class DuckBridgeParity
                         parityUnavailable(
                             "the trino_parity binary at '$path' is UNSIGNED and " +
                                 "duckbridge.allow-unsigned-extensions is false. " +
-                                "Either bundle/point at the signed community binary (`INSTALL trino_parity FROM community` " +
-                                "and set duckbridge.parity-extension-path to it) or explicitly set " +
+                                "Use the bundled signed community extension, or explicitly set " +
                                 "duckbridge.allow-unsigned-extensions=true",
                             remote = false,
                         )
-                    else -> loadOnly(connection, path, remote = false)
+                    explicitPath != null || bundled?.extensionDirectory == null ->
+                        loadOnly(connection, path, remote = false)
+                    else -> loadInstalled(connection, bundled.extensionDirectory)
                 }
             if (failure != null) {
                 throw failure
@@ -174,17 +177,28 @@ class DuckBridgeParity
                 parityUnavailable("failed to LOAD trino_parity from '$path': ${e.message}", remote, e)
             }
 
+        private fun loadInstalled(connection: Connection, extensionDirectory: String): TrinoException? =
+            try {
+                TrinoFunctionAliases.loadInstalled(connection, extensionDirectory)
+                null
+            } catch (e: SQLException) {
+                parityUnavailable(
+                    "failed to LOAD signed trino_parity from private extension directory " +
+                        "'$extensionDirectory': ${e.message}",
+                    remote = false,
+                    cause = e,
+                )
+            }
+
         private fun parityUnavailable(reason: String, remote: Boolean, cause: Throwable? = null): TrinoException {
             log.error(cause, "duckbridge: parity extension unavailable — %s", reason)
             val fix =
                 if (remote) {
-                    "Install the trino_parity extension on the Quack/DuckDB server (start it with " +
-                        "`duckdb -unsigned` and `LOAD` the binary, or set duckbridge.parity-extension-path to a " +
-                        "server-side path)"
+                    "Install and LOAD the signed trino_parity community extension on the Quack/DuckDB server; " +
+                        "duckbridge.parity-extension-path is only for server-side development binaries"
                 } else {
-                    "Fetch the matching binary with `.github/scripts/fetch-parity-extension.sh` (set " +
-                        "duckbridge.allow-unsigned-extensions=true when it is unsigned), " +
-                        "or set duckbridge.parity-extension-path to a valid binary"
+                    "Use the bundled signed community extension, or set duckbridge.parity-extension-path to a " +
+                        "local development binary (and opt into unsigned loading when applicable)"
                 }
             return TrinoException(
                 NOT_SUPPORTED,

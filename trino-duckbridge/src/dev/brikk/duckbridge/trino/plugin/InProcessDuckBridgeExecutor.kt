@@ -20,6 +20,7 @@ import org.apache.arrow.vector.ipc.ArrowReader
 import org.duckdb.DuckDBConnection
 import org.duckdb.DuckDBResultSet
 import java.io.IOException
+import java.sql.Connection
 import java.sql.SQLException
 import java.sql.Statement
 import java.util.Properties
@@ -36,12 +37,13 @@ class InProcessDuckBridgeExecutor(
     private val tuning: DuckDbTuning,
     private val parityExtensionPath: String?,
     private val allowUnsignedExtensions: Boolean = false,
+    private val parityExtensionDirectory: String? = null,
 ) : DuckBridgeExecutor {
     @Throws(SQLException::class)
     override fun openPreparedConnection(duckDbTimeZone: String?): DuckDBConnection {
         val connection = openRawConnection()
         try {
-            parityExtensionPath?.let { TrinoFunctionAliases.loadInProcess(connection, it) }
+            loadParityExtension(connection)
             connection.createStatement().use { init ->
                 DuckDbTuningSql.applyDirect(init, tuning)
                 applySessionTimeZone(init, duckDbTimeZone)
@@ -75,7 +77,7 @@ class InProcessDuckBridgeExecutor(
         var allocator: BufferAllocator? = null
         var arrowReader: ArrowReader? = null
         try {
-            parityExtensionPath?.let { TrinoFunctionAliases.loadInProcess(connection, it) }
+            loadParityExtension(connection)
             connection.createStatement().use { init ->
                 DuckDbTuningSql.applyDirect(init, tuning)
                 applySessionTimeZone(init, request.duckDbTimeZone)
@@ -91,6 +93,14 @@ class InProcessDuckBridgeExecutor(
         } catch (e: SQLException) {
             closeQuietly(arrowReader, resultSet, statement, allocator, connection)
             throw e
+        }
+    }
+
+    private fun loadParityExtension(connection: Connection) {
+        if (parityExtensionDirectory != null) {
+            TrinoFunctionAliases.loadInstalled(connection, parityExtensionDirectory)
+        } else {
+            parityExtensionPath?.let { TrinoFunctionAliases.loadInProcess(connection, it) }
         }
     }
 

@@ -21,11 +21,10 @@ import java.sql.SQLException
  * `trino_<name>(...)` scalar functions/macros and the `trino_meta()` table macro that the
  * connector's pushdown translator relies on.
  *
- * The extension is a hard dependency of parity pushdown: the plugin jar bundles a host-built
- * binary (see [TrinoParityExtensionResolver]), and operators can override with the
- * `duckbridge.parity-extension-path` catalog property. The connection must have been opened with
- * `allow_unsigned_extensions=true` (a Properties entry — immutable once the DB is running) for the
- * LOAD to succeed on a locally-built, unsigned binary.
+ * The extension is a hard dependency of parity pushdown. Release jars bundle a signed community
+ * binary plus DuckDB's `.info` provenance and load it by name from a private installed-extension
+ * tree. Operators can override with `duckbridge.parity-extension-path`; a locally-built unsigned
+ * override needs `allow_unsigned_extensions=true` when the connection is created.
  *
  * P3 note: this in-process LOAD assumes the extension binary lives on the same filesystem as the
  * DuckDB instance. A remote/server-side DuckDB (Quack) needs the LOAD forwarded server-side and
@@ -42,6 +41,28 @@ object TrinoFunctionAliases {
     fun loadInProcess(connection: Connection, path: String) {
         connection.createStatement().use { scratch ->
             scratch.execute("LOAD '" + path.replace("'", "''") + "'")
+        }
+    }
+
+    /** Load a signed community extension from its extracted DuckDB installation root. */
+    @Throws(SQLException::class)
+    fun loadInstalled(connection: Connection, extensionDirectory: String) {
+        val escaped = extensionDirectory.replace("'", "''")
+        connection.createStatement().use { scratch ->
+            scratch.execute("SET GLOBAL extension_directories=['$escaped']")
+            scratch.execute("LOAD trino_parity")
+        }
+    }
+
+    @Throws(SQLException::class)
+    fun loadBundled(
+        connection: Connection,
+        extension: TrinoParityExtensionResolver.BundledExtension,
+    ) {
+        if (extension.extensionDirectory != null) {
+            loadInstalled(connection, extension.extensionDirectory)
+        } else {
+            loadInProcess(connection, extension.path)
         }
     }
 }

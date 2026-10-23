@@ -158,10 +158,10 @@ class TestPushdownSemanticFixtures : AbstractTestQueryFramework() {
         val props = DuckBridgeQueryRunner.duckJdbcProperties()
         val conn = DriverManager.getConnection("jdbc:duckdb:", props)
         conn.createStatement().use { it.execute("SET TimeZone = '${SemanticFixtures.ZONE}'") }
-        val path =
-            TrinoParityExtensionResolver.resolveBundledExtensionPath()
+        val extension =
+            TrinoParityExtensionResolver.resolveBundledExtension()
                 ?: throw AssertionError("trino_parity extension not bundled for this platform — build it first: `(cd duckdb-trino-parity-extension && make)`.")
-        TrinoFunctionAliases.loadInProcess(conn, path)
+        TrinoFunctionAliases.loadBundled(conn, extension)
         return conn
     }
 }

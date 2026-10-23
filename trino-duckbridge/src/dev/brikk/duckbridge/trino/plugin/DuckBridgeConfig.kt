@@ -27,10 +27,9 @@ import io.airlift.units.DataSize
 class DuckBridgeConfig {
     /**
      * When true, the in-process DuckDB is opened with `allow_unsigned_extensions=true`, which
-     * disables DuckDB's signature verification for every `LOAD`. Defaults to FALSE and fails loud
-     * when a bundled/configured binary is unsigned. The temporary DuckDB-2.0 CI binary requires an
-     * explicit true value until the signed community artifact is published. (EV-C4: never silently
-     * dlopen unverified native code.)
+     * disables DuckDB's signature verification for every `LOAD`. Defaults to FALSE; release
+     * packages bundle signed community binaries. An unsigned development binary is rejected unless
+     * the operator explicitly opts in. (EV-C4: never silently dlopen unverified native code.)
      */
     var isAllowUnsignedExtensions: Boolean = false
         private set
@@ -38,7 +37,7 @@ class DuckBridgeConfig {
     @Config("duckbridge.allow-unsigned-extensions")
     @ConfigDescription(
         "Open the embedded DuckDB with allow_unsigned_extensions (disables extension signature checks). " +
-            "Required for unsigned trino_parity binaries, including the temporary DuckDB-2.0 CI artifact.",
+            "Only required for locally built, unsigned trino_parity binaries.",
     )
     fun setAllowUnsignedExtensions(allowUnsignedExtensions: Boolean): DuckBridgeConfig {
         this.isAllowUnsignedExtensions = allowUnsignedExtensions
@@ -99,16 +98,15 @@ class DuckBridgeConfig {
     }
 
     /**
-     * Optional explicit filesystem path to the `trino_parity.duckdb_extension` binary. When set,
-     * it overrides the bundled-per-platform extraction path resolved by
-     * [TrinoParityExtensionResolver]. Needed when the bundled binary doesn't match the runtime
-     * platform, or (P3) when a server-side DuckDB must LOAD a path only it can resolve.
+     * Optional development path to a directly loadable `trino_parity.duckdb_extension`. Community
+     * builds must retain DuckDB's installed `.info` provenance and are bundled automatically; this
+     * override is for local unsigned builds or a server-side Quack development path.
      */
     var parityExtensionPath: String? = null
         private set
 
     @Config("duckbridge.parity-extension-path")
-    @ConfigDescription("Explicit path to trino_parity.duckdb_extension, overriding the bundled binary")
+    @ConfigDescription("Development path to a directly loadable trino_parity.duckdb_extension")
     fun setParityExtensionPath(parityExtensionPath: String?): DuckBridgeConfig {
         this.parityExtensionPath = parityExtensionPath?.takeIf { it.isNotBlank() }
         return this

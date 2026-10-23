@@ -1,4 +1,4 @@
-# DuckDB 2.0.0 / Quack JDBC 0.9.0 qualification
+# DuckDB 2.0.0 / Quack JDBC 0.9.0 pre-community qualification
 
 **Date:** 2026-10-21
 
@@ -33,7 +33,7 @@ The source submodule pins DuckDB `v2.0.0` and the matching `v2.0-cyanoptera` CI 
 - Embedded JDBC, direct Quack, Quack/Arrow, parameter binding, arrays, scalar type mapping,
   string/predicate semantic fixtures, parity functions, Lance and Vortex passed.
 - The live string comparison probe passed on both embedded and Quack transports; current evidence is
-  in [`REPORT-string-comparison-probe-duckdb-2.0.0.md`](REPORT-string-comparison-probe-duckdb-2.0.0.md).
+  in [`REPORT-string-comparison-probe-duckdb-2.0.0.md`](../REPORT-string-comparison-probe-duckdb-2.0.0.md).
 - The served Lance build changed to `86118537da`; signature, write/read and vector-search canaries
   passed before the pin was advanced.
 

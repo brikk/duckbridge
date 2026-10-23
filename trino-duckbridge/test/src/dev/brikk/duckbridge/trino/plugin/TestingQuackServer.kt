@@ -27,17 +27,23 @@ import java.util.Properties
  * (quack-jdbc) transport connects to. The test JVM's `quack-jdbc` driver speaks the Quack wire
  * protocol to it via `jdbc:quack://host:port`.
  *
- * Uses a `debian:trixie-slim` (GLIBC 2.41) base rather than the DuckLake fixture's bookworm
- * (2.36): the locally-built `trino_parity.duckdb_extension` links against GLIBC 2.38, so it only
- * LOADs on trixie. [installParityExtension] copies the built binary into the running container so
- * a subsequent server-side `LOAD '<IN_CONTAINER_PARITY_PATH>'` works.
+ * Uses a `debian:trixie-slim` (GLIBC 2.41) base. [installParityExtension] copies the bundled binary
+ * into the running container so a subsequent server-side load works.
+ * Signature verification stays enabled for signed release binaries; local unsigned builds opt in
+ * explicitly before DuckDB starts.
  */
 internal class TestingQuackServer : AutoCloseable {
+    data class ParityInstallation(val serverPath: String?)
+
     private val container: GenericContainer<*> =
         GenericContainer(buildImage())
             .withExposedPorts(CONTAINER_PORT)
             .withEnv("QUACK_PORT", CONTAINER_PORT.toString())
             .withEnv("QUACK_TOKEN", TOKEN)
+            .withEnv(
+                "DUCKDB_ALLOW_UNSIGNED_EXTENSIONS",
+                DuckBridgeQueryRunner.bundledParityIsUnsigned().toString(),
+            )
             .withStartupAttempts(3)
             .waitingFor(Wait.forListeningPort())
 
@@ -62,20 +68,33 @@ internal class TestingQuackServer : AutoCloseable {
     fun connectionUrl(): String = "jdbc:quack://$host:$mappedPort"
 
     /**
-     * Copy the host-built parity extension into the running container at [IN_CONTAINER_PARITY_PATH],
-     * selecting the binary by the container's ACTUAL platform (`uname -m`), not the JVM host arch —
-     * the two differ when a podman VM runs a different arch. Returns false when no matching binary is
-     * available (callers skip parity-dependent assertions).
+     * Copy the bundled parity extension into the running container, selecting it by the container's
+     * ACTUAL platform (`uname -m`), not the JVM host arch. Signed pairs go into DuckDB's installed
+     * extension tree and load by name; unsigned development builds return a direct server path.
+     * Returns null when no matching binary is available.
      */
-    fun installParityExtension(): Boolean {
-        val binary =
-            TrinoParityExtensionResolver.resolveBundledExtensionPathFor(containerPlatform())?.let(Path::of)
-                ?: return false
+    fun installParityExtension(): ParityInstallation? {
+        val extension = TrinoParityExtensionResolver.resolveBundledExtensionFor(containerPlatform())
+            ?: return null
+        val binary = Path.of(extension.path)
         if (!Files.isRegularFile(binary)) {
-            return false
+            return null
+        }
+        val infoPath = extension.infoPath?.let(Path::of)
+        if (infoPath != null) {
+            check(Files.isRegularFile(infoPath)) { "Missing bundled install provenance: $infoPath" }
+            val installedDirectory = "$CONTAINER_EXTENSION_ROOT/v2.0.0/${extension.duckDbPlatform}"
+            container.execInContainer("mkdir", "-p", installedDirectory)
+            val installedBinary = "$installedDirectory/trino_parity.duckdb_extension"
+            container.copyFileToContainer(MountableFile.forHostPath(binary), installedBinary)
+            container.copyFileToContainer(MountableFile.forHostPath(infoPath), "$installedBinary.info")
+            quackConnection().use { connection ->
+                connection.createStatement().use { statement -> statement.execute("LOAD trino_parity") }
+            }
+            return ParityInstallation(serverPath = null)
         }
         container.copyFileToContainer(MountableFile.forHostPath(binary), IN_CONTAINER_PARITY_PATH)
-        return true
+        return ParityInstallation(serverPath = IN_CONTAINER_PARITY_PATH)
     }
 
     /**
@@ -85,8 +104,7 @@ internal class TestingQuackServer : AutoCloseable {
      * Note the reading connection itself counts as one while open.
      */
     fun activeConnectionCount(): Int {
-        val props = Properties().apply { setProperty("token", token) }
-        QuackDriver().connect(connectionUrl(), props).use { conn ->
+        quackConnection().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT count(*) FROM quack_active_connections()").use { rs ->
                     check(rs.next()) { "quack_active_connections() returned no rows" }
@@ -95,6 +113,9 @@ internal class TestingQuackServer : AutoCloseable {
             }
         }
     }
+
+    private fun quackConnection() =
+        QuackDriver().connect(connectionUrl(), Properties().apply { setProperty("token", token) })
 
     private fun containerPlatform(): String =
         when (val arch = container.execInContainer("uname", "-m").stdout.trim()) {
@@ -110,6 +131,7 @@ internal class TestingQuackServer : AutoCloseable {
     companion object {
         private const val CONTAINER_PORT = 9494
         private const val TOKEN = "duckbridge-test-token"
+        private const val CONTAINER_EXTENSION_ROOT = "/root/.duckdb/extensions"
 
         /** Server-side path where [installParityExtension] drops the binary for a server-side LOAD. */
         const val IN_CONTAINER_PARITY_PATH: String = "/opt/duckdb-extensions/trino_parity.duckdb_extension"

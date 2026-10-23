@@ -41,12 +41,15 @@ class DuckBridgeExecutorFactory
                         "DuckBridgeExecutorFactory must not be used for the JDBC engine (no Arrow executor).",
                     )
                 DuckBridgeExecutionEngine.DUCKDB_LOCAL ->
-                    InProcessDuckBridgeExecutor(
-                        baseJdbcConfig.connectionUrl,
-                        tuning,
-                        localParityPathOrNull(),
-                        config.isAllowUnsignedExtensions,
-                    )
+                    localParityLoadOrNull().let { parityLoad ->
+                        InProcessDuckBridgeExecutor(
+                            baseJdbcConfig.connectionUrl,
+                            tuning,
+                            parityLoad?.path,
+                            config.isAllowUnsignedExtensions,
+                            parityLoad?.extensionDirectory,
+                        )
+                    }
                 DuckBridgeExecutionEngine.QUACK -> createQuackExecutor(tuning)
             }
         }
@@ -85,35 +88,32 @@ class DuckBridgeExecutorFactory
         private fun requiredConfig(value: String?, key: String): String =
             value ?: throw TrinoException(CONFIGURATION_INVALID, "$key is required for the QUACK execution engine.")
 
-        /** Local extension path for the in-process T2 engine — null disables parity for that engine. */
-        private fun localParityPathOrNull(): String? {
+        private data class LocalParityLoad(val path: String, val extensionDirectory: String?)
+
+        /** Local extension load source for the in-process T2 engine — null disables parity. */
+        private fun localParityLoadOrNull(): LocalParityLoad? {
             if (!config.stringPushdownMode.requiresParityExtension) {
                 return null
             }
-            return config.parityExtensionPath
-                ?: TrinoParityExtensionResolver.resolveBundledExtensionPath()
+            config.parityExtensionPath?.let { return LocalParityLoad(it, extensionDirectory = null) }
+            val bundled = TrinoParityExtensionResolver.resolveBundledExtension()
                 ?: throw TrinoException(
                     CONFIGURATION_INVALID,
                     "trino_parity extension required for the DUCKDB_LOCAL engine but not bundled for this platform; " +
                         "set duckbridge.parity-extension-path, or select a non-PARITY duckbridge.string-pushdown.mode " +
                         "(e.g. GUARDED) to run without the extension.",
                 )
+            return LocalParityLoad(bundled.path, bundled.extensionDirectory)
         }
 
         /**
-         * Server-side extension path for the QUACK T2 engine. The worker's bundled binary can't be
-         * read by the remote server, so this MUST be an explicit server-side path (or a non-PARITY mode).
+         * Optional server-side development path for the QUACK T2 engine. Production servers preload
+         * the signed community extension; the connector's startup probe fails loud when they do not.
          */
         private fun serverSideParityPathOrNull(): String? {
             if (!config.stringPushdownMode.requiresParityExtension) {
                 return null
             }
             return config.parityExtensionPath
-                ?: throw TrinoException(
-                    CONFIGURATION_INVALID,
-                    "trino_parity extension required for the QUACK engine in PARITY mode: set duckbridge.parity-extension-path " +
-                        "to the SERVER-SIDE path of trino_parity.duckdb_extension inside the Quack DuckDB process, or select " +
-                        "a non-PARITY duckbridge.string-pushdown.mode (e.g. GUARDED).",
-                )
         }
     }
