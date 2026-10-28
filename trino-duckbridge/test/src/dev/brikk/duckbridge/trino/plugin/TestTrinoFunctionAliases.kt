@@ -99,6 +99,16 @@ class TestTrinoFunctionAliases {
     // ---- representative extension-macro semantics (loaded binary sanity) ----
 
     @Test
+    fun newDuckDbJsonFunctionsAreNotAutomaticallyPredicateAliases() {
+        val names = setOf(
+            "json_set", "json_insert", "json_replace", "json_remove",
+            "json_merge_patch_diff", "json_deep_merge", "json_normalize", "json_strip_nulls",
+        )
+        assertThat(DuckBridgeExpressionTranslator.PUSHABLE_FUNCTIONS)
+            .noneMatch { it.name in names }
+    }
+
+    @Test
     @Throws(Exception::class)
     fun testRepresentativeAliasSemantics() {
         openConnectionWithExtension().use { conn ->

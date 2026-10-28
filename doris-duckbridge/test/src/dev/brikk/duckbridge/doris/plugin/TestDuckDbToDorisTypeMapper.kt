@@ -116,5 +116,12 @@ class TestDuckDbToDorisTypeMapper {
         // An unmappable ARRAY element propagates the fail-loud.
         assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType("INTERVAL[]", "spans") }
             .isInstanceOf(DorisConnectorException::class.java)
+        // New DuckDB-2 type spellings must not fall through to an accidental string/nanos downgrade.
+        for (type in listOf("SQLNULL", "TIMESTAMPTZ_NS", "VARIANT", "BIGNUM", "TUPLE(INTEGER, VARCHAR)")) {
+            assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType(type, "new_type", enableTimestampTz = true) }
+                .isInstanceOf(DorisConnectorException::class.java)
+                .hasMessageContaining(type)
+                .hasMessageContaining("new_type")
+        }
     }
 }

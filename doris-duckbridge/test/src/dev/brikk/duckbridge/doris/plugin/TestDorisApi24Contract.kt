@@ -66,6 +66,17 @@ class TestDorisApi24Contract {
     }
 
     @Test
+    fun createRejectsTraversalBeforeCallingTheOperatorGate() {
+        val validation = proxy(ConnectorValidationContext::class.java) { method, _ ->
+            error("Unsafe URL must not reach the operator gate: $method")
+        }
+        val connector = connector(properties + ("driver_url" to "file:///opt/drivers/%2e%2e/evil.jar"))
+        assertThatThrownBy { connector.preCreateValidation(validation) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("traversal")
+    }
+
+    @Test
     fun reconstructionDoesNotApplyNewStatementTimeDriverRules() {
         val connector = connector(properties + ("driver_url" to "historical/path.jar"))
         assertThat(connector.config().driverUrl).isEqualTo("historical/path.jar")

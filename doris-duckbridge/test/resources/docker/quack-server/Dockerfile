@@ -6,12 +6,12 @@
 # runtime. Lean — no parity extension (the P4 probe is pure metadata; parity is P1's output).
 #
 # Base trixie-slim (GLIBC 2.41): matches the trino fixture. duckdb pinned to the repo-wide
-# duckdb version (libs.versions.toml: duckdb = 1.5.6.0) so the server matches the quack-jdbc
+# duckdb version (libs.versions.toml: duckdb = 2.0.0.0) so the server matches the quack-jdbc
 # client's dialect.
 
 FROM debian:trixie-slim
 
-ARG DUCKDB_VERSION=v1.5.6
+ARG DUCKDB_VERSION=v2.0.0
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip \
@@ -25,9 +25,9 @@ RUN set -eu; \
         aarch64) DUCKDB_ARCH=arm64 ;; \
         *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-${DUCKDB_ARCH}.zip" -o /tmp/duckdb.zip; \
-    unzip /tmp/duckdb.zip -d /usr/local/bin; \
-    rm /tmp/duckdb.zip; \
+    curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb-cli-linux-${DUCKDB_ARCH}.tar.gz" -o /tmp/duckdb.tar.gz; \
+    tar -xzf /tmp/duckdb.tar.gz -C /usr/local/bin duckdb; \
+    rm /tmp/duckdb.tar.gz; \
     chmod +x /usr/local/bin/duckdb
 
 # Pre-pull the Quack core extension at build time so container startup pays no network

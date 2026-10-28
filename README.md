@@ -43,6 +43,9 @@ cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin
 Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
 see below).
 
+Source builds use Quack JDBC **0.10.0** for both the Trino and Doris connectors. Existing published
+release artifacts are unchanged by this source update.
+
 ## Quick start
 
 Catalog properties file (e.g. `etc/catalog/duckdb.properties`):

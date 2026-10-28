@@ -5,11 +5,12 @@ scans/projections/predicates into a user-operated DuckDB (remote via the Quack
 protocol, `jdbc:quack://…`), riding Doris's new `fe-connector` plugin SPI and the BE's
 existing JDBC JNI scanner.
 
-**Status:** adopting pinned Doris master `082736138b7`, connector API 24 and JNI plugin API 6.
-Source review, matching FE build, 69 connector tests and patched JDBC reactor passed;
-the native ASAN build and live qualification are in progress.
-The previous `dd456ab7a89` API-13/JNI-5 artifacts remain rollback. See the
-[adoption review](dev-docs/REVIEW-doris-api24-2026-10-28.md) for evidence and boundaries.
+**Status:** qualified locally against pinned Doris master `082736138b7`, connector API 24 /
+JNI API 6, DuckDB **2.0.0** and Quack JDBC **0.10.0**. The complete matching ASAN runtime passed
+exact JDBC values, timezone/microsecond edges, security gates, concurrency, catalog lifecycle,
+persisted restart and plugin-scoped failure recovery. API-13 artifacts remain rollback. See
+[qualification](dev-docs/QUALIFICATION-api24-duckdb2-2026-10-28.md) and the
+[function-intake audit](dev-docs/REPORT-duckdb2-function-intake-2026-10-28.md).
 Metadata, JDBC scans, predicate/function pushdown, temporal values, LARGEINT, ARRAY, VARBINARY,
 and concurrent scans run through DuckDB/Quack. Internal design:
 [`dev-docs/DESIGN-jdbc-scan-contract.md`](dev-docs/DESIGN-jdbc-scan-contract.md).

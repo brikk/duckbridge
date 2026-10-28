@@ -175,7 +175,7 @@ aren't lost.
 
 ## Re-vendor log
 
-- **2026-10-28 — adoption of apache/doris `master` `082736138b7` in progress.**
+- **2026-10-28 — re-vendor to apache/doris `master` `082736138b7`; local qualification passed.**
   Connector API **13→24**, JNI API **5→6**, Thrift 0.24.0 and Maven `1.2-SNAPSHOT`.
   This freezes latest master at review time, one FE-lifecycle commit beyond the supplied
   DuckLake `62e3d81a42b` build handoff. Review:
@@ -187,12 +187,15 @@ aren't lost.
     grammar only at statement time, and delegates CREATE's operator gate to the validation context.
     New contract tests pin API/wire facts and conservative scan/capability defaults.
   - Handler patch context refreshed; both new factory overloads are covered. Complete matching
-    Java/JNI tree and exact-revision native build required. No old scanner overlay or native relabel.
-  - Matching FE build passed with upstream Checkstyle/gates enabled. All 69 Java-17 connector
-    tests, Detekt and packaging passed. JNI SPI/toolkit/JDBC reactor: 132 passed, 18 unchanged
-    upstream external-database skips. Native build/live results are pending; the new runtime is
-    not yet qualified. DuckDB 1.5.6 / Quack 0.8.0
-    intentionally unchanged for the later independent DuckDB-side update.
+    Java/JNI tree and exact-revision native build completed. No old scanner overlay or native relabel.
+  - Matching FE/full ASAN BE builds passed with upstream gates enabled; all nine plugins pass six
+    layout checks. JNI SPI/bootstrap/toolkit/JDBC: 182 passed, 18 unchanged upstream database skips.
+    User-authorized follow-on adopted DuckDB 2.0.0 / Quack JDBC 0.10.0: 72 Java-17 connector tests,
+    Detekt, packaging and complete JDBC live smoke passed. CREATE/ALTER security, exact types and
+    temporal edges, concurrency, catalog lifecycle/restart and plugin-failure recovery all passed.
+    Trino's matching driver update passed 643 tests; no new function pushdowns were enabled.
+  - Complete evidence, image identities, hashes, discovered issues/fixes and rollback boundaries:
+    [`QUALIFICATION-api24-duckdb2-2026-10-28.md`](../doris-duckbridge/dev-docs/QUALIFICATION-api24-duckdb2-2026-10-28.md).
 
 - **2026-10-10 — re-vendor to apache/doris `master` `dd456ab7a89`** (subject:
   *"[improvement](mtmv) Judge a base table column change by the MV query it reaches (#68646)"*).

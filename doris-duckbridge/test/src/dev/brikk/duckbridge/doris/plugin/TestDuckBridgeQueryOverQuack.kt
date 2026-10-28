@@ -20,11 +20,13 @@ import org.apache.doris.connector.spi.pushdown.ConnectorComparison
 import org.apache.doris.connector.spi.pushdown.ConnectorExpression
 import org.apache.doris.connector.spi.pushdown.ConnectorLiteral
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.sql.Connection
+import java.sql.SQLException
 
 /**
  * Proves the SQL [DuckBridgeQueryBuilder] composes is VALID DuckDB by running it over quack-jdbc
@@ -71,6 +73,22 @@ class TestDuckBridgeQueryOverQuack {
             }
         }
         return out
+    }
+
+    @Test
+    fun ordinaryQueryErrorDoesNotPoisonTheAutocommitSession() {
+        server.openConnection().use { connection ->
+            assertThatThrownBy {
+                connection.createStatement().use { it.executeQuery("SELECT * FROM missing_relation_for_error_probe") }
+            }.isInstanceOf(SQLException::class.java)
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT count(*) FROM sales.customers").use { result ->
+                    assertThat(result.next()).isTrue()
+                    assertThat(result.getLong(1)).isEqualTo(3L)
+                }
+            }
+            assertThat(connection.isClosed).isFalse()
+        }
     }
 
     @Test

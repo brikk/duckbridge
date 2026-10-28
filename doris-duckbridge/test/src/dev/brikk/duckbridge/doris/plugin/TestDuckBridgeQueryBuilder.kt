@@ -213,6 +213,26 @@ class TestDuckBridgeQueryBuilder {
 
     // ---- P1 function allowlist: IDENTICAL functions push with the audited rendering ----
 
+    @Test
+    fun newDuckDbJsonFunctionsRemainUnpushedUntilSemanticsAreQualified() {
+        val candidates = listOf(
+            "json_set" to 3, "json_insert" to 3, "json_replace" to 3, "json_remove" to 2,
+            "json_merge_patch_diff" to 2, "json_deep_merge" to 2,
+            "json_normalize" to 1, "json_strip_nulls" to 1,
+        )
+        for ((name, arity) in candidates) {
+            val arguments = listOf(strColRef("name")) +
+                List(arity - 1) { ConnectorLiteral.ofString("$.a") }
+            val predicate = fnEq(
+                ConnectorFunctionCall(name, ConnectorType.of("STRING"), arguments),
+                ConnectorLiteral.ofString("{}"),
+            )
+            assertThat(build(listOf(stringCol("name")), predicate, 10))
+                .describedAs("$name requires semantic qualification; an unpushed predicate also blocks LIMIT")
+                .doesNotContain("WHERE", "LIMIT", "$name(")
+        }
+    }
+
     private fun buildFnWhere(call: ConnectorFunctionCall, lit: ConnectorLiteral): String =
         build(listOf(intCol("id")), fnEq(call, lit))
 

@@ -104,7 +104,7 @@ services:
   duckdb-quack:
     build:
       context: ./docker/duckdb-quack
-    image: duckbridge/duckdb-quack:local
+    image: duckbridge/duckdb-quack:2.0.0
     container_name: doris-duckbridge-quack
     hostname: duckdb-quack
     environment:

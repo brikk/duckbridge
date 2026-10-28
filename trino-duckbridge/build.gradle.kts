@@ -288,7 +288,9 @@ tasks.test {
     )
 }
 
-val pluginAssemble by tasks.registering(Copy::class) {
+// This is an owned generated staging directory. Copy retains old dependency versions across a
+// repin; Sync makes the packaged classpath exactly the resolved graph (including Quack upgrades).
+val pluginAssemble by tasks.registering(Sync::class) {
     dependsOn(tasks.jar)
     into(layout.buildDirectory.dir("trino-plugin/trino-duckbridge-$version"))
     from(tasks.jar)
@@ -329,6 +331,15 @@ val verifyPluginAssembly by tasks.registering {
         )
         val missing = requiredPrefixes.filter { prefix -> jars.none { it.startsWith(prefix) } }
         check(missing.isEmpty()) { "expected bundled jars missing (prefixes): $missing; got $jars" }
+
+        for (prefix in listOf("duckdb_jdbc-", "quack-jdbc-")) {
+            val expected = configurations.runtimeClasspath.get().files
+                .single { it.name.startsWith(prefix) }.name
+            val packaged = jars.filter { it.startsWith(prefix) }
+            check(packaged == listOf(expected)) {
+                "expected exactly the resolved driver $expected, got: $packaged"
+            }
+        }
 
         val guiceJars = jars.filter { it.startsWith("guice-") }
         check(guiceJars.size == 1 && guiceJars.single().endsWith("-classes.jar")) {

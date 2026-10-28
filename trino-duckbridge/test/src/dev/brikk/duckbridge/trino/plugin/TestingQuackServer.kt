@@ -13,6 +13,7 @@
  */
 package dev.brikk.duckbridge.trino.plugin
 
+import com.gizmodata.quack.jdbc.sql.QuackConnection
 import com.gizmodata.quack.jdbc.sql.QuackDriver
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
@@ -59,6 +60,14 @@ internal class TestingQuackServer : AutoCloseable {
             "SELECT version();",
         ).stdout.trim()
         check(version == "v2.0.0") { "Quack test server version is '$version', expected v2.0.0" }
+        quackConnection().use { connection ->
+            check(connection.metaData.driverVersion == "0.10.0") {
+                "Expected Quack JDBC 0.10.0, got ${connection.metaData.driverVersion}"
+            }
+            check((connection as QuackConnection).session().protocolVersion() == 3L) {
+                "DuckDB-2 qualification must exercise negotiated Quack v3"
+            }
+        }
     }
 
     val host: String get() = container.host

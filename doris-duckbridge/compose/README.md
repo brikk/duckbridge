@@ -60,6 +60,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
   publishes `doris_be_jvm_*` metrics.
 - Exact unicode, LARGEINT, ARRAY, native UUID and arbitrary VARBINARY bytes; exact count and rows.
 - Native TIMESTAMPTZ transport across Asia/Tokyo Quack, America/Los_Angeles JVM and UTC FE display.
+- Exact pre-epoch fractional microseconds, distinct DST-overlap instants and temporal NULLs.
 - Function, naive TIMESTAMP and explicit-UTC TIMESTAMPTZ pushdown in the emitted query.
 - 20 sequential and 8 concurrent scans with zero failures.
 - ALTER and same-name DROP/recreate retain replacement metadata/scans; a second FE restart
@@ -79,5 +80,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
 - **Fresh API-24 volumes.** The Compose project is `doris-duckbridge-api24-08273613`; its
   FE metadata/plugin/log and BE storage/log volumes do not upgrade or remove API-13 volumes.
 - **BE dist root** is `/opt/apache-doris/be`; keep the Dockerfile and storage/log mounts aligned.
+- **Pinned remote lane:** DuckDB `2.0.0` (`duckbridge/duckdb-quack:2.0.0`) and Quack JDBC
+  `0.10.0`. Build the server with `docker compose build duckdb-quack` after a version change.
+  These isolated fixtures deliberately serve plain HTTP; production TLS settings are unchanged.
+- **Read-only function intake:** `function_audit.py --output <file> [--brikk-sql-root <path>]`
+  runs while the smoke is kept up. It records values/errors and the native registry; it never
+  enables pushdowns. See the dated function-intake report in `../dev-docs/`.
 - **`.env` and `.fe.conf.runtime` are gitignored.** The token is dev-only; never commit a
   real one.

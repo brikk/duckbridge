@@ -122,7 +122,7 @@ if [[ -z "$driver_src" ]]; then
     rm -rf "$tmp_extract"
     exit 1
 fi
-expected_driver="quack-jdbc-0.8.0.jar"
+expected_driver="quack-jdbc-0.10.0.jar"
 if [[ "$(basename "$driver_src")" != "${expected_driver}" ]]; then
     log "ERROR: staged Quack driver is '$(basename "$driver_src")' (expected ${expected_driver})."
     rm -rf "$tmp_extract"
@@ -158,11 +158,11 @@ log "Starting Doris FE + BE + DuckDB/Quack…"
 
 duckdb_version=$("${DOCKER}" exec doris-duckbridge-quack \
     duckdb -csv -noheader -c "SELECT version();" 2>/dev/null | tr -d '\r')
-if [[ "${duckdb_version}" != "v1.5.6" ]]; then
-    log "DUCKDB VERSION FAIL: Quack server is '${duckdb_version:-<missing>}' (expected v1.5.6)."
+if [[ "${duckdb_version}" != "v2.0.0" ]]; then
+    log "DUCKDB VERSION FAIL: Quack server is '${duckdb_version:-<missing>}' (expected v2.0.0)."
     exit 1
 fi
-log "DUCKDB VERSION GREEN: Quack 0.8 driver lane is backed by DuckDB ${duckdb_version}."
+log "DUCKDB VERSION GREEN: Quack 0.10 driver lane is backed by DuckDB ${duckdb_version}."
 
 # Exercise a real restart with persisted metadata. The staged priority_networks setting must keep
 # the FE on the same static identity rather than selecting another container network.
@@ -281,12 +281,12 @@ log "GATE OK: catalog created — provider registration + type-routing on the pr
 expect_sql_rejection() {
     local statement="$1" pattern="$2" output
     if output=$(fe_sql -e "$statement" 2>&1); then
-        log "SECURITY FAIL: unsafe catalog property was accepted."
+        log "EXPECTED-REJECTION FAIL: the statement was accepted."
         exit 1
     fi
     if ! grep -qiE "$pattern" <<< "$output"; then
         printf '%s\n' "$output"
-        log "SECURITY FAIL: statement failed for the wrong reason."
+        log "EXPECTED-REJECTION FAIL: statement failed for the wrong reason."
         exit 1
     fi
 }
@@ -533,6 +533,23 @@ if [[ "${temporal_out}" != "${expected_temporal}" ]]; then
 fi
 log "P3/P6 GREEN: naive wall clocks and TIMESTAMPTZ instants retained exact microsecond values."
 
+assert_temporal_edges() {
+    local actual expected
+    actual=$(fe_sql -N -e "SET time_zone='UTC';
+        SELECT id, local_value, instant_value FROM duckbridge_test.sales.temporal_edges ORDER BY id;")
+    expected=$(printf '%s\n' \
+        $'1\t1969-12-31 23:59:59.123456\t1969-12-31 23:59:59.123456+00:00' \
+        $'2\t2024-11-03 01:30:00.654321\t2024-11-03 08:30:00.654321+00:00' \
+        $'3\t2024-11-03 01:30:00.654321\t2024-11-03 09:30:00.654321+00:00' \
+        $'4\tNULL\tNULL')
+    if [[ "${actual}" != "${expected}" ]]; then
+        printf '%s\n' "${actual}"
+        log "P3/P6 FAIL: pre-epoch fractions, DST overlap or temporal NULL changed."; exit 1
+    fi
+}
+assert_temporal_edges
+log "P3/P6 GREEN: pre-epoch microseconds, distinct DST-overlap instants and SQL NULL retained."
+
 # ── P2 probe: scan-range count + connection-pool behavior under sequential + concurrent load.
 # Static: the connector emits ONE range per query (a JDBC scan is un-partitionable). Empirical:
 # hammer the stack sequentially and concurrently to catch pool exhaustion or connection leaks.
@@ -610,6 +627,7 @@ identity_after=$(fe_sql -N -e "SHOW FRONTENDS;" | cut -f1,2)
     log "RESTART FAIL: exact persisted-catalog values changed."; exit 1;
 }
 log "LIFECYCLE/RESTART GREEN: ALTER, DROP/recreate, persisted identity/catalog and exact values retained."
+assert_temporal_edges
 
 # Invalidate only this run-owned container's JDBC manifest, never the image or a shared tree.
 # A failed lazy load must be plugin-scoped: native BE health/status survives. Recreating from
@@ -625,6 +643,14 @@ deadline=$((SECONDS + 180))
 while ! "${DOCKER}" exec doris-duckbridge-be curl -fsS http://127.0.0.1:8040/api/jni_plugin_status >/dev/null 2>&1; do
     if (( SECONDS >= deadline )); then
         log "PLUGIN ISOLATION FAIL: native BE did not restart with the invalid plugin."; exit 1
+    fi
+    sleep 2
+done
+# The native HTTP endpoint becomes ready before FE heartbeat registration. Wait for both;
+# otherwise a generic 'no available backends' error would not exercise plugin isolation at all.
+while [[ "$(fe_sql -N -e "SHOW BACKENDS;" | awk -F'\t' '$10=="true"{n++} END{print n+0}')" -lt 1 ]]; do
+    if (( SECONDS >= deadline )); then
+        log "PLUGIN ISOLATION FAIL: restarted BE did not re-register with the FE."; exit 1
     fi
     sleep 2
 done

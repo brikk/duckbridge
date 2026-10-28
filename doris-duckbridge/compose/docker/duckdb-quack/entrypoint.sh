@@ -29,9 +29,9 @@ fi
     # allow_other_hostname is required to bind to 0.0.0.0 — Quack refuses non-localhost
     # binds by default. Safe here because the container network namespace makes 0.0.0.0
     # mean "this container's interfaces only".
-    printf "SELECT * FROM quack_serve('quack://0.0.0.0:%s/', token := '%s', allow_other_hostname := true);\n" "$PORT" "$TOKEN"
+    # This local development fixture uses a plain-HTTP jdbc:quack:// endpoint, not
+    # DuckDB 2's TLS default. Production URL/TLS policy is not changed by this fixture.
+    printf "SELECT * FROM quack_serve('quack://0.0.0.0:%s/', token := '%s', allow_other_hostname := true, disable_ssl := true);\n" "$PORT" "$TOKEN"
     exec sleep infinity
-# -unsigned is only needed to LOAD a locally-built (unsigned) extension by path — e.g. a
-# future duckdb-doris-parity binary. Harmless for a server never asked to LOAD one; kept so
-# mounting an extra extension later "just works" without editing this file.
-} | duckdb -unsigned
+# Only the signed core Quack extension is loaded; keep signature verification enabled.
+} | duckdb

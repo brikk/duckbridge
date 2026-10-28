@@ -13,6 +13,7 @@
  */
 package dev.brikk.duckbridge.doris.plugin
 
+import com.gizmodata.quack.jdbc.sql.QuackConnection
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.images.builder.ImageFromDockerfile
@@ -50,6 +51,18 @@ internal class TestingQuackServer(
 
     init {
         container.start()
+        val version = container.execInContainer("duckdb", "-csv", "-noheader", "-c", "SELECT version();")
+        check(version.exitCode == 0 && version.stdout.trim() == "v2.0.0") {
+            "Quack test server is '${version.stdout.trim()}', expected DuckDB v2.0.0"
+        }
+        openConnection().use { connection ->
+            check(connection.metaData.driverVersion == "0.10.0") {
+                "Expected Quack JDBC 0.10.0, got ${connection.metaData.driverVersion}"
+            }
+            check((connection as QuackConnection).session().protocolVersion() == 3L) {
+                "DuckDB-2 qualification must exercise negotiated Quack v3"
+            }
+        }
     }
 
     val host: String get() = container.host

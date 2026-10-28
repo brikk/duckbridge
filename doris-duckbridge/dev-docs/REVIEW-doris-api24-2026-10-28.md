@@ -9,8 +9,10 @@ handoff pin `62e3d81a42b2b74ee2a5a577969df62edee06b78`, and 411 commits after ou
 qualified `dd456ab7a894f54c6553415223c6d5c9c7d4e035` baseline.
 
 Source review is complete; build/live qualification is tracked below separately.
-No DuckDB or Quack upgrade is part of this change: Doris stays on DuckDB 1.5.6 /
-Quack JDBC 0.8.0 so the subsequent DuckDB upgrade has an independent baseline.
+The review initially held DuckDB 1.5.6 / Quack JDBC 0.8.0 separate. The user then
+explicitly requested DuckDB 2.0.0 / Quack JDBC 0.10.0. The first lane's failed live
+probe is retained; the final paired qualification and fixes are recorded in
+[QUALIFICATION-api24-duckdb2-2026-10-28.md](QUALIFICATION-api24-duckdb2-2026-10-28.md).
 
 ## Findings and required changes
 
@@ -84,12 +86,30 @@ Quack JDBC 0.8.0 so the subsequent DuckDB upgrade has an independent baseline.
 - Cluster-free bootstrap/smoke orchestration: **6 passed**, including preservation
   of staged/untracked work and matched-but-wrong-source rejection.
 - All Java-extension reactor modules built successfully via upstream
-  `build.sh --be-java-extensions -j2`; final BE deployment/layout checks remain pending.
+  `build.sh --be-java-extensions -j2`; full BE deployment/layout checks subsequently passed.
 - Patched JDBC reactor: JNI SPI **26/26**, plugin toolkit **55/55**, JDBC
   **51 passed / 18 upstream environment-gated skips**, zero failures/errors.
   The skipped upstream cases require explicit integration URLs for MySQL,
   Oracle (modern/legacy), PostgreSQL, SQL Server, Trino/Presto and ClickHouse;
   no skip was added or changed. Both DuckDB factory overloads and direct
   UUID/binary/UTC TIMESTAMPTZ tests passed.
-- Exact-pin native ASAN build is running; final JNI deployment/layout and
-  DuckBridge live qualification remain pending. Do not describe the runtime as qualified.
+- Exact-pin native ASAN build passed through `build.sh --be -j3`, including CDC
+  packaging; 12 GiB container, 14 GiB memory+swap, 3 GiB Maven heap. The upstream
+  glibc 2.17 compatibility gate passed. Native SHA-256:
+  `1cb51a8159dfb8f3703fd14f9d42d2c424b946d39ff263ab7473533d03c2020f`.
+- Complete matching JNI tree: **9 plugins pass all six upstream static layout
+  checks**. JDBC JAR declares JNI API 6.0 and contains `DuckDbTypeHandler`;
+  SHA-256 `aee0b12ddf03a051e5453c89d6b62dae102d5a20bf857b476b77b0049cbe212f`.
+  SPI/bootstrap hashes match the handoff's API-6 shared layer. This is static
+  packaging evidence, not runtime JDBC qualification.
+- SDK/actual-FE class identity passed: 137 SPI, 6,814 Thrift, 33 foundation,
+  5 extension-SPI and 35 filesystem-API classes. Rebuilt JAR archive hashes differ;
+  the class bytes are identical. Evidence: `output/duckbridge-api24-sdk-host-identity.json`.
+- All 3,231 FE/native/shared/plugin artifact paths and hashes are retained in
+  `output/duckbridge-api24-engine-manifest.json` (includes repeated dependency
+  JARs across isolated plugin directories, not just unique artifacts).
+- Image packaging and final DuckDB-2/Quack-0.10 live qualification passed. The
+  final report records validation-order/TLS/readiness fixes, 72 Doris tests,
+  643 Trino tests, 50 loader tests and the actual runtime/provenance evidence.
+  The initial 69-test / Quack-0.8 ZIP above is preliminary evidence, not the final
+  qualified plugin artifact. No new pushdown or production release was enabled.

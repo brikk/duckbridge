@@ -38,7 +38,7 @@ FE_BASE_IMAGE="${FE_BASE_IMAGE:-apache/doris:fe-4.1.4}"
 BE_BASE_IMAGE="${BE_BASE_IMAGE:-apache/doris:be-4.1.4}"
 DOCKER="${DOCKER:-docker}"
 # Stage on root disk, never in /tmp (tmpfs too small for BE context).
-BAKE_STAGE_DIR="${BAKE_STAGE_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)/build/bake-stage}"
+BAKE_STAGE_DIR="${BAKE_STAGE_DIR:-$(cd -- "${HERE}/../.." && pwd -P)/build/bake-stage}"
 
 REPO_ROOT="$(cd -- "${HERE}/../.." && pwd -P)"
 PIN_SHA="$(sed -n 's/^PIN_SHA=//p' "${REPO_ROOT}/doris-patches/BASELINE")"

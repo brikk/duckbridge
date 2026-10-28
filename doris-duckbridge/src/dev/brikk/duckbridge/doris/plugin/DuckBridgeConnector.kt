@@ -6,6 +6,7 @@ import org.apache.doris.connector.spi.ConnectorSession
 import org.apache.doris.connector.spi.scan.ConnectorScanPlanProvider
 import org.apache.doris.connector.spi.ConnectorContext
 import org.apache.doris.connector.spi.ConnectorValidationContext
+import org.apache.doris.foundation.security.JdbcDriverUrlSecurity
 
 /**
  * Read-only duckbridge [Connector]. Composes the SPI object graph — metadata resolution and the
@@ -33,7 +34,12 @@ class DuckBridgeConnector internal constructor(
     override fun preCreateValidation(context: ConnectorValidationContext) {
         // CREATE uses the same engine operator policy as ALTER's provider-declared driver gate.
         // Do not compute/store a stock-JDBC checksum: our BE uses the JNI driver-URL contract.
-        config.driverUrl?.let { context.validateAndResolveDriverPath(it) }
+        config.driverUrl?.let {
+            // Doris calls pre-create validation before provider-property validation. Apply the
+            // mandatory grammar here too, before the configurable operator gate (as upstream JDBC does).
+            JdbcDriverUrlSecurity.check(it)
+            context.validateAndResolveDriverPath(it)
+        }
     }
 
     override fun close() {
