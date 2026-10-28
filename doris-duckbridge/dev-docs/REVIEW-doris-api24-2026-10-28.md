@@ -73,5 +73,23 @@ Quack JDBC 0.8.0 so the subsequent DuckDB upgrade has an independent baseline.
 ## Qualification status
 
 - Source review and exact-pin patch applicability: passed.
-- SDK provenance, connector tests/package, JNI tests/layout, FE/BE builds and
-  DuckBridge live qualification: pending; do not describe the runtime as qualified.
+- SDK provenance: all 34 exported files verified against the supplied manifest;
+  the eight-module closure's source inputs are identical at the candidate pin.
+- Exact-pin FE build: passed through upstream `build.sh --fe -j3` with Checkstyle
+  and the upstream build gates enabled (8 GiB container, 4 GiB Maven heap).
+- Java-17 connector tests: **69 passed, zero skipped/failures/errors**; Detekt and
+  assembly passed with tasks forced to rerun. The packaged JAR declares API 24.0;
+  the ZIP contains no host SPI/Thrift/foundation/extension/filesystem/libthrift JARs.
+  ZIP SHA-256: `1aef001ec518c6738eb728709f74fd41f7b7d86c6965e2aa73ceaaf886810171`.
+- Cluster-free bootstrap/smoke orchestration: **6 passed**, including preservation
+  of staged/untracked work and matched-but-wrong-source rejection.
+- All Java-extension reactor modules built successfully via upstream
+  `build.sh --be-java-extensions -j2`; final BE deployment/layout checks remain pending.
+- Patched JDBC reactor: JNI SPI **26/26**, plugin toolkit **55/55**, JDBC
+  **51 passed / 18 upstream environment-gated skips**, zero failures/errors.
+  The skipped upstream cases require explicit integration URLs for MySQL,
+  Oracle (modern/legacy), PostgreSQL, SQL Server, Trino/Presto and ClickHouse;
+  no skip was added or changed. Both DuckDB factory overloads and direct
+  UUID/binary/UTC TIMESTAMPTZ tests passed.
+- Exact-pin native ASAN build is running; final JNI deployment/layout and
+  DuckBridge live qualification remain pending. Do not describe the runtime as qualified.

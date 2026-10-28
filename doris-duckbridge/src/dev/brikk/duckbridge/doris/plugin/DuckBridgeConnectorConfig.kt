@@ -5,8 +5,8 @@ package dev.brikk.duckbridge.doris.plugin
  *
  * @property jdbcUrl the quack-jdbc URL for the user's DuckDB/Quack server (`jdbc:quack://host:port`).
  * @property driverClass the JDBC driver class name (defaults to quack-jdbc's driver).
- * @property driverUrl optional checksum-gated driver jar URL (Doris `jdbc_drivers_dir` flow); null
- *   when the driver is already on the BE classpath.
+ * @property driverUrl optional BE driver jar URL, validated against Doris's CREATE/ALTER operator
+ *   policy; no checksum gate on the JNI scan path. Null when no explicit driver URL is supplied.
  * @property user optional DuckDB/Quack user.
  * @property password optional DuckDB/Quack credential / Quack token.
  * @property enableTimestampTz preserves DuckDB TIMESTAMPTZ as native Doris TIMESTAMPTZ when true;

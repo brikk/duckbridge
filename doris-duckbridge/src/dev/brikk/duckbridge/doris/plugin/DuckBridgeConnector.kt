@@ -5,6 +5,7 @@ import org.apache.doris.connector.spi.ConnectorMetadata
 import org.apache.doris.connector.spi.ConnectorSession
 import org.apache.doris.connector.spi.scan.ConnectorScanPlanProvider
 import org.apache.doris.connector.spi.ConnectorContext
+import org.apache.doris.connector.spi.ConnectorValidationContext
 
 /**
  * Read-only duckbridge [Connector]. Composes the SPI object graph — metadata resolution and the
@@ -28,6 +29,12 @@ class DuckBridgeConnector internal constructor(
     override fun getMetadata(session: ConnectorSession?): ConnectorMetadata = metadata
 
     override fun getScanPlanProvider(): ConnectorScanPlanProvider = scanPlanProvider
+
+    override fun preCreateValidation(context: ConnectorValidationContext) {
+        // CREATE uses the same engine operator policy as ALTER's provider-declared driver gate.
+        // Do not compute/store a stock-JDBC checksum: our BE uses the JNI driver-URL contract.
+        config.driverUrl?.let { context.validateAndResolveDriverPath(it) }
+    }
 
     override fun close() {
         // Metadata connections are per-call and self-closing; no long-lived FE-side pool to release.

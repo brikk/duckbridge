@@ -4,7 +4,7 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`dd456ab7a89` (2026-10-10, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`082736138b7` (2026-10-28, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
@@ -35,8 +35,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `dd456ab7a894f54c6553415223c6d5c9c7d4e035`
-> - **subject** = `[improvement](mtmv) Judge a base table column change by the MV query it reaches (#68646)`
+> - **`PIN_SHA`** = `082736138b7f0e767f966cbb1434bc9ba85f29ec`
+> - **subject** = `[improvement](fe) Defer external catalog resource cleanup from replay (#69665)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** Apply the BE patch LOCALLY in a dedicated clean
@@ -105,6 +105,11 @@ all.)
 (fail loud on drift). The build/install steps are **opt-in flags** (they are not run in the
 default `--check-only` mode) and require **JDK 17** (the Doris FE toolchain):
 
+An existing `DORIS_SRC` (including a Git worktree) must be clean. The script never resets or
+cleans it, and refuses a second invocation after applying a patch rather than discarding that
+patch. Use one invocation with the required flags, or invoke the upstream build directly in an
+already-patched exact-pin worktree. Never point it at the shared staged Doris checkout.
+
 ```bash
 # 1. Verify the BE patch still applies at the pin (default mode clones into its cache).
 #    DORIS_SRC may point at a dedicated clean exact-pin worktree; do not use a shared dirty checkout.
@@ -169,6 +174,25 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-10-28 — adoption of apache/doris `master` `082736138b7` in progress.**
+  Connector API **13→24**, JNI API **5→6**, Thrift 0.24.0 and Maven `1.2-SNAPSHOT`.
+  This freezes latest master at review time, one FE-lifecycle commit beyond the supplied
+  DuckLake `62e3d81a42b` build handoff. Review:
+  [`REVIEW-doris-api24-2026-10-28.md`](../doris-duckbridge/dev-docs/REVIEW-doris-api24-2026-10-28.md).
+  - Exact-pin separate worktree; original shared staged checkout untouched. API-13 project-local
+    coordinates, plugin distributions and image identities backed up before staging the 34
+    hash-verified files of the unchanged eight-module API-24 SDK closure.
+  - Manifest updated; provider declares its consumed driver URL, applies upstream mandatory URL
+    grammar only at statement time, and delegates CREATE's operator gate to the validation context.
+    New contract tests pin API/wire facts and conservative scan/capability defaults.
+  - Handler patch context refreshed; both new factory overloads are covered. Complete matching
+    Java/JNI tree and exact-revision native build required. No old scanner overlay or native relabel.
+  - Matching FE build passed with upstream Checkstyle/gates enabled. All 69 Java-17 connector
+    tests, Detekt and packaging passed. JNI SPI/toolkit/JDBC reactor: 132 passed, 18 unchanged
+    upstream external-database skips. Native build/live results are pending; the new runtime is
+    not yet qualified. DuckDB 1.5.6 / Quack 0.8.0
+    intentionally unchanged for the later independent DuckDB-side update.
 
 - **2026-10-10 — re-vendor to apache/doris `master` `dd456ab7a89`** (subject:
   *"[improvement](mtmv) Judge a base table column change by the MV query it reaches (#68646)"*).

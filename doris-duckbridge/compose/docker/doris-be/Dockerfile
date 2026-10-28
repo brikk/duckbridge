@@ -23,27 +23,16 @@
 #     --build-arg BASE_IMAGE=apache/doris:be-4.1.0 \
 #     --build-arg OUTPUT_PATH=./output "$S"
 #
-# The BE C++ build is multi-hour; rebuild the image only when the BE binary changes.
-# NOTE: the BE patch touches ONLY be-java-extensions/jdbc-scanner (Java) — a patch-only
-# change can rebuild just that jar and overlay ONLY output/be/lib/java_extensions/ onto an
-# existing BE image, skipping the C++ rebuild (see ../../../../doris-patches/PATCHES.md).
-# This Dockerfile does the full-dist overlay; a jar-only fast path is a future refinement.
+# The BE C++ build is multi-hour. A Java-only delta can reuse a qualified exact-pin native
+# binary, but the complete matching Java shared layer and JNI plugin tree must be rebuilt
+# and packaged together. Never splice an older scanner or Java tree into this distribution.
 
 ARG BASE_IMAGE=apache/doris:be-4.1.4
 FROM ${BASE_IMAGE}
 
 ARG OUTPUT_PATH=./output
 
-# ⚠ UNCERTAINTY (verify once the BE build finishes — see ../../bake-images.sh and
-#   ../../README.md): the stock apache/doris BE image lays the BE dist under
-#   /opt/apache-doris/be, mirroring the FE at /opt/apache-doris/fe (this is the layout
-#   doris-ducklake's compose relies on for the FE side and the BE storage/log mounts —
-#   docker-compose.yml uses /opt/apache-doris/be/storage and /opt/apache-doris/be/log).
-#   We overlay output/be onto that. If a `docker inspect`/`docker run ... ls` of the real
-#   base image shows a different root (some Doris images have used /opt/apache/doris or a
-#   versioned dir), FIX DORIS_BE_HOME here and the storage/log mount paths in
-#   docker-compose.yml to match. We deliberately did NOT docker-pull to verify (constraint:
-#   no pulls while the BE build runs); this follows the established /opt/apache-doris layout.
+# The qualified stock base's distribution root; storage/log mounts use the same path.
 ENV DORIS_BE_HOME=/opt/apache-doris/be
 
 # Replace the base build artifacts we overlay. We keep the base image's entrypoint /

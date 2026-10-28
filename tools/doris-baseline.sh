@@ -129,34 +129,32 @@ done
 # --- clone / fetch the fork at the pin ------------------------------------------------------
 #
 # Strategy: a blobless partial clone (--filter=blob:none) keeps the initial fetch small (trees +
-# commits, blobs fetched on demand) instead of pulling multi-GB of history. We fetch the exact
-# baseline branch (immutable on the fork), then hard-check out the pinned SHA. If the SHA isn't
-# reachable from the branch (shouldn't happen for our own immutable baseline), we fetch it directly.
+# commits, blobs fetched on demand) instead of pulling multi-GB of history. Existing checkouts
+# (including worktrees, whose .git is a file) must be clean before any fetch/checkout. Never reset
+# or clean somebody else's staged patch or untracked files.
 
 ensure_checkout() {
-    if [ ! -d "${DORIS_SRC}/.git" ]; then
+    if [ ! -e "${DORIS_SRC}/.git" ]; then
         info "cloning fork (blobless partial clone; branch ${FORK_BRANCH}) ..."
         mkdir -p "$(dirname "${DORIS_SRC}")"
         git clone --filter=blob:none --branch "${FORK_BRANCH}" --single-branch \
             "${FORK_URL}" "${DORIS_SRC}"
     else
-        info "fetching ${FORK_BRANCH} into existing cache ..."
-        git -C "${DORIS_SRC}" remote set-url origin "${FORK_URL}"
-        git -C "${DORIS_SRC}" fetch --filter=blob:none origin \
-            "${FORK_BRANCH}:refs/remotes/origin/${FORK_BRANCH}"
+        [ -z "$(git -C "${DORIS_SRC}" status --porcelain --untracked-files=all)" ] ||
+            die "DORIS_SRC is not clean: ${DORIS_SRC}. Preserve its work and use a separate clean worktree; no reset or clean was performed."
+        info "fetching ${FORK_BRANCH} into existing clean checkout ..."
+        git -C "${DORIS_SRC}" fetch "${FORK_URL}" "${FORK_BRANCH}"
     fi
 
-    # Make sure the exact pin object is present, then reset to it (drops any prior patch apply).
+    # Make sure the exact pin object is present, then check it out without discarding anything.
     if ! git -C "${DORIS_SRC}" cat-file -e "${PIN_SHA}^{commit}" 2>/dev/null; then
         info "pin SHA not yet local; fetching it directly ..."
-        git -C "${DORIS_SRC}" fetch --filter=blob:none origin "${PIN_SHA}" || \
+        git -C "${DORIS_SRC}" fetch "${FORK_URL}" "${PIN_SHA}" || \
             die "could not fetch pin ${PIN_SHA} from ${FORK_URL}. Upstream may have GC'd it, but the fork should keep it — verify FORK_URL/FORK_BRANCH in BASELINE."
     fi
 
-    info "checking out pin ${PIN_SHA} (clean reset) ..."
+    info "checking out pin ${PIN_SHA} (clean checkout; no reset) ..."
     git -C "${DORIS_SRC}" checkout -q --detach "${PIN_SHA}"
-    git -C "${DORIS_SRC}" reset -q --hard "${PIN_SHA}"
-    git -C "${DORIS_SRC}" clean -qfd
 
     local head
     head="$(git -C "${DORIS_SRC}" rev-parse HEAD)"

@@ -3,6 +3,8 @@ package dev.brikk.duckbridge.doris.plugin
 import org.apache.doris.connector.spi.Connector
 import org.apache.doris.connector.spi.ConnectorContext
 import org.apache.doris.connector.spi.ConnectorProvider
+import org.apache.doris.connector.spi.ConnectorSecuritySurface
+import org.apache.doris.foundation.security.JdbcDriverUrlSecurity
 
 /**
  * `ServiceLoader` entry point for the duckbridge Doris connector. Registered via
@@ -13,6 +15,15 @@ import org.apache.doris.connector.spi.ConnectorProvider
 class DuckBridgeConnectorProvider : ConnectorProvider {
 
     override fun getType(): String = TYPE
+
+    override fun securitySurface(): ConnectorSecuritySurface =
+        ConnectorSecuritySurface.ofJdbcDriverUrls(null, DuckBridgeConnectorConfig.PROP_DRIVER_URL)
+
+    override fun validateProperties(properties: Map<String, String>) {
+        // Statement-time only: reconstruction/replay must retain historical catalog compatibility.
+        val config = DuckBridgeConnectorConfig.from(properties)
+        JdbcDriverUrlSecurity.check(config.driverUrl)
+    }
 
     override fun create(properties: Map<String, String>, context: ConnectorContext): Connector =
         DuckBridgeConnector(DuckBridgeConnectorConfig.from(properties), context)

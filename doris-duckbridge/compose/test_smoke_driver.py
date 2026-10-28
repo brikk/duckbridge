@@ -16,6 +16,12 @@ SOURCE = Path(__file__).resolve().parent
 
 class SmokeDriverTests(unittest.TestCase):
     def test_smoke_rejects_mismatched_fe_be_before_catalog_creation(self):
+        self.assert_rejected_versions("doris-0.0.0-082736138b7", "doris-0.0.0-stale-be")
+
+    def test_smoke_rejects_matched_but_wrong_source_before_catalog_creation(self):
+        self.assert_rejected_versions("doris-0.0.0-62e3d81a42b", "doris-0.0.0-62e3d81a42b")
+
+    def assert_rejected_versions(self, fe_version, be_version):
         with tempfile.TemporaryDirectory(prefix="duckbridge-version-") as temporary:
             root = Path(temporary)
             compose = root / "doris-duckbridge" / "compose"
@@ -24,6 +30,9 @@ class SmokeDriverTests(unittest.TestCase):
                 shutil.copyfile(SOURCE / name, compose / name)
             (compose / ".env").write_text("QUACK_TOKEN=test-token\n")
             (compose / "docker-compose.yml").write_text("services: {}\n")
+            baseline = root / "doris-patches" / "BASELINE"
+            baseline.parent.mkdir()
+            shutil.copyfile(SOURCE.parents[1] / "doris-patches" / "BASELINE", baseline)
             distributions = compose.parent / "build" / "distributions"
             distributions.mkdir(parents=True)
             with zipfile.ZipFile(distributions / "doris-duckbridge-test-plugin.zip", "w") as archive:
@@ -73,14 +82,13 @@ exit 0
             sleep = root / "sleep"
             sleep.write_text("#!/bin/sh\nexit 0\n")
             sleep.chmod(0o755)
-            version = "doris-0.0.0-dd456ab7a89"
             env = {
                 "PATH": str(root) + os.pathsep + os.defpath,
                 "HOME": temporary,
                 "DOCKER": str(fake_docker),
                 "LC_ALL": "C",
-                "FAKE_FE_VERSION": version,
-                "FAKE_BE_VERSION": "doris-0.0.0-stale-be",
+                "FAKE_FE_VERSION": fe_version,
+                "FAKE_BE_VERSION": be_version,
             }
             result = subprocess.run(
                 ["bash", str(compose / "smoke.sh"), "--no-build", "--up-only"],

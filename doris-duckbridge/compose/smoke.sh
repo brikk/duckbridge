@@ -137,7 +137,7 @@ log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driv
 # Populate the named volume before the FE starts so its first plugin scan cannot observe an empty
 # directory and record a transient load failure. docker cp avoids unreliable macOS VM bind mounts.
 log "Installing plugin from $(basename "$zip_path") into the FE plugin volume…"
-PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-dev}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api24-08273613}"
 VOL_NAME="${PROJECT_NAME}_fe-plugin-duckbridge"
 "${DOCKER}" volume create \
     --label "com.docker.compose.project=${PROJECT_NAME}" \
@@ -203,15 +203,17 @@ while :; do
     sleep 3
 done
 
-# API-major compatibility is not FE/BE wire compatibility. #68785 renumbered master Thrift
-# query options, so require both engines to report this exact source pin before creating fixtures.
+# API-major compatibility is not FE/BE wire compatibility. #68785 renumbered query options and
+# #68837 changed report field 34. Both engines must report BASELINE's exact pin before fixtures.
 live_version() {
     local statement="$1"
     fe_sql -B -e "${statement}" | awk -F'\t' \
         'NR==1 {for (i=1;i<=NF;i++) {if ($i=="Version") v=i; if ($i=="Alive") a=i}}
          NR>1 && v && a && $a=="true" {print $v}' | sort -u
 }
-expected_version="doris-0.0.0-dd456ab7a89"
+expected_pin=$(sed -n 's/^PIN_SHA=//p' "${REPO_ROOT}/doris-patches/BASELINE")
+[[ "${expected_pin}" =~ ^[0-9a-f]{40}$ ]] || { log "Invalid Doris BASELINE pin."; exit 1; }
+expected_version="doris-0.0.0-${expected_pin:0:11}"
 fe_version=$(live_version "SHOW FRONTENDS")
 be_version=$(live_version "SHOW BACKENDS")
 if [[ "${fe_version}" != "${expected_version}" || "${be_version}" != "${expected_version}" ]]; then
@@ -273,6 +275,37 @@ if [[ $cat_status -ne 0 ]]; then
     exit 1
 fi
 log "GATE OK: catalog created — provider registration + type-routing on the pristine master FE both work."
+
+# A declaration alone covers ALTER, not CREATE: both must honor the restricted operator path
+# in fe.conf, and mandatory traversal rejection must remain active independently of that path.
+expect_sql_rejection() {
+    local statement="$1" pattern="$2" output
+    if output=$(fe_sql -e "$statement" 2>&1); then
+        log "SECURITY FAIL: unsafe catalog property was accepted."
+        exit 1
+    fi
+    if ! grep -qiE "$pattern" <<< "$output"; then
+        printf '%s\n' "$output"
+        log "SECURITY FAIL: statement failed for the wrong reason."
+        exit 1
+    fi
+}
+log "SECURITY: CREATE and ALTER must reject driver-path policy violations…"
+for unsafe_url in \
+    'file:///opt/duckbridge-drivers-evil/quack-jdbc.jar' \
+    'https://example.invalid/quack-jdbc.jar'; do
+    expect_sql_rejection "CREATE CATALOG duckbridge_security_probe PROPERTIES (
+        'type'='duckbridge', 'jdbc_url'='jdbc:quack://duckdb-quack:9494',
+        'driver_url'='${unsafe_url}');" 'allowed paths'
+    expect_sql_rejection "ALTER CATALOG duckbridge_test SET PROPERTIES (
+        'driver_url'='${unsafe_url}');" 'allowed paths'
+done
+expect_sql_rejection "CREATE CATALOG duckbridge_security_probe PROPERTIES (
+    'type'='duckbridge', 'jdbc_url'='jdbc:quack://duckdb-quack:9494',
+    'driver_url'='file:///opt/duckbridge-drivers/%2e%2e/evil.jar');" 'traversal'
+expect_sql_rejection "ALTER CATALOG duckbridge_test SET PROPERTIES (
+    'driver_url'='file:///opt/duckbridge-drivers/%2e%2e/evil.jar');" 'traversal'
+log "SECURITY GREEN: CREATE/ALTER reject prefix confusion, remote paths and encoded traversal."
 
 # 8. METADATA is now REAL (probe P4 settled): resolution over quack-jdbc should list the seeded
 # quack schemas/tables and DESC a table's columns with the probe-decided Doris types.
@@ -536,6 +569,80 @@ else
     log "  inspect be.log for Quack connection errors and update the scan-contract evidence."
     exit 1
 fi
+
+# Latest master's catalog retirement changes must not close replacement instances. Initialize
+# the old connector first (the scans above did), then ALTER, DROP/recreate and read again.
+log "LIFECYCLE: ALTER and same-name DROP/recreate retain healthy replacement metadata/scans…"
+fe_sql -e "ALTER CATALOG duckbridge_test SET PROPERTIES ('password'='${QUACK_TOKEN}');"
+[[ "$(fe_sql -N -e "SELECT count(*) FROM duckbridge_test.sales.customers;")" == "3" ]] || {
+    log "LIFECYCLE FAIL: ALTER replacement scan changed."; exit 1;
+}
+fe_sql -e "DROP CATALOG duckbridge_test;
+    CREATE CATALOG duckbridge_test PROPERTIES (
+        'type'='duckbridge', 'jdbc_url'='jdbc:quack://duckdb-quack:9494',
+        'driver_class'='com.gizmodata.quack.jdbc.sql.QuackDriver',
+        'driver_url'='${BE_DRIVER_URL}', 'enable.mapping.timestamp_tz'='true',
+        'password'='${QUACK_TOKEN}');"
+[[ "$(fe_sql -N -e "SELECT count(*) FROM duckbridge_test.sales.customers;")" == "3" ]] || {
+    log "LIFECYCLE FAIL: DROP/recreate replacement scan changed."; exit 1;
+}
+
+# The early startup restart is not enough to prove persisted catalogs. Restart after real
+# metadata and scan use; the same FE identity and existing catalog must return without CREATE.
+log "RESTART: retaining an initialized catalog and FE identity across a persisted-metadata restart…"
+identity_before=$(fe_sql -N -e "SHOW FRONTENDS;" | cut -f1,2)
+"${DOCKER}" compose -f "${COMPOSE}" restart doris-fe
+deadline=$((SECONDS + 180))
+while :; do
+    if [[ "$(fe_sql -N -e "SELECT count(*) FROM duckbridge_test.sales.customers;" 2>/dev/null || true)" == "3" ]]; then
+        break
+    fi
+    if (( SECONDS >= deadline )); then
+        log "RESTART FAIL: persisted catalog did not recover."; exit 1
+    fi
+    sleep 2
+done
+identity_after=$(fe_sql -N -e "SHOW FRONTENDS;" | cut -f1,2)
+[[ "${identity_before}" == "${identity_after}" ]] || {
+    log "RESTART FAIL: FE name/address changed."; exit 1;
+}
+[[ "$(fe_sql -N -e "SELECT id, name, big_id, tags, HEX(payload), uuid_value FROM duckbridge_test.sales.customers ORDER BY id;")" == "${expected_sel}" ]] || {
+    log "RESTART FAIL: exact persisted-catalog values changed."; exit 1;
+}
+log "LIFECYCLE/RESTART GREEN: ALTER, DROP/recreate, persisted identity/catalog and exact values retained."
+
+# Invalidate only this run-owned container's JDBC manifest, never the image or a shared tree.
+# A failed lazy load must be plugin-scoped: native BE health/status survives. Recreating from
+# the immutable complete image restores the original plugin and must recover real scans.
+log "PLUGIN ISOLATION: an incompatible JDBC plugin must fail without crashing the native BE…"
+trap '"${DOCKER}" compose -f "${COMPOSE}" up -d --no-deps --force-recreate doris-be >/dev/null 2>&1 || true' EXIT
+"${DOCKER}" exec doris-duckbridge-be bash -c '
+    printf "Doris-Jni-Plugin-Api-Version: 0.0\n" > /tmp/duckbridge-invalid-jni-manifest
+    jar ufm /opt/apache-doris/be/plugins/jni/jdbc/jdbc-scanner.jar /tmp/duckbridge-invalid-jni-manifest
+'
+"${DOCKER}" compose -f "${COMPOSE}" restart doris-be
+deadline=$((SECONDS + 180))
+while ! "${DOCKER}" exec doris-duckbridge-be curl -fsS http://127.0.0.1:8040/api/jni_plugin_status >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+        log "PLUGIN ISOLATION FAIL: native BE did not restart with the invalid plugin."; exit 1
+    fi
+    sleep 2
+done
+expect_sql_rejection "SELECT count(*) FROM duckbridge_test.sales.customers;" 'jdbc|plugin|API'
+jni_failed=$("${DOCKER}" exec doris-duckbridge-be curl -fsS http://127.0.0.1:8040/api/jni_plugin_status)
+if [[ "${jni_failed}" != *'"failedCount":1'* || "${jni_failed}" != *'"name":"jdbc","state":"FAILED"'* ]]; then
+    log "PLUGIN ISOLATION FAIL: expected only JDBC to fail: ${jni_failed}"; exit 1
+fi
+"${DOCKER}" compose -f "${COMPOSE}" up -d --no-deps --force-recreate doris-be
+trap - EXIT
+deadline=$((SECONDS + 180))
+while [[ "$(fe_sql -N -e "SELECT count(*) FROM duckbridge_test.sales.customers;" 2>/dev/null || true)" != "3" ]]; do
+    if (( SECONDS >= deadline )); then
+        log "PLUGIN ISOLATION FAIL: recreating the BE did not restore JDBC scans."; exit 1
+    fi
+    sleep 2
+done
+log "PLUGIN ISOLATION GREEN: only JDBC failed, native health survived, complete-image recreation restored scans."
 
 # 9. Teardown.
 if [[ $KEEP -eq 1 ]]; then

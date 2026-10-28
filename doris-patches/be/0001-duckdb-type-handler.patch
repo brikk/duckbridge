@@ -44,13 +44,13 @@ Upstream ask / exit criteria:
   Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
   lands in a release, this patch is deleted and BASELINE points at the tag.
 
-Anchors at pin dd456ab7a89 (#68646), connector API 13 / JNI API 5:
+Anchors at pin 082736138b7 (#69665), connector API 24 / JNI API 6:
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
        (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the
         existing `case "CLICKHOUSE"` arm)
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcPluginTest.java
-       (direct coverage that the DUCKDB factory arm selects DuckDbTypeHandler)
+       (both factory overloads select DuckDbTypeHandler, retaining diagnostic inputs)
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandlerTest.java
        (UTC TIMESTAMPTZ, native UUID and byte-identity coverage)
 
@@ -368,10 +368,10 @@ index 00000000000..ac33d0c1be8
 +    }
 +}
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
-index e1a5f1356c2..ab2769d752d 100644
+index b2756757ec4..ee9a01f7540 100644
 --- a/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
 +++ b/fe/be-java-extensions/jdbc-scanner/src/main/java/org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
-@@ -43,6 +43,8 @@ public class JdbcTypeHandlerFactory {
+@@ -47,6 +47,8 @@ public class JdbcTypeHandlerFactory {
                  return new PostgreSQLTypeHandler();
              case "CLICKHOUSE":
                  return new ClickHouseTypeHandler();
@@ -455,14 +455,16 @@ index 00000000000..47f39cfe685
 +    }
 +}
 diff --git a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
-index 78c46c1eacf..e3f77e90a45 100644
+index 78c46c1eacf..8d96ad0fcc4 100644
 --- a/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
 +++ b/fe/be-java-extensions/jdbc-scanner/src/test/java/org/apache/doris/jdbc/JdbcPluginTest.java
-@@ -48,3 +48,9 @@ public class JdbcPluginTest {
+@@ -48,3 +48,11 @@ public class JdbcPluginTest {
 +    /** Duckbridge's table_type must select its handler rather than silently falling back. */
 +    @Test
 +    public void selectsDuckDbTypeHandler() {
 +        Assertions.assertTrue(JdbcTypeHandlerFactory.create("DUCKDB") instanceof DuckDbTypeHandler);
++        Assertions.assertTrue(JdbcTypeHandlerFactory.create("DUCKDB", "token", "jdbc:quack://host:9494")
++                instanceof DuckDbTypeHandler);
 +    }
 +
      private static DorisPlugin loadPlugin() {

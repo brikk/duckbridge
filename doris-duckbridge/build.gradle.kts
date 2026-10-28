@@ -97,6 +97,7 @@ dependencies {
     // connector contract (org.apache.doris.connector.spi.*, incl. the former .api types).
     compileOnly("org.apache.doris:fe-connector-spi:$dorisVersion")
     compileOnly("org.apache.doris:fe-thrift:$dorisVersion")
+    compileOnly("org.apache.doris:fe-foundation:$dorisVersion")
 
     // quack-jdbc: brikk's pure-JVM DuckDB/Quack driver (dev.brikk.duckdb:quack-jdbc, a fixed fork of
     // gizmodata's) (jdbc:quack://...). The FE resolves
@@ -107,6 +108,8 @@ dependencies {
 
     // Tests instantiate the provider / connector, so the SPI types are needed at test time too.
     testImplementation("org.apache.doris:fe-connector-spi:$dorisVersion")
+    testImplementation("org.apache.doris:fe-thrift:$dorisVersion")
+    testImplementation("org.apache.doris:fe-foundation:$dorisVersion")
     // junit / assertj / kotlin-test come from buildlogic.kotlin.common.
 
     // P4 metadata probe + the over-Quack integration tests spin up a real DuckDB/Quack server
@@ -121,27 +124,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
 }
 
-// #66211 (doris branch-catalog-spi 88abe41a4e3, "replace the always-true connector apiVersion()
-// with a manifest-carried API version gate for all four plugin families"): the FE's ApiVersionGate
-// now REJECTS any directory-loaded connector plugin whose factory-defining jar does not declare a
-// matching Doris-Connector-Plugin-Api-Version MANIFEST main attribute (fail-closed — absent ==
-// rejected at STAGE_API_VERSION). The gate reads it from the jar that defines our ConnectorProvider
-// (this jar) and compares MAJOR only against the kernel resource
-// META-INF/doris/connector-plugin-api-version.properties (api.version) baked into fe-connector-spi.
-// The gate compares MAJOR only. Upstream bumped the CONNECTOR plugin API major over time
-// (1->5 in ded91fb9fb3..a82564ced5d; 5->6 at 1731787677f via #66413; 6->7 at 2be8fba29d7 via
-// #67182's connector-capability surface addition; 7->8 via #67904's retained-schema snapshot
-// state; 8->9 via #68027's Hive OpenCSV scan-property contract; 9->10 via #66530's statement scan
-// reuse; 10->11 via #68320's generic write framework; 11->12 via #66399's Fluss/nested-pruning
-// surface; 12->13 via #68786's string-write and transformed-partition typing). Duckbridge keeps
-// unsupported write/reuse/nested-pruning opt-ins at their safe defaults. A plugin stamped an older
-// major is REJECTED at load (FE summary stage=apiVersion; CREATE CATALOG then fails "No connector
-// plugin claimed catalog type"). We stamp "13.0" to match the master baseline. Sanity-check after a
-// re-vendor: unzip -p doris-m2/.../fe-connector-spi-1.2-SNAPSHOT.jar \
-//   META-INF/doris/connector-plugin-api-version.properties. Bump when the SPI major changes again.
+// The FE's ApiVersionGate compares this provider JAR's manifest major with the kernel's
+// META-INF/doris/connector-plugin-api-version.properties. An absent or stale major is rejected.
+// API 24 matches doris-patches/BASELINE; new write/streaming/cache/partition capabilities remain
+// disabled. TestDorisApi24Contract pins the compile resource and the safe runtime defaults.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "13.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "24.0")
     }
 }
 

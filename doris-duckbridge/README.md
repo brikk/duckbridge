@@ -5,9 +5,11 @@ scans/projections/predicates into a user-operated DuckDB (remote via the Quack
 protocol, `jdbc:quack://…`), riding Doris's new `fe-connector` plugin SPI and the BE's
 existing JDBC JNI scanner.
 
-**Status:** qualified end-to-end against pinned Doris master `dd456ab7a89`, connector API 13 and
-JNI plugin API 5. The matching ASAN runtime passed exact JDBC values, native UUID/TIMESTAMPTZ,
-pushdowns, concurrency, lazy plugin loading, persisted-FE restart and plugin-scoped failure recovery.
+**Status:** adopting pinned Doris master `082736138b7`, connector API 24 and JNI plugin API 6.
+Source review, matching FE build, 69 connector tests and patched JDBC reactor passed;
+the native ASAN build and live qualification are in progress.
+The previous `dd456ab7a89` API-13/JNI-5 artifacts remain rollback. See the
+[adoption review](dev-docs/REVIEW-doris-api24-2026-10-28.md) for evidence and boundaries.
 Metadata, JDBC scans, predicate/function pushdown, temporal values, LARGEINT, ARRAY, VARBINARY,
 and concurrent scans run through DuckDB/Quack. Internal design:
 [`dev-docs/DESIGN-jdbc-scan-contract.md`](dev-docs/DESIGN-jdbc-scan-contract.md).
@@ -23,9 +25,10 @@ a release) and runs on a pristine FE plus one patched BE component. Everything i
   (LARGEINT/ARRAY/VARBINARY-faithful JDBC value coercion). Rationale, apply procedure,
   and the re-vendor log: [`../doris-patches/PATCHES.md`](../doris-patches/PATCHES.md).
 - **Script**: [`../tools/doris-baseline.sh`](../tools/doris-baseline.sh)
-  - `--check-only` (default) — blobless-clone master at the pin into
+   - `--check-only` (default) — blobless-clone master at the pin into
     `~/.cache/duckbridge/doris` (`DORIS_SRC` overrides) and verify all patches apply
-    clean (`git apply --3way --check`, fail loud on drift).
+     clean (`git apply --3way --check`, fail loud on drift).
+     An existing checkout/worktree must be clean; staged/untracked work is never reset or removed.
   - `--install-spi-jars` — build `fe-connector-spi` / `fe-thrift`
     from the **patched pin** into the project-local repo `doris-duckbridge/doris-m2/`
     (~1 min). This is the **required bootstrap** before first build.
@@ -58,7 +61,8 @@ Integration testing uses the compose environment in [`compose/`](compose/):
   (patched exact-pin BE — `JdbcJniScanner` is absent from stock 4.1.x, so the BE must be
   branch-built too), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
 - `compose/bake-images.sh` — bakes the FE/BE overlay images from the `--build-fe`/`--build-be`
-  output (`~/.cache/duckbridge/doris/output`); refuses to run while the BE build is still going.
+   output (`~/.cache/duckbridge/doris/output`); uses source-qualified API-24 image names, requires an
+   ASAN BE, and refuses to run while the build is still going. API-13 tags/volumes are preserved.
 - `compose/smoke.sh` — install plugin → up → persisted-FE restart → health → catalog/metadata →
   lazy-JVM transition → exact scan/pushdown/concurrency assertions → `down -v`.
 

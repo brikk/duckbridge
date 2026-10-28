@@ -6,9 +6,8 @@ must be baked before `up`; Compose does not compile Doris.
 
 ## Branch FE **and** branch BE — both required
 
-Unlike `doris-ducklake` (which pairs its branch FE with a **stock** 4.1.x BE because it
-rides the BE's native parquet/iceberg reader), doris-duckbridge rides **`JdbcJniScanner`**,
-which is **absent from stock 4.1.x**. So both images are branch-built:
+The connector SPI and **`JdbcJniScanner`** are absent from stock 4.1.x. Both engines must
+match the exact master pin, including IDL, shared Java layer and complete JNI plugin layout:
 
 - **FE** — pristine pinned master; the SPI and provider-first type routing are upstream.
 - **BE** — carries the `DuckDbTypeHandler` patch (decodes DuckDB result sets) plus master’s
@@ -21,9 +20,10 @@ Stock 4.1.4-rc04 still lacks both the SPI and `JdbcJniScanner`; see
 
 1. **Pinned build output** at `~/.cache/duckbridge/doris/output/{fe,be}` or another `DORIS_OUTPUT`:
    ```bash
-   tools/doris-baseline.sh --build-fe --build-be   # JDK 17; BE is a multi-hour C++ build
+   BUILD_TYPE=ASAN tools/doris-baseline.sh --build-fe --build-be   # JDK 17; multi-hour BE build
    ```
-2. **Baked images** `doris-fe:duckbridge-local` + `doris-be:duckbridge-local` (see below).
+2. **Baked images** `doris-fe:duckbridge-082736138b7-api24` +
+   `doris-be:duckbridge-082736138b7-api24-asan` (see below). The old API-13 image tags remain intact.
 3. **Plugin zip** — built on demand by `smoke.sh` (`./gradlew :doris-duckbridge:pluginZip`).
 4. **`.env`** — `cp .env.example .env` and set `QUACK_TOKEN` (smoke.sh auto-copies if absent).
 5. Docker (or podman — set `DOCKER=podman`).
@@ -54,12 +54,18 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
 - API-version-gated provider registration and real schema/table/type metadata.
 - Exact FE/BE source-version guard before catalog fixture allocation.
 - Persisted FE restart retains `172.31.80.10`.
+- CREATE/ALTER driver-URL policy rejects prefix confusion, remote URLs outside the configured
+  local path, and percent-encoded traversal before any driver download.
 - JVM/plugin registry stays uninitialized before the first scan; first use loads only `jdbc` and
   publishes `doris_be_jvm_*` metrics.
 - Exact unicode, LARGEINT, ARRAY, native UUID and arbitrary VARBINARY bytes; exact count and rows.
 - Native TIMESTAMPTZ transport across Asia/Tokyo Quack, America/Los_Angeles JVM and UTC FE display.
 - Function, naive TIMESTAMP and explicit-UTC TIMESTAMPTZ pushdown in the emitted query.
 - 20 sequential and 8 concurrent scans with zero failures.
+- ALTER and same-name DROP/recreate retain replacement metadata/scans; a second FE restart
+  retains the initialized catalog, FE name/address and exact values without recreating the catalog.
+- An intentionally incompatible JDBC manifest fails only that plugin while native BE health
+  survives; recreating the run-owned BE from the complete image restores scans.
 - Any expected-value mismatch exits nonzero.
 
 ## Notes / gotchas
@@ -68,11 +74,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
   unzips to `lib/…`; `smoke.sh` installs it into a named volume mounted at
   `…/plugins/connector/duckbridge` (named volume + `docker cp`, not a bind mount, so
   Podman-on-macOS host↔VM file sharing can't drop the jar tree).
-- **No local-shuffle shim.** doris-ducklake needs `SET GLOBAL
-  enable_local_shuffle_planner=false` for its branch-FE-on-stock-BE thrift skew. We run a
-  **branch BE too**, so FE/BE thrift matches and the shim is not needed — deliberately
-  omitted. If a scan ever hits "Unsupported exec type in pipeline", the BE image is stale
-  (not branch-built) — rebake it.
+- **No local-shuffle shim.** FE/BE source and Thrift must match; never disable planning paths
+  to conceal a stale engine image.
+- **Fresh API-24 volumes.** The Compose project is `doris-duckbridge-api24-08273613`; its
+  FE metadata/plugin/log and BE storage/log volumes do not upgrade or remove API-13 volumes.
 - **BE dist root** is `/opt/apache-doris/be`; keep the Dockerfile and storage/log mounts aligned.
 - **`.env` and `.fe.conf.runtime` are gitignored.** The token is dev-only; never commit a
   real one.
