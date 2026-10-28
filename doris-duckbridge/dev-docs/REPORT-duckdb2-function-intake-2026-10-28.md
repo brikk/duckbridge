@@ -1,5 +1,10 @@
 # DuckDB 2 function intake — 2026-10-28
 
+This is the initial local-checkout/Python-versus-CLI pass. The published Java-17
+**0.21.0** integration now supplies a same-JDBC-policy overload/type diff and
+generated-SQL oracles; see [the published intake](REPORT-published-function-intake-2026-10-28.md).
+The semantic counterexamples and no-new-pushdown decision below remain valid.
+
 ## Decision
 
 **No new pushdowns enabled.** Availability, parser support and matching names are

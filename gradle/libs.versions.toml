@@ -3,6 +3,7 @@ kotlin = "2.3.10"
 duckdb = "2.0.0.0"
 quack-jdbc = "0.10.0"
 doris-quack-jdbc = "0.10.0"
+brikk-sql = "0.21.0"
 junit = "5.12.2"
 assertj = "3.27.3"
 trino = "483"
@@ -20,6 +21,8 @@ arrow-data = { module = "org.apache.arrow:arrow-c-data" }
 duckdb-jdbc = { module = "org.duckdb:duckdb_jdbc", version.ref = "duckdb" }
 quack-jdbc = { module = "dev.brikk.duckdb:quack-jdbc", version.ref = "quack-jdbc" }
 doris-quack-jdbc = { module = "dev.brikk.duckdb:quack-jdbc", version.ref = "doris-quack-jdbc" }
+brikk-sql = { module = "dev.brikk.house:brikk-sql-jvm", version.ref = "brikk-sql" }
+brikk-sql-metadata = { module = "dev.brikk.house:brikk-sql-metadata-jvm", version.ref = "brikk-sql" }
 trino-bom = { module = "io.trino:trino-root", version.ref = "trino" }
 
 testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "containers" }

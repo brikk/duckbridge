@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.DataInputStream
+import java.util.zip.ZipFile
 
 plugins {
     id("buildlogic.kotlin.library")
@@ -29,8 +31,17 @@ detekt {
     buildUponDefaultConfig = true
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     baseline = file("detekt-baseline.xml")
-    source.setFrom("src", "test/src")
+    source.setFrom("src", "test/src", "audit/src")
 }
+
+// Published metadata/transpiler libraries are audit tools, not connector runtime dependencies.
+// In particular their Kotlin 2.4 runtime must not replace the FE/plugin's qualified Kotlin closure.
+val functionAudit = sourceSets.create("functionAudit")
+kotlin.sourceSets.named("functionAudit") { kotlin.srcDir("audit/src") }
+val brikkSqlAuditVersion = providers.gradleProperty("brikkSqlAuditVersion").orNull
+val functionAuditDorisPin = rootProject.file("doris-patches/BASELINE").readLines()
+    .single { it.startsWith("PIN_SHA=") }.substringAfter('=')
+val functionAuditDorisVersion = "doris-0.0.0-${functionAuditDorisPin.take(11)}"
 
 // PROJECT-LOCAL Doris artifact repository — the self-contained bootstrap.
 //
@@ -90,6 +101,11 @@ gradle.taskGraph.whenReady {
 }
 
 dependencies {
+    add(functionAudit.implementationConfigurationName, brikkSqlAuditVersion?.let { "dev.brikk.house:brikk-sql-jvm:$it" } ?: libs.brikk.sql)
+    add(functionAudit.implementationConfigurationName, brikkSqlAuditVersion?.let { "dev.brikk.house:brikk-sql-metadata-jvm:$it" } ?: libs.brikk.sql.metadata)
+    add(functionAudit.runtimeOnlyConfigurationName, libs.duckdb.jdbc)
+    add(functionAudit.runtimeOnlyConfigurationName, "org.mariadb.jdbc:mariadb-java-client:3.0.9")
+    add(functionAudit.implementationConfigurationName, "org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     // FE supplies these via the parent classloader at runtime — compile-only, so the plugin jar
     // ships no second copy of the SPI/thrift classes (a duplicate would LinkageError across the
     // SPI boundary).
@@ -153,3 +169,90 @@ val pluginZip by tasks.registering(Zip::class) {
 tasks.named("assemble") {
     dependsOn(pluginZip)
 }
+
+val verifyPublishedAuditBytecode by tasks.registering {
+    group = "verification"
+    description = "Reject published brikk-sql audit libraries requiring a JVM newer than Doris's Java 17"
+    doLast {
+        val libraries = functionAudit.runtimeClasspath.files.filter { it.name.startsWith("brikk-sql-") && it.extension == "jar" }
+        check(libraries.any { it.name.startsWith("brikk-sql-jvm") } &&
+            libraries.any { it.name.startsWith("brikk-sql-metadata-jvm") }) {
+            "Both published JVM audit libraries must be resolved before checking Java-17 compatibility"
+        }
+        val offenders = buildList {
+            for (file in libraries) {
+                ZipFile(file).use { jar ->
+                    for (entry in jar.entries().asSequence().filter { it.name.endsWith(".class") && !it.name.startsWith("META-INF/versions/") }) {
+                        val major = DataInputStream(jar.getInputStream(entry)).use { input ->
+                            input.readInt()
+                            input.readUnsignedShort()
+                            input.readUnsignedShort()
+                        }
+                        if (major > 61) add("${file.name}: ${entry.name} requires classfile $major")
+                    }
+                }
+            }
+        }
+        check(offenders.isEmpty()) {
+            "Published audit libraries must run on Java 17; publish a compatible artifact, do not bypass Doris's JVM gate. " +
+                offenders.take(5).joinToString()
+        }
+    }
+}
+
+val exportFunctionMetadata by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Export published brikk-sql catalogs and capture the real DuckDB-2 JDBC registry on Java 17"
+    dependsOn(functionAudit.classesTaskName, verifyPublishedAuditBytecode)
+    classpath = functionAudit.runtimeClasspath
+    mainClass.set("dev.brikk.duckbridge.doris.audit.PublishedFunctionAudit")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+    maxHeapSize = "512m"
+    val output = providers.gradleProperty("functionAuditOutput").orNull?.let(::file)
+        ?: layout.buildDirectory.dir("function-audit/metadata").get().asFile
+    args(output.absolutePath, functionAuditDorisVersion, libs.versions.trino.get())
+    outputs.dir(output)
+    // This task is a live capture, not just a copy of the bundled metadata.
+    outputs.upToDateWhen { false }
+}
+
+val auditGeneratedSql by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Compare published SQL lowerings with the exact-pin live Doris oracle and DuckDB using real JDBC result metadata"
+    dependsOn(exportFunctionMetadata)
+    classpath = functionAudit.runtimeClasspath
+    mainClass.set("dev.brikk.duckbridge.doris.audit.GeneratedSqlAudit")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+    maxHeapSize = "512m"
+    val metadata = providers.gradleProperty("functionAuditOutput").orNull?.let(::file)
+        ?: layout.buildDirectory.dir("function-audit/metadata").get().asFile
+    args(metadata.absolutePath,
+        providers.gradleProperty("functionAuditDorisUrl").getOrElse("jdbc:mariadb://127.0.0.1:9030"),
+        functionAuditDorisVersion)
+}
+
+val verifyFunctionAuditIsolation by tasks.registering {
+    group = "verification"
+    description = "Verify audit libraries/classes cannot leak into the Doris connector package"
+    dependsOn(pluginZip)
+    doLast {
+        val auditJars = configurations.runtimeClasspath.get().files.filter { it.name.startsWith("brikk-sql-") }
+        check(auditJars.isEmpty()) { "audit-only libraries leaked into the runtime classpath: $auditJars" }
+        val kotlinJars = configurations.runtimeClasspath.get().files.filter { it.name.startsWith("kotlin-stdlib-") }
+        check(kotlinJars.map { it.name } == listOf("kotlin-stdlib-${libs.versions.kotlin.get()}.jar")) {
+            "audit runtime must not change the connector's Kotlin runtime: $kotlinJars"
+        }
+        ZipFile(tasks.jar.get().archiveFile.get().asFile).use { jar ->
+            check(jar.entries().asSequence().none { it.name.startsWith("dev/brikk/duckbridge/doris/audit/") }) {
+                "audit classes must not be bundled in the connector JAR"
+            }
+        }
+        ZipFile(pluginZip.get().archiveFile.get().asFile).use { zip ->
+            check(zip.entries().asSequence().none { it.name.substringAfterLast('/').startsWith("brikk-sql-") }) {
+                "audit-only libraries must not be bundled in the connector ZIP"
+            }
+        }
+    }
+}
+
+tasks.named("check") { dependsOn(verifyFunctionAuditIsolation) }

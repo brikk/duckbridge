@@ -56,6 +56,10 @@ the module itself), matching `thrift` for `fe-thrift` codegen (`DORIS_THRIFT` en
 
 ## Test environment
 
+Published function metadata/transpiler libraries are opt-in **audit-only** dependencies, not
+plugin/runtime dependencies. Java-17 capture, overload/type diff and native semantic probes:
+[`dev-docs/REPORT-published-function-intake-2026-10-28.md`](dev-docs/REPORT-published-function-intake-2026-10-28.md).
+
 Integration testing uses the compose environment in [`compose/`](compose/):
 
 - `compose/docker-compose.yml` — `doris-fe` (pristine pinned master FE + our plugin), `doris-be`

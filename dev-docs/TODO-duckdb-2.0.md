@@ -474,7 +474,13 @@ It found duplicate-key and invalid-JSON expression differences; no new pushdown 
 The sibling brikk-sql generated catalog is still 1.5.6. Full refreshed-overload/type comparison and
 the broader semantic matrix below remain open; name inventory alone does not tick those gates.
 
-- [ ] Inventory `json_set`, `json_insert`, `json_replace`, `json_remove`,
+Update: [published brikk-sql 0.21.0 intake](../doris-duckbridge/dev-docs/REPORT-published-function-intake-2026-10-28.md)
+now compares same-policy 1.5.6/2.0 function/type contracts against a live JDBC capture,
+and tests actual generated SQL on exact-pin Doris and Trino 483. Java-17 tooling is isolated
+from plugin runtimes. The refreshed inventory work is complete; generic JSON, OVERLAY and
+regex lowerings still have concrete value/error/type blockers, so no new pushdown is enabled.
+
+- [x] Inventory `json_set`, `json_insert`, `json_replace`, `json_remove`,
   `json_merge_patch_diff`, `json_deep_merge`, `json_normalize`, and
   `json_strip_nulls` for the planned DuckDB-namespaced Trino function surface.
 - [ ] For any host-equivalent function, record SQL `NULL` vs JSON `null`, key

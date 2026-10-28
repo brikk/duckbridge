@@ -1,0 +1,9 @@
+source	case	input_sql	duckdb_sql	status
+trino	regexp_count_empty	SELECT regexp_count('ab', '')	SELECT CASE WHEN 'ab' IS NULL OR '' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('ab', '')) END	EMITTED
+trino	regexp_count	SELECT regexp_count('ababa', 'a')	SELECT CASE WHEN 'ababa' IS NULL OR 'a' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('ababa', 'a')) END	EMITTED
+trino	regexp_count_overlap	SELECT regexp_count('ababa', 'aba')	SELECT CASE WHEN 'ababa' IS NULL OR 'aba' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('ababa', 'aba')) END	EMITTED
+trino	regexp_count_empty_unicode	SELECT regexp_count('a😀b', '')	SELECT CASE WHEN 'a😀b' IS NULL OR '' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('a😀b', '')) END	EMITTED
+trino	regexp_count_null	SELECT regexp_count(CAST(NULL AS VARCHAR), 'a')	SELECT CASE WHEN CAST(NULL AS TEXT) IS NULL OR 'a' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL(CAST(NULL AS TEXT), 'a')) END	EMITTED
+trino	regexp_count_null_pattern	SELECT regexp_count('abc', CAST(NULL AS VARCHAR))	SELECT CASE WHEN 'abc' IS NULL OR CAST(NULL AS TEXT) IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('abc', CAST(NULL AS TEXT))) END	EMITTED
+trino	regexp_count_lookbehind	SELECT regexp_count('ab', '(?<=a)b')	SELECT CASE WHEN 'ab' IS NULL OR '(?<=a)b' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('ab', '(?<=a)b')) END	EMITTED
+trino	regexp_count_lookahead	SELECT regexp_count('aaa', '(?=a)')	SELECT CASE WHEN 'aaa' IS NULL OR '(?=a)' IS NULL THEN NULL ELSE LENGTH(REGEXP_EXTRACT_ALL('aaa', '(?=a)')) END	EMITTED
