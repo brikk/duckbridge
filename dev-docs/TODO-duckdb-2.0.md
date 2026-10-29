@@ -524,6 +524,13 @@ changes.
 
 ## DB20-15: boundary type and precision changes
 
+Quack-0.11 update: [qualified nanos paths](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
+now include Trino scalar TIMESTAMP_NS/TIME_NS on all four scan paths, time-nanos lists on all
+four, timestamp-nanos lists on Arrow/Quack, and zoned nanos on Arrow/Quack. Native JDBC's
+legacy timestamp-list getter and lossy historical zoned-nanos text remain refused. Nanos
+predicates remain local; this is not generic date-function pushdown qualification. Doris's
+native six-digit ceiling and packed-TIMETZ refusal are unchanged.
+
 October-29 [boundary capture](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md)
 records actual JDBC/Quack NULL/CTAS/nested/temporal metadata and getters. The released drivers
 preserve naive nanos; old driver-truncation claims are corrected, but host nanos mappings remain
@@ -573,6 +580,11 @@ microsecond `TIMESTAMP`, has no explicit `TIMESTAMPTZ` arm, while Doris recogniz
 with a named contract, or rejected before scan execution.
 
 ## DB20-16: transactions, retries, and prepared statements
+
+Quack JDBC 0.11 passes real server query cancellation (SQLState57014), network-cut streaming
+failure and independently bounded DISCONNECT acceptance tasks. The exact test contracts,
+the corrected compressed-sequence probe diagnosis and the remaining race scope are in
+[the 0.11 report](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md).
 
 October-29 [pool subgate](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md):
 real Quack 0.10/Hikari 6.0 single-slot reuse passes parser/binder/execution-error recovery,

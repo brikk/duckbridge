@@ -192,6 +192,7 @@ object DuckBridgeExpressionTranslator {
         }
 
     private fun translateVariable(variable: Variable, assignments: Map<String, ColumnHandle>): String? {
+        if (DuckBridgeNanos.isHighPrecision(variable.type)) return null // nanos function semantics are not a generic microsecond proof
         val column = assignments[variable.name]
         if (column !is JdbcColumnHandle) {
             return null

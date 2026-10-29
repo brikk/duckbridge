@@ -95,6 +95,7 @@ dependencies {
 
     // Testcontainers-hosted Quack server for the T3 (quack-jdbc) integration tests.
     testImplementation(libs.testcontainers.core)
+    testImplementation("org.testcontainers:testcontainers-toxiproxy:${libs.versions.containers.get()}")
 
     // compileOnly deps also needed at test time
     testCompileOnly("com.fasterxml.jackson.core:jackson-annotations")
@@ -120,6 +121,21 @@ configurations.named("runtimeClasspath") {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
+}
+
+// Strict dependency acceptance gates, separate from JUnit: 0.10.0 failed these contracts.
+// Keep them executable unchanged when qualifying a corrected published driver.
+listOf("qualifyQuackStreaming" to "streaming", "qualifyQuackCancel" to "cancel", "qualifyQuackDisconnect" to "disconnect").forEach { (name, gate) ->
+    tasks.register<JavaExec>(name) {
+        group = "verification"
+        description = "Strict Quack $gate acceptance gate"
+        dependsOn(tasks.testClasses)
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("dev.brikk.duckbridge.trino.plugin.TestQuackNetworkLifecycle")
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) })
+        maxHeapSize = "2g"
+        args(gate)
+    }
 }
 
 // ---- Bundle trino_parity DuckDB extension into the plugin jar ----

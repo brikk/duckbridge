@@ -80,6 +80,8 @@ import io.trino.spi.type.TimestampType
 import io.trino.spi.type.TimestampType.TIMESTAMP_MICROS
 import io.trino.spi.type.TinyintType.TINYINT
 import io.trino.spi.type.Type
+import io.trino.spi.type.TimestampWithTimeZoneType
+import io.trino.spi.type.TimeWithTimeZoneType
 import io.trino.spi.type.VarcharType
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -115,6 +117,7 @@ class DuckBridgeClient
         identifierMapping: IdentifierMapping,
         queryModifier: RemoteQueryModifier,
         private val connectorExpressionRewriter: ConnectorExpressionRewriter<ParameterizedExpression>,
+        private val duckBridgeConfig: DuckBridgeConfig,
     ) : BaseJdbcClient(
             "\"",
             connectionFactory,
@@ -124,6 +127,19 @@ class DuckBridgeClient
             queryModifier,
             false,
         ) {
+        private val quackTransport = config.connectionUrl.startsWith("jdbc:quack:")
+        private val arrowTransport = duckBridgeConfig.executionEngine != DuckBridgeExecutionEngine.JDBC
+        private val zonedNanosTransport = arrowTransport || quackTransport
+
+        private fun lacksTemporalCarrier(typeName: String): Boolean {
+            val name = typeName.uppercase()
+            if (!zonedNanosTransport && name == "TIMESTAMPTZ_NS") return true
+            if (arrowTransport && name in setOf("TIMETZ", "TIME WITH TIME ZONE")) return true
+            // DuckDBArray's legacy Timestamp elements normalize JVM DST gaps; typed element
+            // getters are not implemented. Native Arrow and Quack's LocalDateTime array are exact.
+            return !arrowTransport && !quackTransport && name.startsWith("TIMESTAMP_NS[")
+        }
+
         override fun getConnection(session: ConnectorSession): Connection {
             // BaseJdbcClient.getConnection calls Connection.setReadOnly, but DuckDB does not
             // support changing read-only status at the connection level, so open directly. The
@@ -294,13 +310,14 @@ class DuckBridgeClient
             connection: Connection,
             typeHandle: JdbcTypeHandle,
         ): Optional<ColumnMapping> {
+            if (lacksTemporalCarrier(typeHandle.jdbcTypeName().orElse(""))) return Optional.empty()
             val forced = getForcedMappingToVarchar(typeHandle)
             if (forced.isPresent) {
                 return forced
             }
             DuckBridgeScalarColumnMappings.byTypeName(typeHandle.jdbcTypeName().orElse(null), session.timeZoneKey)
                 ?.let { return Optional.of(it) }
-            if (DuckBridgeScalarColumnMappings.isUnqualifiedTemporal(typeHandle.jdbcTypeName().orElse(null))) {
+            if (DuckBridgeScalarColumnMappings.isNanosTemporal(typeHandle.jdbcTypeName().orElse(null))) {
                 // A shared JDBC code is not a precision contract. Keep new nanos types out of
                 // generic microsecond mappings until the host read/write/bind path is qualified.
                 return Optional.empty()
@@ -370,7 +387,12 @@ class DuckBridgeClient
         }
 
         override fun toWriteMapping(session: ConnectorSession, type: Type): WriteMapping =
-            simpleWriteMapping(type)
+            if (!zonedNanosTransport && type is TimestampWithTimeZoneType && type.precision > 6) {
+                throw TrinoException(NOT_SUPPORTED, "Unsupported column type: ${type.displayName}. " +
+                    "TIMESTAMPTZ_NS requires Arrow or Quack 0.11 typed getters; native JDBC text loses offset seconds")
+            } else if (arrowTransport && type is TimeWithTimeZoneType) {
+                throw TrinoException(NOT_SUPPORTED, "DuckDB Arrow TIME WITH TIME ZONE has no offset carrier")
+            } else simpleWriteMapping(type)
                 ?: parametricWriteMapping(type)
                 ?: DuckBridgeScalarColumnMappings.toWriteMapping(type)
                 ?: throw TrinoException(NOT_SUPPORTED, "Unsupported column type: ${type.displayName}")

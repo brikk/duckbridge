@@ -23,7 +23,6 @@ import java.io.IOException
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.sql.Statement
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Out-of-process T2 [DuckBridgeExecutor] reached via the Quack RPC protocol. Ported from the
@@ -81,7 +80,7 @@ class QuackDuckBridgeExecutor(
                         }
                     }
                 }
-                applyServerSideTimeZone(init, request.duckDbTimeZone)
+                applyTimeZone(init, request.duckDbTimeZone)
             }
             statement = connection.createStatement()
             resultSet = statement.executeQuery(wrapAsSelect(request.sql)) as DuckDBResultSet
@@ -107,6 +106,8 @@ class QuackDuckBridgeExecutor(
         override fun arrowReader(): ArrowReader = arrowReader
 
         override fun memoryUsage(): Long = allocator.allocatedMemory
+
+        override fun cancel() { statement.cancel() }
 
         @Throws(IOException::class)
         override fun close() {
@@ -137,22 +138,13 @@ class QuackDuckBridgeExecutor(
         private fun wrapAsSelect(innerSql: String): String =
             "SELECT * FROM system.main.quack_query_by_name('$ENGINE_CATALOG', '${escapeLiteral(innerSql)}')"
 
-        private val timeZoneFailureWarned = ConcurrentHashMap<String, Boolean>()
-
-        private fun applyServerSideTimeZone(stmt: Statement, zone: String?) {
+        private fun applyTimeZone(stmt: Statement, zone: String?) {
             val z = zone ?: return
-            try {
-                drainWrappedQuery(stmt, "SET TimeZone = '${escapeLiteral(z)}'")
-            } catch (@Suppress("SwallowedException") e: SQLException) {
-                if (timeZoneFailureWarned.putIfAbsent(z, true) == null) {
-                    log.warn(
-                        "duckbridge: Quack server rejected SET TimeZone for zone '%s': %s. " +
-                            "Tier A/B pushdown unaffected; Tier C correctness may diverge.",
-                        z,
-                        e.message?.lineSequence()?.firstOrNull() ?: e.message ?: "(no message)",
-                    )
-                }
-            }
+            // Remote evaluation and the local Arrow timestamp schema must use the same zone.
+            // Never continue after either SET fails: a pushed temporal expression may depend on it.
+            val sql = "SET TimeZone = '${escapeLiteral(z)}'"
+            stmt.execute(sql)
+            drainWrappedQuery(stmt, sql)
         }
 
         private fun closeQuietly(vararg resources: AutoCloseable?) {

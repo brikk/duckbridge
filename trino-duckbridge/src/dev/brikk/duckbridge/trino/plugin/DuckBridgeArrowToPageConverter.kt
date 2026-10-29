@@ -39,6 +39,7 @@ import io.trino.spi.type.RealType.REAL
 import io.trino.spi.type.RowType
 import io.trino.spi.type.SmallintType.SMALLINT
 import io.trino.spi.type.TimeZoneKey
+import io.trino.spi.type.TimeType
 import io.trino.spi.type.TimeZoneKey.UTC_KEY
 import io.trino.spi.type.TimeZoneNotSupportedException
 import io.trino.spi.type.TimestampType
@@ -235,6 +236,12 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                 is TimestampType -> {
                     writeTimestampColumn(type, vector, builder, rowCount)
                 }
+                is TimeType -> {
+                    for (i in 0 until rowCount) {
+                        if (vector.isNull(i)) builder.appendNull()
+                        else DuckBridgeArrowTemporal.appendTime(type, vector, i, builder)
+                    }
+                }
                 is TimestampWithTimeZoneType -> {
                     writeTimestampTzColumn(type, vector, builder, rowCount)
                 }
@@ -385,6 +392,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                 type is MapType -> appendMapEntry(type, vector as MapVector, i, builder as MapBlockBuilder)
                 type is TimestampType -> appendTimestampValue(type, vector, i, builder)
                 type is TimestampWithTimeZoneType -> appendTimestampTzValue(type, vector, i, builder)
+                type is TimeType -> DuckBridgeArrowTemporal.appendTime(type, vector, i, builder)
                 type == UuidType.UUID -> {
                     // Utf8-encoded over the Arrow exchange, like the column-level path.
                     val s = String((vector as VarCharVector).get(i), Charsets.UTF_8)
@@ -425,6 +433,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                     writeTimestampMicrosWithRemainder(type, builder, vector.get(i), 0)
                 is TimeStampNanoVector -> {
                     val nanos = vector.get(i)
+                    DuckBridgeNanos.requireFinite(nanos)
                     writeTimestampMicrosWithRemainder(type, builder,
                             Math.floorDiv(nanos, 1_000L), (Math.floorMod(nanos, 1_000L) * 1_000L).toInt())
                 }
@@ -450,6 +459,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                 }
                 is TimeStampNanoTZVector -> {
                     val nanos = vector.get(i)
+                    DuckBridgeNanos.requireFinite(nanos)
                     writeTimestampTz(type, builder,
                             Math.floorDiv(nanos, 1_000_000L), (Math.floorMod(nanos, 1_000_000L) * 1_000L).toInt(), zone)
                 }
@@ -528,6 +538,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                             continue
                         }
                         val nanos = vector.get(i)
+                        DuckBridgeNanos.requireFinite(nanos)
                         val micros = Math.floorDiv(nanos, 1_000L)
                         val picosOfMicro = (Math.floorMod(nanos, 1_000L) * 1_000L).toInt()
                         writeTimestampMicrosWithRemainder(type, builder, micros, picosOfMicro)
@@ -542,6 +553,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
         }
 
         private fun writeTimestampMicrosWithRemainder(type: TimestampType, builder: BlockBuilder, micros: Long, picosOfMicro: Int) {
+            DuckBridgeArrowTemporal.requirePrecision(type.precision, Math.floorMod(micros, 1_000_000L) * 1_000_000L + picosOfMicro)
             if (type.isShort) {
                 type.writeLong(builder, micros)
             }
@@ -608,6 +620,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                             continue
                         }
                         val nanos = vector.get(i)
+                        DuckBridgeNanos.requireFinite(nanos)
                         val millis = Math.floorDiv(nanos, 1_000_000L)
                         val picosOfMilli = (Math.floorMod(nanos, 1_000_000L) * 1_000L).toInt()
                         writeTimestampTz(type, builder, millis, picosOfMilli, zone)
@@ -659,6 +672,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
         }
 
         private fun writeTimestampTz(type: TimestampWithTimeZoneType, builder: BlockBuilder, epochMillis: Long, picosOfMilli: Int, zone: TimeZoneKey) {
+            DuckBridgeArrowTemporal.requirePrecision(type.precision, Math.floorMod(epochMillis, 1000L) * 1_000_000_000L + picosOfMilli)
             if (type.isShort) {
                 type.writeLong(builder, packDateTimeWithZone(epochMillis, zone))
             }

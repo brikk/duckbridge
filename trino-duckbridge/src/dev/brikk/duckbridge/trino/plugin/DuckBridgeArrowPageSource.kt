@@ -42,7 +42,9 @@ class DuckBridgeArrowPageSource(
 ) : ConnectorPageSource {
     private val allocator: BufferAllocator = RootAllocator()
     private var arrowReader: ArrowReader? = null
-    private var finished = false
+    private val lifecycle = Any()
+    @Volatile private var finished = false
+    @Volatile private var closed = false
     private var completedBytes = 0L
 
     @Deprecated("SPI-deprecated but still abstract in 483", ReplaceWith("getMetrics()"))
@@ -53,15 +55,15 @@ class DuckBridgeArrowPageSource(
 
     override fun isFinished(): Boolean = finished
 
-    override fun getNextSourcePage(): SourcePage? {
+    override fun getNextSourcePage(): SourcePage? = synchronized(lifecycle) {
         if (finished) {
-            return null
+            return@synchronized null
         }
         try {
             val reader = ensureReader()
             if (!reader.loadNextBatch()) {
-                finished = true
-                return null
+                closeResources()
+                return@synchronized null
             }
             val root = reader.vectorSchemaRoot
             val page: Page =
@@ -73,9 +75,17 @@ class DuckBridgeArrowPageSource(
                     converter.convert(root)
                 }
             completedBytes += page.sizeInBytes
-            return SourcePage.create(page)
+            return@synchronized SourcePage.create(page)
         } catch (e: IOException) {
+            closeResources()
             throw io.trino.spi.TrinoException(io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR, "DuckBridge Arrow read failed", e)
+        } catch (e: java.sql.SQLException) {
+            closeResources()
+            throw io.trino.spi.TrinoException(io.trino.plugin.jdbc.JdbcErrorCode.JDBC_ERROR, "DuckBridge Arrow query failed", e)
+        } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) {
+            // Cleanup only: preserve the original conversion failure unchanged.
+            closeResources()
+            throw e
         }
     }
 
@@ -90,6 +100,17 @@ class DuckBridgeArrowPageSource(
     override fun getMemoryUsage(): Long = allocator.allocatedMemory
 
     override fun close() {
+        if (closed) return
+        finished = true
+        // Interrupt outside the read lock: the reader may be executing a native query under it.
+        runCatching { preparedStatement.cancel() }
+        synchronized(lifecycle) { closeResources() }
+    }
+
+    private fun closeResources() {
+        if (closed) return
+        closed = true
+        finished = true
         var suppressed: Throwable? = null
         for (resource in listOfNotNull(arrowReader, preparedStatement, connection, allocator)) {
             try {

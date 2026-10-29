@@ -78,7 +78,7 @@ internal object DuckBridgeScalarColumnMappings {
 
     /** Mapping selected by DuckDB's JDBC type name before the coarser JDBC type-code switch. */
     fun byTypeName(typeName: String?, sessionZone: io.trino.spi.type.TimeZoneKey): ColumnMapping? =
-        when (typeName?.uppercase()) {
+        DuckBridgeNanosColumnMappings.byTypeName(typeName, sessionZone) ?: when (typeName?.uppercase()) {
             "BLOB" -> varbinaryColumnMapping()
             "TIMESTAMP_S" -> timestampColumnMapping(TIMESTAMP_SECONDS)
             "TIMESTAMP_MS" -> timestampColumnMapping(TIMESTAMP_MILLIS)
@@ -100,19 +100,16 @@ internal object DuckBridgeScalarColumnMappings {
             else -> null
         }
 
-    /** Unqualified precision must never inherit a lower-precision generic JDBC-code mapping. */
-    fun isUnqualifiedTemporal(typeName: String?): Boolean =
+    /** Nanos names must never inherit a lower-precision generic JDBC-code mapping. */
+    fun isNanosTemporal(typeName: String?): Boolean =
         when (typeName?.uppercase()) {
-            // Released JDBC 2.0.0.0 and Quack 0.10 preserve naive nanos in their raw getters.
-            // Host read/write/bind/pushdown qualification is still absent: a generic TIMESTAMP(6)
-            // mapping would discard those digits. Zoned nanos also fail Quack's current wire path.
             "TIMESTAMP_NS", "TIMESTAMPTZ_NS", "TIME_NS" -> true
             else -> false
         }
 
     /** Write mapping for the same lossless Trino shapes. DuckDB stores temporal values at micros. */
     fun toWriteMapping(type: Type): WriteMapping? =
-        when (type) {
+        DuckBridgeNanosColumnMappings.write(type) ?: when (type) {
             VARBINARY -> WriteMapping.sliceMapping("blob", varbinaryWriteFunction())
             UUID -> WriteMapping.sliceMapping("uuid", uuidWriteFunction())
             is TimeType ->

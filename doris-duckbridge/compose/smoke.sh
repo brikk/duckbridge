@@ -122,7 +122,7 @@ if [[ -z "$driver_src" ]]; then
     rm -rf "$tmp_extract"
     exit 1
 fi
-expected_driver="quack-jdbc-0.10.0.jar"
+expected_driver="quack-jdbc-0.11.0.jar"
 if [[ "$(basename "$driver_src")" != "${expected_driver}" ]]; then
     log "ERROR: staged Quack driver is '$(basename "$driver_src")' (expected ${expected_driver})."
     rm -rf "$tmp_extract"
@@ -162,7 +162,7 @@ if [[ "${duckdb_version}" != "v2.0.0" ]]; then
     log "DUCKDB VERSION FAIL: Quack server is '${duckdb_version:-<missing>}' (expected v2.0.0)."
     exit 1
 fi
-log "DUCKDB VERSION GREEN: Quack 0.10 driver lane is backed by DuckDB ${duckdb_version}."
+log "DUCKDB VERSION GREEN: Quack 0.11 driver lane is backed by DuckDB ${duckdb_version}."
 
 # Exercise a real restart with persisted metadata. The staged priority_networks setting must keep
 # the FE on the same static identity rather than selecting another container network.

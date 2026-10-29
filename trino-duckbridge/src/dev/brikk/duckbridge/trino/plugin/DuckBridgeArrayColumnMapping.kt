@@ -34,6 +34,8 @@ import io.trino.spi.type.IntegerType.INTEGER
 import io.trino.spi.type.RealType.REAL
 import io.trino.spi.type.SmallintType.SMALLINT
 import io.trino.spi.type.Type
+import io.trino.spi.type.TimestampType
+import io.trino.spi.type.TimeType
 import io.trino.spi.type.VarcharType
 import java.math.BigDecimal
 
@@ -94,6 +96,8 @@ object DuckBridgeArrayColumnMapping {
             "FLOAT", "REAL" -> REAL
             "DOUBLE" -> DOUBLE
             "VARCHAR", "TEXT" -> VarcharType.VARCHAR
+            "TIMESTAMP_NS" -> TimestampType.createTimestampType(9)
+            "TIME_NS" -> TimeType.createTimeType(9)
             else -> null
         }
     }
@@ -128,6 +132,8 @@ object DuckBridgeArrayColumnMapping {
             DOUBLE -> DOUBLE.writeDouble(builder, (element as Number).toDouble())
             is VarcharType -> elementType.writeSlice(builder, Slices.utf8Slice(element.toString()))
             is DecimalType -> appendDecimal(elementType, builder, element)
+            is TimestampType -> elementType.writeObject(builder, DuckBridgeNanos.timestampCarrier(element))
+            is TimeType -> elementType.writeLong(builder, DuckBridgeNanos.time(element as java.time.LocalTime))
             else -> throw TrinoException(NOT_SUPPORTED, "Unsupported array element type: $elementType")
         }
     }

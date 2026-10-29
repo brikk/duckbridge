@@ -1,5 +1,10 @@
 # DuckDB-2 boundary and pool follow-up — 2026-10-29
 
+Later same-day [Quack 0.11/nanos qualification](../../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
+supersedes the 0.10-specific zoned-nanos and unqualified-Trino-nanos status below.
+Keep the raw 0.10 observations as historical evidence; the native-JDBC and Arrow offset
+limitations, Doris precision ceiling and unsafe packed-TIMETZ finding remain relevant.
+
 ## Scope
 
 This closes specific JDBC/Quack observation and pool-reuse gaps, not all of

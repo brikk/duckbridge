@@ -8,15 +8,16 @@ class TestDuckDb2TemporalGuards {
     @Test
     fun testNewNanosNamesCannotUseGenericMicrosecondMappings() {
         for (type in listOf("TIMESTAMP_NS", "TIMESTAMPTZ_NS", "TIME_NS", "timestamp_ns", "time_ns")) {
-            assertThat(DuckBridgeScalarColumnMappings.isUnqualifiedTemporal(type)).describedAs(type).isTrue()
-            assertThat(DuckBridgeScalarColumnMappings.byTypeName(type, UTC_KEY)).describedAs(type).isNull()
+            assertThat(DuckBridgeScalarColumnMappings.isNanosTemporal(type)).describedAs(type).isTrue()
+            val mapping = checkNotNull(DuckBridgeScalarColumnMappings.byTypeName(type, UTC_KEY))
+            assertThat(mapping.type.displayName).describedAs(type).contains("(9)")
         }
     }
 
     @Test
     fun testQualifiedSecondMillisecondAndMicrosecondTypesAreNotBlocked() {
         for (type in listOf("TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMP", "TIMESTAMPTZ", "TIME", "TIMETZ")) {
-            assertThat(DuckBridgeScalarColumnMappings.isUnqualifiedTemporal(type)).describedAs(type).isFalse()
+            assertThat(DuckBridgeScalarColumnMappings.isNanosTemporal(type)).describedAs(type).isFalse()
         }
     }
 }

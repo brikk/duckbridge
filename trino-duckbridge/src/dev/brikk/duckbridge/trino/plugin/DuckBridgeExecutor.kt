@@ -74,6 +74,9 @@ interface DuckBridgeExecutor {
 
         fun memoryUsage(): Long
 
+        /** Request interruption before a page source waits for its in-flight read to finish. */
+        fun cancel() {}
+
         @Throws(IOException::class)
         override fun close()
     }

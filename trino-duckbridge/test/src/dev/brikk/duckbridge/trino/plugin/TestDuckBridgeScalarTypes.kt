@@ -261,13 +261,13 @@ class TestDuckBridgeScalarTypes {
     }
 
     @Test
-    fun temporalWritesAboveMicrosecondPrecisionFailLoud() {
+    fun temporalWritesAboveNanosecondPrecisionFailLoud() {
         assertThatThrownBy {
-            queryRunner.execute("CREATE TABLE too_precise_tz (v timestamp(9) with time zone)")
-        }.hasMessageContaining("Unsupported column type: timestamp(9) with time zone")
+            queryRunner.execute("CREATE TABLE too_precise_tz (v timestamp(12) with time zone)")
+        }.hasMessageContaining("Unsupported column type: timestamp(12) with time zone")
         assertThatThrownBy {
-            queryRunner.execute("CREATE TABLE too_precise_time (v time(9))")
-        }.hasMessageContaining("Unsupported column type: time(9)")
+            queryRunner.execute("CREATE TABLE too_precise_time (v time(12))")
+        }.hasMessageContaining("Unsupported column type: time(12)")
     }
 
     @Test
@@ -277,13 +277,14 @@ class TestDuckBridgeScalarTypes {
                 .associate { it.getField(0) as String to it.getField(1).toString() }
         assertThat(columns).containsEntry("s", "timestamp(0)")
         assertThat(columns).containsEntry("ms", "timestamp(3)")
-        // Released drivers preserve nanos; the host read/write/bind contract is not yet qualified.
-        assertThat(columns).doesNotContainKey("ns")
+        assertThat(columns).containsEntry("ns", "timestamp(9)")
 
-        val row = queryRunner.execute("SELECT s, ms FROM timestamp_precision").materializedRows.single()
+        val row = queryRunner.execute("SELECT s, ms, ns FROM timestamp_precision").materializedRows.single()
         // DuckDB TIMESTAMP_S rounds the inserted fractional value; TIMESTAMP_MS rounds to millis.
         assertThat(row.getField(0).toString()).isEqualTo("2024-01-02T03:04:06")
         assertThat(row.getField(1).toString()).isEqualTo("2024-01-02T03:04:05.988")
+        // This older fixture inserted through a microsecond TIMESTAMP literal before storing ns.
+        assertThat(row.getField(2).toString()).isEqualTo("2024-01-02T03:04:05.987654")
     }
 
     private fun assertFullyPushed(sql: String) {

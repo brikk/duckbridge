@@ -35,7 +35,9 @@ class DuckBridgeExecutorPageSource(
     private val projectedColumnCount: Int,
 ) : ConnectorPageSource {
     private val reader = context.arrowReader()
-    private var finished = false
+    private val lifecycle = Any()
+    @Volatile private var finished = false
+    @Volatile private var closed = false
     private var completedBytes = 0L
 
     @Deprecated("SPI-deprecated but still abstract in 483", ReplaceWith("getMetrics()"))
@@ -46,14 +48,14 @@ class DuckBridgeExecutorPageSource(
 
     override fun isFinished(): Boolean = finished
 
-    override fun getNextSourcePage(): SourcePage? {
+    override fun getNextSourcePage(): SourcePage? = synchronized(lifecycle) {
         if (finished) {
-            return null
+            return@synchronized null
         }
         try {
             if (!reader.loadNextBatch()) {
-                finished = true
-                return null
+                closeResources()
+                return@synchronized null
             }
             val root = reader.vectorSchemaRoot
             val page: Page =
@@ -65,15 +67,30 @@ class DuckBridgeExecutorPageSource(
                     converter.convert(root)
                 }
             completedBytes += page.sizeInBytes
-            return SourcePage.create(page)
+            return@synchronized SourcePage.create(page)
         } catch (e: IOException) {
+            closeResources()
             throw TrinoException(GENERIC_INTERNAL_ERROR, "DuckBridge Quack Arrow read failed", e)
+        } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) {
+            // Cleanup only: preserve the original conversion failure unchanged.
+            closeResources()
+            throw e
         }
     }
 
     override fun getMemoryUsage(): Long = context.memoryUsage()
 
     override fun close() {
+        if (closed) return
+        finished = true
+        runCatching { context.cancel() }
+        synchronized(lifecycle) { closeResources() }
+    }
+
+    private fun closeResources() {
+        if (closed) return
+        closed = true
+        finished = true
         try {
             context.close()
         } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {

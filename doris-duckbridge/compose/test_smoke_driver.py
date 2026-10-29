@@ -36,7 +36,7 @@ class SmokeDriverTests(unittest.TestCase):
             distributions = compose.parent / "build" / "distributions"
             distributions.mkdir(parents=True)
             with zipfile.ZipFile(distributions / "doris-duckbridge-test-plugin.zip", "w") as archive:
-                archive.writestr("lib/quack-jdbc-0.10.0.jar", b"driver")
+                archive.writestr("lib/quack-jdbc-0.11.0.jar", b"driver")
 
             fake_docker = root / "docker"
             fake_docker.write_text(

@@ -56,8 +56,8 @@ internal class TestingQuackServer(
             "Quack test server is '${version.stdout.trim()}', expected DuckDB v2.0.0"
         }
         openConnection().use { connection ->
-            check(connection.metaData.driverVersion == "0.10.0") {
-                "Expected Quack JDBC 0.10.0, got ${connection.metaData.driverVersion}"
+            check(connection.metaData.driverVersion == "0.11.0") {
+                "Expected Quack JDBC 0.11.0, got ${connection.metaData.driverVersion}"
             }
             check((connection as QuackConnection).session().protocolVersion() == 3L) {
                 "DuckDB-2 qualification must exercise negotiated Quack v3"

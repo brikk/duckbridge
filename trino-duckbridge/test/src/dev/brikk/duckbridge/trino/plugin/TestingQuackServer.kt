@@ -16,6 +16,7 @@ package dev.brikk.duckbridge.trino.plugin
 import com.gizmodata.quack.jdbc.sql.QuackConnection
 import com.gizmodata.quack.jdbc.sql.QuackDriver
 import org.testcontainers.containers.GenericContainer
+import org.testcontainers.containers.Network
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.images.builder.ImageFromDockerfile
 import org.testcontainers.utility.MountableFile
@@ -33,7 +34,7 @@ import java.util.Properties
  * Signature verification stays enabled for signed release binaries; local unsigned builds opt in
  * explicitly before DuckDB starts.
  */
-internal class TestingQuackServer : AutoCloseable {
+internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable {
     data class ParityInstallation(val serverPath: String?)
 
     private val container: GenericContainer<*> =
@@ -47,6 +48,7 @@ internal class TestingQuackServer : AutoCloseable {
             )
             .withStartupAttempts(3)
             .waitingFor(Wait.forListeningPort())
+            .apply { if (testNetwork != null) withNetwork(testNetwork).withNetworkAliases("quack") }
 
     val token: String = TOKEN
 
@@ -61,8 +63,8 @@ internal class TestingQuackServer : AutoCloseable {
         ).stdout.trim()
         check(version == "v2.0.0") { "Quack test server version is '$version', expected v2.0.0" }
         quackConnection().use { connection ->
-            check(connection.metaData.driverVersion == "0.10.0") {
-                "Expected Quack JDBC 0.10.0, got ${connection.metaData.driverVersion}"
+            check(connection.metaData.driverVersion == "0.11.0") {
+                "Expected Quack JDBC 0.11.0, got ${connection.metaData.driverVersion}"
             }
             check((connection as QuackConnection).session().protocolVersion() == 3L) {
                 "DuckDB-2 qualification must exercise negotiated Quack v3"
@@ -75,6 +77,11 @@ internal class TestingQuackServer : AutoCloseable {
 
     /** `jdbc:quack://host:mappedPort` — the base-jdbc `connection-url` for the T3 catalog. */
     fun connectionUrl(): String = "jdbc:quack://$host:$mappedPort"
+
+    fun proxyTarget(): String = "quack:$CONTAINER_PORT"
+
+    /** Restart only this fixture's server, preserving its mapped port, never a user's container. */
+    fun restart() { container.dockerClient.restartContainerCmd(container.containerId).withTimeout(0).exec() }
 
     /**
      * Copy the bundled parity extension into the running container, selecting it by the container's
