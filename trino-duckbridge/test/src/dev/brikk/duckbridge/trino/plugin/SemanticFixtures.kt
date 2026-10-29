@@ -260,6 +260,14 @@ object SemanticFixtures {
             add(fx("regexp_replace", 3, "empty-match replacement", call("regexp_replace", VARCHAR, str("abc"), str("x*"), str("-"))))
             add(np("regexp_replace", 3, "`$1` replacement not pushed", call("regexp_replace", VARCHAR, str("abc"), str("(b)"), str("[$1]"))))
             add(np("regexp_replace", 3, "backslash replacement not pushed", call("regexp_replace", VARCHAR, str("abc"), str("(b)"), str("\\1"))))
+            add(fx("regexp_count", 2, "nonoverlapping literal", call("regexp_count", BIGINT, str("ababa"), str("aba"))))
+            add(fx("regexp_count", 2, "ASCII positive class", call("regexp_count", BIGINT, str("a12b3"), str("[0-9]+"))))
+            add(fx("regexp_count", 2, "Unicode input", call("regexp_count", BIGINT, str("😀aéáa"), str("a"))))
+            add(fx("regexp_count", 2, "empty source", call("regexp_count", BIGINT, str(""), str("a"))))
+            add(fx("regexp_count", 2, "no match", call("regexp_count", BIGINT, str("xyz"), str("a+"))))
+            add(np("regexp_count", 2, "empty pattern stays local", call("regexp_count", BIGINT, str("abc"), str(""))))
+            add(np("regexp_count", 2, "lookaround stays local", call("regexp_count", BIGINT, str("ab"), str("(?<=a)b"))))
+            add(np("regexp_count", 2, "dynamic pattern stays local", call("regexp_count", BIGINT, str("abc"), Variable("pattern", VARCHAR))))
         }
 
     // ---- Date / time -------------------------------------------------------------------------

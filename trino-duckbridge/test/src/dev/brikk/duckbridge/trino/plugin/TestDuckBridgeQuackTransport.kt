@@ -224,6 +224,30 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
     }
 
     @Test
+    fun regexpCountUsesOnlyTheQualifiedSubsetOverQuack() {
+        computeActual("CREATE TABLE regexp_count_cases(id bigint, s varchar, p varchar)")
+        try {
+            computeActual("INSERT INTO regexp_count_cases VALUES " +
+                "(1,'ababa','a'),(2,'a😀a','a'),(3,'',''),(4,NULL,'a')," +
+                "(5,'a' || chr(10) || 'a','a'),(6,'12345','[0-9]+'),(7,'aa',NULL)")
+            val accepted = "SELECT id FROM regexp_count_cases WHERE regexp_count(s,'a')=2 ORDER BY id"
+            assertThat(explain(accepted)).doesNotContain("filterPredicate")
+            assertThat(computeActual(accepted).materializedRows.map { it.getField(0) }).containsExactly(2L, 5L, 7L)
+            val digits = "SELECT id FROM regexp_count_cases WHERE regexp_count(s,'[0-9]+')=1"
+            assertThat(explain(digits)).doesNotContain("filterPredicate")
+            assertThat(computeActual(digits).onlyValue).isEqualTo(6L)
+            val lookaround = "SELECT id FROM regexp_count_cases WHERE regexp_count(s,'(?=a)')>0 ORDER BY id"
+            assertThat(explain(lookaround)).contains("filterPredicate")
+            assertThat(computeActual(lookaround).materializedRows.map { it.getField(0) }).containsExactly(1L, 2L, 5L, 7L)
+            val dynamic = "SELECT id FROM regexp_count_cases WHERE regexp_count(s,p)>0 ORDER BY id"
+            assertThat(explain(dynamic)).contains("filterPredicate")
+            assertThat(computeActual(dynamic).materializedRows.map { it.getField(0) }).containsExactly(1L, 2L, 3L, 5L, 6L)
+        } finally {
+            computeActual("DROP TABLE regexp_count_cases")
+        }
+    }
+
+    @Test
     fun domainPushdownIsProvenOverQuack() {
         // A simple range predicate pushes through base-jdbc's domain path onto the remote TableScan.
         val plan = explain("SELECT id FROM t WHERE id >= 3")

@@ -157,6 +157,9 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
             Case("INLINE regexp_extract no-match NULL", "regexp_extract(s, '[0-9]+') IS NULL"),
             Case("RENAME regexp_like RE2-safe", "regexp_like(s, '^[a-z]+')"),
             Case("INLINE regexp_replace global", "regexp_replace(s, '[0-9]', '_') = 'abc___'"),
+            Case("INLINE regexp_count positive class", "regexp_count(s, '[a-z]+') > 0"),
+            Case("INLINE regexp_count no match/NULL", "regexp_count(s, '[0-9]+') = 0"),
+            Case("INLINE regexp_count nested OR/NULL", "regexp_count(s, 'a') > 0 OR regexp_count(s, '[0-9]+') = 1"),
             Case("date_diff complete month units", "date_diff('month', d, d2) = 0"),
             Case("millisecond is millis-of-second", "millisecond(ts) = 123"),
             Case(

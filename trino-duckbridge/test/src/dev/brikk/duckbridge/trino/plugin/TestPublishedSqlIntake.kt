@@ -34,8 +34,11 @@ class TestPublishedSqlIntake : AbstractTestQueryFramework() {
     private data class RemoteOutcome(val value: Value?, val error: String = "")
 
     @Test
-    fun recordsPublishedRegexLoweringsWithoutEnablingThem() {
-        assertThat(DuckBridgeExpressionTranslator.PUSHABLE_FUNCTIONS).noneMatch { it.name == "regexp_count" }
+    fun recordsPublishedRegexLoweringsWithoutAuthorizingGenericPatterns() {
+        // Availability is now bounded by the qualified positive-atom gate; generic published SQL
+        // still does not authorize lookarounds or the other unqualified pattern shapes.
+        assertThat(RegexpCountSafety.isSafe("(?<=a)b")).isFalse()
+        assertThat(RegexpCountSafety.isSafe("(?=a)")).isFalse()
         val lines = checkNotNull(javaClass.getResourceAsStream("/function-intake/brikk-sql-regexp-count.tsv"))
             .bufferedReader().use { it.readLines() }
         check(lines.first() == "source\tcase\tinput_sql\tduckdb_sql\tstatus")

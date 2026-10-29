@@ -133,6 +133,9 @@ internal object DuckBridgeEmissionCatalog {
             // match guard so a genuine empty match still yields '' and a non-match yields NULL.
             put(NameArity("regexp_extract", 2), Emission.Inline { a -> guardedRegexpExtract(a[0], a[1], group = null) })
             put(NameArity("regexp_extract", 3), Emission.Inline { a -> guardedRegexpExtract(a[0], a[1], group = a[2]) })
+            // Count only the qualified, non-nullable ASCII-atom grammar. The broader RE2-safe
+            // match gate is not a proof of repeated/zero-width match iteration semantics.
+            put(NameArity("regexp_count", 2), Emission.Inline { a -> "length(regexp_extract_all(${a[0]}, ${a[1]}))" })
             // Date / time
             put(NameArity("year", 1), Emission.Bare)
             put(NameArity("month", 1), Emission.Bare)
@@ -289,6 +292,7 @@ internal object DuckBridgeEmissionCatalog {
         gates[NameArity("regexp_like", 2)] = re2SafePattern
         gates[NameArity("regexp_extract", 2)] = re2SafePattern
         gates[NameArity("regexp_extract", 3)] = re2SafePattern
+        gates[NameArity("regexp_count", 2)] = regexpCountGate()
         gates[NameArity("regexp_replace", 2)] = re2SafePattern
         gates[NameArity("regexp_replace", 3)] =
             ArgTypeGate { args, session ->
@@ -310,6 +314,10 @@ internal object DuckBridgeEmissionCatalog {
     /** Units `date_diff` pushes as `date_sub`; verified complete-unit semantics on both engines. */
     private val DATE_DIFF_UNITS: Set<String> =
         setOf("millisecond", "second", "minute", "hour", "day", "week", "month", "quarter", "year")
+
+    private fun regexpCountGate(): ArgTypeGate = ArgTypeGate { args, _ ->
+        args[0].type is VarcharType && constVarchar(args, 1)?.let(RegexpCountSafety::isSafe) == true
+    }
 
     /** The UTF-8 string of a constant VARCHAR argument at [index], or null if it isn't one. */
     private fun constVarchar(args: List<ConnectorExpression>, index: Int): String? {
