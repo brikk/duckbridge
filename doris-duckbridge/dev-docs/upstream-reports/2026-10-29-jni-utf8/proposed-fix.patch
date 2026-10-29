@@ -1,0 +1,60 @@
+--- a/be/src/util/jni-util.h
++++ b/be/src/util/jni-util.h
+@@ -20,6 +20,7 @@
+ #include <butil/macros.h>
+ #include <jni.h>
+ #include <limits.h>
++#include <simdutf.h>
+ #include <stddef.h>
+ #include <stdint.h>
+
+@@ -806,6 +807,36 @@
+         return Status::OK();
+     }
+
++    // C++ scanner parameters contain standard UTF-8, not JNI modified UTF-8.
++    static Status new_string_utf8(JNIEnv* env, const std::string& utf_chars, String<Ref>* result) {
++        DCHECK(result->uninitialized());
++        if constexpr (Ref == Global) {
++            String<Local> local_result;
++            RETURN_IF_ERROR(String<Local>::new_string_utf8(env, utf_chars, &local_result));
++            return local_to_global_ref(env, local_result, result);
++        } else {
++            static_assert(Ref == Local);
++            if (utf_chars.size() > static_cast<size_t>(INT_MAX)) {
++                return Status::InvalidArgument("UTF-8 string exceeds JNI allocation bound");
++            }
++            // UTF-8 byte length is an upper bound on the UTF-16 code-unit count.
++            std::u16string utf16(utf_chars.size(), u'\0');
++            const auto converted = simdutf::convert_utf8_to_utf16_with_errors(
++                    utf_chars.data(), utf_chars.size(), utf16.data());
++            if (converted.error != simdutf::SUCCESS) {
++                return Status::InvalidArgument("Invalid UTF-8 in JNI string at byte {}",
++                                               converted.count);
++            }
++            result->_obj = env->NewString(reinterpret_cast<const jchar*>(utf16.data()),
++                                         static_cast<jsize>(converted.count));
++            RETURN_ERROR_IF_EXC(env);
++            if (result->_obj == nullptr) {
++                return Status::JniError("Failed to allocate UTF-16 Java string");
++            }
++            return Status::OK();
++        }
++    }
++
+     Status get_string_chars(JNIEnv* env, StringBufferGuard<Ref>* jni_chars) const {
+         return StringBufferGuard<Ref>::create(env, *this, jni_chars, nullptr);
+     }
+@@ -1169,10 +1200,10 @@
+
+         for (const auto& it : map) {
+             LocalString key;
+-            RETURN_IF_ERROR(String<Local>::new_string(env, it.first.c_str(), &key));
++            RETURN_IF_ERROR(String<Local>::new_string_utf8(env, it.first, &key));
+
+             LocalString value;
+-            RETURN_IF_ERROR(String<Local>::new_string(env, it.second.c_str(), &value));
++            RETURN_IF_ERROR(String<Local>::new_string_utf8(env, it.second, &value));
+
+             LocalObject result;
+             RETURN_IF_ERROR(hashmap_object->call_object_method(env, hashmap_put)
