@@ -57,14 +57,14 @@ object GeneratedSqlAudit {
         }
     }
 
-    private fun verifyDuck(duck: Connection): String = duck.createStatement().use { statement ->
+    internal fun verifyDuck(duck: Connection): String = duck.createStatement().use { statement ->
         statement.executeQuery("SELECT version()").use { rows ->
             check(rows.next()) { "DuckDB oracle returned no version" }
             rows.getString(1).also { check(it == "v2.0.0") { "Expected DuckDB v2.0.0 oracle, got $it" } }
         }
     }
 
-    private fun verifySource(host: Connection, expected: String) {
+    internal fun verifySource(host: Connection, expected: String) {
         for (statement in listOf("SHOW FRONTENDS", "SHOW BACKENDS")) {
             host.createStatement().use { query ->
                 query.executeQuery(statement).use { rows ->
@@ -162,6 +162,8 @@ object GeneratedSqlAudit {
             }
         }
     }
+
+    internal fun scalarObservation(connection: Connection, sql: String): JsonObject = describe(execute(connection, sql)).jsonObject
 
     private fun JsonObject.string(key: String): String = getValue(key).jsonPrimitive.content
 }

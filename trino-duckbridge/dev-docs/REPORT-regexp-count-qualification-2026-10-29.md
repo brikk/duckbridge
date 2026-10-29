@@ -67,3 +67,7 @@ matrix evidence: `trino-duckbridge/build/function-audit/regexp-count-qualified.t
 Full Trino `check` and `verifyPluginAssembly` passed: **660 tests, zero failures,
 errors or skips** (`build/regexp-count-full-check.log`). No extension binary,
 engine version, driver version or string-pushdown trust setting was changed.
+
+The final combined follow-up, including two added temporal-guard tests, passes
+**662 Trino tests** with zero failures/errors/skips; see
+`build/function-followup-final-checks.log`.

@@ -465,6 +465,13 @@ This is an opportunity, not an upgrade requirement.
 
 ## DB20-13: new SQL and function intake
 
+October-29 follow-up: [JSON INSERT/REMOVE](../doris-duckbridge/dev-docs/REPORT-json-mutations-2026-10-29.md)
+has 735 typed native observations and remains unpushed due to concrete value/NULL/path/error
+differences. [Trino REGEXP_COUNT](../trino-duckbridge/dev-docs/REPORT-regexp-count-qualification-2026-10-29.md)
+now admits only the proved nonempty consuming-ASCII grammar; 728 typed native comparisons plus
+embedded/Quack plan and row-set checks pass. OVERLAY is a test-only prototype, blocked by the
+reported Doris JNI UTF-8 bug; it is not in the production allowlist.
+
 **Why:** 2.0 adds functions and syntax, but availability in DuckDB is not evidence
 of Trino/Doris parity.
 
@@ -517,6 +524,13 @@ changes.
 
 ## DB20-15: boundary type and precision changes
 
+October-29 [boundary capture](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md)
+records actual JDBC/Quack NULL/CTAS/nested/temporal metadata and getters. The released drivers
+preserve naive nanos; old driver-truncation claims are corrected, but host nanos mappings remain
+unqualified and guarded. Doris untyped NULL errors are actionable; packed TIMETZ is rejected
+before falsely advertising time text. Arrow, broader temporal extremes and full host support
+remain open; the checkboxes below include those wider gates.
+
 **Why:** several type-system changes are not headline features but cross every
 JDBC/Arrow/Quack boundary we own.
 
@@ -559,6 +573,11 @@ microsecond `TIMESTAMP`, has no explicit `TIMESTAMPTZ` arm, while Doris recogniz
 with a named contract, or rejected before scan execution.
 
 ## DB20-16: transactions, retries, and prepared statements
+
+October-29 [pool subgate](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md):
+real Quack 0.10/Hikari 6.0 single-slot reuse passes parser/binder/execution-error recovery,
+aborted-transaction rollback on pool return, prepared rebinding and early result close. This
+does not close the remaining catalog-conflict, network/cancel, schema-change or Arrow gates.
 
 **Why:** DuckDB #22674 makes every parser/binder/execution error invalidate an
 explicit transaction by default, and #24273 reimplements C++ prepared statements

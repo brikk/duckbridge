@@ -105,6 +105,28 @@ class TestDuckDbToDorisTypeMapper {
     }
 
     @Test
+    fun untypedNullReportsTheActualDriverNamesAndAnActionableError() {
+        for (type in listOf("NULL", "\"NULL\"", "SQLNULL", "NULL[]", "\"NULL\"[]")) {
+            assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType(type, "untyped_value") }
+                .isInstanceOf(DorisConnectorException::class.java)
+                .hasMessageContaining("untyped_value")
+                .hasMessageContaining("untyped SQL NULL")
+                .hasMessageContaining("typed CAST")
+        }
+        assertThat(map("INTEGER").typeName).isEqualTo("INT") // typed NULL keeps its declared type
+    }
+
+    @Test
+    fun packedTimetzMustNotMasqueradeAsTimeText() {
+        for (type in listOf("TIMETZ", "TIME WITH TIME ZONE", "TIMETZ[]")) {
+            assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType(type, "offset_time") }
+                .isInstanceOf(DorisConnectorException::class.java)
+                .hasMessageContaining("offset_time")
+                .hasMessageContaining("packed TIMETZ bits")
+        }
+    }
+
+    @Test
     fun failsLoudOnUnmappable() {
         assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType("INTERVAL", "span") }
             .isInstanceOf(DorisConnectorException::class.java)

@@ -92,6 +92,9 @@ internal object DuckDbToDorisTypeMapper {
         enableTimestampTz: Boolean,
     ): ConnectorType =
         when (normalized) {
+            "null", "\"null\"", "sqlnull" -> failLoud(
+                columnName, raw, "untyped SQL NULL needs an explicit supported source type; use a typed CAST",
+            )
             "boolean", "bool" -> ConnectorType.of("BOOLEAN")
 
             "tinyint", "int1" -> ConnectorType.of("TINYINT")
@@ -139,7 +142,9 @@ internal object DuckDbToDorisTypeMapper {
             } else {
                 ConnectorType.of("DATETIMEV2", MICROS_SCALE, 0)
             }
-            "time with time zone", "timetz" -> ConnectorType.of("STRING")
+            "time with time zone", "timetz" -> failLoud(
+                columnName, raw, "Quack getString exposes packed TIMETZ bits; a faithful time-text mapping is not qualified",
+            )
 
             // JSON → STRING in v1 (plan §The dialect gap); round-trippable as text.
             "json" -> ConnectorType.of("STRING")

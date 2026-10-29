@@ -1,5 +1,11 @@
 # Published brikk-sql intake — 2026-10-28
 
+October-29 follow-up: [expanded JSON mutation audit](REPORT-json-mutations-2026-10-29.md),
+[boundary/pool checks](REPORT-boundaries-lifecycle-2026-10-29.md), and a
+[separately qualified Trino REGEXP_COUNT subset](../../trino-duckbridge/dev-docs/REPORT-regexp-count-qualification-2026-10-29.md).
+The no-new-pushdown outcome below describes this initial generic-generator intake;
+the later guarded Trino mapping does not widen the published generator's authority.
+
 ## Outcome
 
 **Stable `brikk-sql` / `brikk-sql-metadata` 0.21.0 is integrated as Java-17 audit

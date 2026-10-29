@@ -60,6 +60,11 @@ Published function metadata/transpiler libraries are opt-in **audit-only** depen
 plugin/runtime dependencies. Java-17 capture, overload/type diff and native semantic probes:
 [`dev-docs/REPORT-published-function-intake-2026-10-28.md`](dev-docs/REPORT-published-function-intake-2026-10-28.md).
 
+Current follow-up: [JSON mutation blockers](dev-docs/REPORT-json-mutations-2026-10-29.md) and
+[boundary/pool contracts](dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md). Untyped NULL
+requires a declared source type; TIMETZ currently fails rather than exposing packed wire bits
+as time text. OVERLAY remains a [test-only blocked candidate](dev-docs/REPORT-overlay-qualification-2026-10-29.md).
+
 Integration testing uses the compose environment in [`compose/`](compose/):
 
 - `compose/docker-compose.yml` — `doris-fe` (pristine pinned master FE + our plugin), `doris-be`

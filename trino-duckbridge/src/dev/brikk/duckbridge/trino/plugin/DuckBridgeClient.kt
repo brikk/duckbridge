@@ -300,10 +300,9 @@ class DuckBridgeClient
             }
             DuckBridgeScalarColumnMappings.byTypeName(typeHandle.jdbcTypeName().orElse(null), session.timeZoneKey)
                 ?.let { return Optional.of(it) }
-            if (DuckBridgeScalarColumnMappings.isLossyUnsupported(typeHandle.jdbcTypeName().orElse(null))) {
-                // Do not fall through to Types.TIMESTAMP -> TIMESTAMP_MICROS: TIMESTAMP_NS is already
-                // truncated by DuckDB JDBC — including getString(), so even CONVERT_TO_VARCHAR would
-                // silently lose digits. Fail closed regardless of generic unsupported-type policy.
+            if (DuckBridgeScalarColumnMappings.isUnqualifiedTemporal(typeHandle.jdbcTypeName().orElse(null))) {
+                // A shared JDBC code is not a precision contract. Keep new nanos types out of
+                // generic microsecond mappings until the host read/write/bind path is qualified.
                 return Optional.empty()
             }
             when (typeHandle.jdbcType()) {

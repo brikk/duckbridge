@@ -271,12 +271,13 @@ class TestDuckBridgeScalarTypes {
     }
 
     @Test
-    fun timestampVariantsExposeOnlyThePrecisionJdbcCanPreserve() {
+    fun timestampVariantsExposeOnlyQualifiedHostPrecision() {
         val columns =
             queryRunner.execute("SHOW COLUMNS FROM timestamp_precision").materializedRows
                 .associate { it.getField(0) as String to it.getField(1).toString() }
         assertThat(columns).containsEntry("s", "timestamp(0)")
         assertThat(columns).containsEntry("ms", "timestamp(3)")
+        // Released drivers preserve nanos; the host read/write/bind contract is not yet qualified.
         assertThat(columns).doesNotContainKey("ns")
 
         val row = queryRunner.execute("SELECT s, ms FROM timestamp_precision").materializedRows.single()

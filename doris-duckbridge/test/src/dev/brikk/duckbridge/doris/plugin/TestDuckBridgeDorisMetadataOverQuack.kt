@@ -73,6 +73,7 @@ class TestDuckBridgeDorisMetadataOverQuack {
             )
             """.trimIndent(),
             "CREATE TABLE sales.simple (id BIGINT, name VARCHAR)",
+            "CREATE TABLE sales.unsupported_timetz (offset_time TIMETZ)",
             // Unicode table + column names.
             "CREATE TABLE sales.\"tãble_ünï\" (\"cölumn_ä\" INTEGER, val VARCHAR)",
         )
@@ -118,6 +119,15 @@ class TestDuckBridgeDorisMetadataOverQuack {
         val names = schema.columns.map { it.name }
         assertThat(names).containsExactly("cölumn_ä", "val")
         assertThat(metadata.getTableHandle(null, "sales", "no_such_table")).isEmpty
+    }
+
+    @Test
+    fun rejectsPackedTimetzBeforeAdvertisingAFalseStringContract() {
+        val handle = metadata.getTableHandle(null, "sales", "unsupported_timetz").get()
+        org.assertj.core.api.Assertions.assertThatThrownBy { metadata.getColumnHandles(null, handle) }
+            .isInstanceOf(org.apache.doris.connector.spi.DorisConnectorException::class.java)
+            .hasMessageContaining("offset_time")
+            .hasMessageContaining("packed TIMETZ bits")
     }
 
     @Test

@@ -104,6 +104,7 @@ dependencies {
     add(functionAudit.implementationConfigurationName, brikkSqlAuditVersion?.let { "dev.brikk.house:brikk-sql-jvm:$it" } ?: libs.brikk.sql)
     add(functionAudit.implementationConfigurationName, brikkSqlAuditVersion?.let { "dev.brikk.house:brikk-sql-metadata-jvm:$it" } ?: libs.brikk.sql.metadata)
     add(functionAudit.runtimeOnlyConfigurationName, libs.duckdb.jdbc)
+    add(functionAudit.runtimeOnlyConfigurationName, libs.doris.quack.jdbc)
     add(functionAudit.runtimeOnlyConfigurationName, "org.mariadb.jdbc:mariadb-java-client:3.0.9")
     add(functionAudit.implementationConfigurationName, "org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     // FE supplies these via the parent classloader at runtime — compile-only, so the plugin jar
@@ -134,6 +135,8 @@ dependencies {
     // test classpath explicitly too.
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.doris.quack.jdbc)
+    // Match the pinned Doris BE scanner's pool library; never bundle it into the FE plugin.
+    testImplementation("com.zaxxer:HikariCP:6.0.0")
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -229,6 +232,44 @@ val auditGeneratedSql by tasks.registering(JavaExec::class) {
     args(metadata.absolutePath,
         providers.gradleProperty("functionAuditDorisUrl").getOrElse("jdbc:mariadb://127.0.0.1:9030"),
         functionAuditDorisVersion)
+}
+
+val auditOverlayTypes by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Verify native Doris/DuckDB OVERLAY values, strict NULLs and actual JDBC return contracts"
+    dependsOn(functionAudit.classesTaskName)
+    classpath = functionAudit.runtimeClasspath
+    mainClass.set("dev.brikk.duckbridge.doris.audit.OverlayTypeAudit")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+    maxHeapSize = "256m"
+    args(layout.buildDirectory.file("function-audit/overlay-types.json").get().asFile.absolutePath,
+        providers.gradleProperty("functionAuditDorisUrl").getOrElse("jdbc:mariadb://127.0.0.1:9030"),
+        functionAuditDorisVersion)
+}
+
+val auditJsonMutations by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Compare native JSON INSERT/REMOVE paths, duplicate keys, SQL/JSON NULL and errors without enabling pushdown"
+    dependsOn(functionAudit.classesTaskName, verifyPublishedAuditBytecode)
+    classpath = functionAudit.runtimeClasspath
+    mainClass.set("dev.brikk.duckbridge.doris.audit.JsonMutationAudit")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+    maxHeapSize = "512m"
+    args(layout.buildDirectory.file("function-audit/json-mutations.json").get().asFile.absolutePath,
+        providers.gradleProperty("functionAuditDorisUrl").getOrElse("jdbc:mariadb://127.0.0.1:9030"),
+        functionAuditDorisVersion)
+}
+
+val auditBoundaryTypes by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Capture DuckDB-2 NULL/nested/temporal metadata and getters on independent JDBC and Quack sessions"
+    dependsOn(functionAudit.classesTaskName, verifyPublishedAuditBytecode)
+    classpath = functionAudit.runtimeClasspath
+    mainClass.set("dev.brikk.duckbridge.doris.audit.DuckDbBoundaryAudit")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+    maxHeapSize = "512m"
+    args(layout.buildDirectory.file("function-audit/boundary-types.json").get().asFile.absolutePath,
+        providers.gradleProperty("functionAuditQuackUrl").getOrElse("jdbc:quack://127.0.0.1:9494"))
 }
 
 val verifyFunctionAuditIsolation by tasks.registering {

@@ -100,12 +100,13 @@ internal object DuckBridgeScalarColumnMappings {
             else -> null
         }
 
-    /** Types the current JDBC drivers cannot expose losslessly and must never hit a generic mapping. */
-    fun isLossyUnsupported(typeName: String?): Boolean =
+    /** Unqualified precision must never inherit a lower-precision generic JDBC-code mapping. */
+    fun isUnqualifiedTemporal(typeName: String?): Boolean =
         when (typeName?.uppercase()) {
-            // duckdb_jdbc 2.0.0 truncates TIMESTAMP_NS to micros through getObject, getTimestamp AND
-            // getString; labelling that value TIMESTAMP(9) or TIMESTAMP(6) would silently lose data.
-            "TIMESTAMP_NS" -> true
+            // Released JDBC 2.0.0.0 and Quack 0.10 preserve naive nanos in their raw getters.
+            // Host read/write/bind/pushdown qualification is still absent: a generic TIMESTAMP(6)
+            // mapping would discard those digits. Zoned nanos also fail Quack's current wire path.
+            "TIMESTAMP_NS", "TIMESTAMPTZ_NS", "TIME_NS" -> true
             else -> false
         }
 

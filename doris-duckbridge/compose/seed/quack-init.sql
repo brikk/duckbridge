@@ -65,3 +65,25 @@ INSERT INTO sales.function_inputs VALUES
     (5, '{"a.b":1}'),
     (6, '[1,null,{"a":1}]'),
     (7, 'invalid');
+
+-- OVERLAY qualification: mix ASCII/UTF-8 in one vector and preserve NULL/empty boundaries.
+CREATE TABLE IF NOT EXISTS sales.overlay_inputs (id INTEGER, source VARCHAR, replacement VARCHAR);
+INSERT INTO sales.overlay_inputs VALUES
+    (1, 'abcd', 'X'),
+    (2, 'a😀bc', '界'),
+    (3, 'straße', 'é'),
+    (4, 'éxy', '👨‍👩‍👧'),
+    (5, '', 'X'),
+    (6, NULL, 'X'),
+    (7, 'abcd', NULL),
+    (8, 'abcd', ''),
+    (9, 'a', 'long replacement'),
+    (10, 'ab''cd', 'x''y'),
+    (11, 'abc', '😀'),
+    (12, '👨‍👩‍👧z', 'q'),
+    (13, '中文测试', 'ß'),
+    (14, '', NULL);
+
+-- TIME WITH TIME ZONE is a packed wire value in Quack 0.10, not getString() time text.
+CREATE TABLE IF NOT EXISTS sales.timetz_boundary (id INTEGER, value TIMETZ);
+INSERT INTO sales.timetz_boundary VALUES (1, TIMETZ '12:34:56.123456+05:30'), (2, NULL);
