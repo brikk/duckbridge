@@ -24,6 +24,9 @@ import org.duckdb.DuckDBConnection
 import org.duckdb.DuckDBResultSet
 import java.io.IOException
 import java.sql.PreparedStatement
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * T2 Arrow page source: streams `DuckDBResultSet.arrowExportStream` batches from a prepared DuckDB
@@ -42,7 +45,7 @@ class DuckBridgeArrowPageSource(
 ) : ConnectorPageSource {
     private val allocator: BufferAllocator = RootAllocator()
     private var arrowReader: ArrowReader? = null
-    private val lifecycle = Any()
+    private val lifecycle = ReentrantLock()
     @Volatile private var finished = false
     @Volatile private var closed = false
     private var completedBytes = 0L
@@ -55,15 +58,15 @@ class DuckBridgeArrowPageSource(
 
     override fun isFinished(): Boolean = finished
 
-    override fun getNextSourcePage(): SourcePage? = synchronized(lifecycle) {
+    override fun getNextSourcePage(): SourcePage? = lifecycle.withLock {
         if (finished) {
-            return@synchronized null
+            return@withLock null
         }
         try {
             val reader = ensureReader()
             if (!reader.loadNextBatch()) {
                 closeResources()
-                return@synchronized null
+                return@withLock null
             }
             val root = reader.vectorSchemaRoot
             val page: Page =
@@ -75,7 +78,7 @@ class DuckBridgeArrowPageSource(
                     converter.convert(root)
                 }
             completedBytes += page.sizeInBytes
-            return@synchronized SourcePage.create(page)
+            return@withLock SourcePage.create(page)
         } catch (e: IOException) {
             closeResources()
             throw io.trino.spi.TrinoException(io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR, "DuckBridge Arrow read failed", e)
@@ -102,14 +105,23 @@ class DuckBridgeArrowPageSource(
     override fun close() {
         if (closed) return
         finished = true
-        // Interrupt outside the read lock: the reader may be executing a native query under it.
-        runCatching { preparedStatement.cancel() }
-        synchronized(lifecycle) { closeResources() }
+        var interrupted = false
+        try {
+            while (!closed) {
+                // A cancel before native execute starts is a no-op. Keep requesting interruption
+                // while the sole owned read holds the lock; never retry the query or free its data.
+                runCatching { preparedStatement.cancel() }
+                val acquired = try { lifecycle.tryLock(10, TimeUnit.MILLISECONDS) }
+                    catch (_: InterruptedException) { interrupted = true; false }
+                if (acquired) {
+                    try { closeResources(); return } finally { lifecycle.unlock() }
+                }
+            }
+        } finally { if (interrupted) Thread.currentThread().interrupt() }
     }
 
     private fun closeResources() {
         if (closed) return
-        closed = true
         finished = true
         var suppressed: Throwable? = null
         for (resource in listOfNotNull(arrowReader, preparedStatement, connection, allocator)) {
@@ -121,6 +133,7 @@ class DuckBridgeArrowPageSource(
                 }
             }
         }
+        closed = true
         suppressed?.let { log.warn(it, "Error closing DuckBridge Arrow page source") }
     }
 

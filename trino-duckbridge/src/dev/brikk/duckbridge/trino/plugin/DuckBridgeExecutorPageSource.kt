@@ -20,6 +20,9 @@ import io.trino.spi.TrinoException
 import io.trino.spi.connector.ConnectorPageSource
 import io.trino.spi.connector.SourcePage
 import java.io.IOException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * T2 Arrow page source over a [DuckBridgeExecutor.ExecutionContext] (the QUACK engine). The executor
@@ -35,7 +38,7 @@ class DuckBridgeExecutorPageSource(
     private val projectedColumnCount: Int,
 ) : ConnectorPageSource {
     private val reader = context.arrowReader()
-    private val lifecycle = Any()
+    private val lifecycle = ReentrantLock()
     @Volatile private var finished = false
     @Volatile private var closed = false
     private var completedBytes = 0L
@@ -48,14 +51,14 @@ class DuckBridgeExecutorPageSource(
 
     override fun isFinished(): Boolean = finished
 
-    override fun getNextSourcePage(): SourcePage? = synchronized(lifecycle) {
+    override fun getNextSourcePage(): SourcePage? = lifecycle.withLock {
         if (finished) {
-            return@synchronized null
+            return@withLock null
         }
         try {
             if (!reader.loadNextBatch()) {
                 closeResources()
-                return@synchronized null
+                return@withLock null
             }
             val root = reader.vectorSchemaRoot
             val page: Page =
@@ -67,7 +70,7 @@ class DuckBridgeExecutorPageSource(
                     converter.convert(root)
                 }
             completedBytes += page.sizeInBytes
-            return@synchronized SourcePage.create(page)
+            return@withLock SourcePage.create(page)
         } catch (e: IOException) {
             closeResources()
             throw TrinoException(GENERIC_INTERNAL_ERROR, "DuckBridge Quack Arrow read failed", e)
@@ -83,18 +86,28 @@ class DuckBridgeExecutorPageSource(
     override fun close() {
         if (closed) return
         finished = true
-        runCatching { context.cancel() }
-        synchronized(lifecycle) { closeResources() }
+        var interrupted = false
+        try {
+            while (!closed) {
+                runCatching { context.cancel() }
+                val acquired = try { lifecycle.tryLock(10, TimeUnit.MILLISECONDS) }
+                    catch (_: InterruptedException) { interrupted = true; false }
+                if (acquired) {
+                    try { closeResources(); return } finally { lifecycle.unlock() }
+                }
+            }
+        } finally { if (interrupted) Thread.currentThread().interrupt() }
     }
 
     private fun closeResources() {
         if (closed) return
-        closed = true
         finished = true
         try {
             context.close()
         } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
             log.warn(t, "Error closing DuckBridge Quack Arrow page source")
+        } finally {
+            closed = true
         }
     }
 
