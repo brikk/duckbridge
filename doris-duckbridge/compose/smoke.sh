@@ -122,11 +122,22 @@ if [[ -z "$driver_src" ]]; then
     rm -rf "$tmp_extract"
     exit 1
 fi
-expected_driver="quack-jdbc-0.11.0.jar"
+expected_driver="quack-jdbc-${DUCKBRIDGE_QUALIFICATION_QUACK_VERSION:-0.11.0}.jar"
 if [[ "$(basename "$driver_src")" != "${expected_driver}" ]]; then
     log "ERROR: staged Quack driver is '$(basename "$driver_src")' (expected ${expected_driver})."
     rm -rf "$tmp_extract"
     exit 1
+fi
+if [[ -n "${DUCKBRIDGE_QUALIFICATION_QUACK_VERSION:-}" ]]; then
+    [[ -n "${DUCKBRIDGE_QUALIFICATION_QUACK_SHA256:-}" ]] || {
+        log "ERROR: an explicit qualification driver version requires its exact SHA-256."
+        exit 1
+    }
+    actual_driver_sha=$(sha256sum "$driver_src" | cut -d' ' -f1)
+    [[ "$actual_driver_sha" == "$DUCKBRIDGE_QUALIFICATION_QUACK_SHA256" ]] || {
+        log "ERROR: qualification driver bytes do not match the expected SHA-256."
+        exit 1
+    }
 fi
 cp "$driver_src" "${HERE}/.be-drivers/quack-jdbc.jar"
 rm -rf "$tmp_extract"

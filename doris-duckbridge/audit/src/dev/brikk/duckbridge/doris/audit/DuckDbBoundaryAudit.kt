@@ -43,10 +43,13 @@ object DuckDbBoundaryAudit {
         // duckdb_jdbc 2.0.0.0 still reports the metadata stub "1.0"; pin the real artifact bytes.
         val jar = Path.of(connection.javaClass.protectionDomain.codeSource.location.toURI())
         val sha256 = MessageDigest.getInstance("SHA-256").digest(jar.readBytes()).joinToString("") { "%02x".format(it) }
-        val expected = if (transport == "quack") "7c5889640b38e494a39c0bf818f1e0e35fb68152a00e0dcc9f273a5f29935ff3"
+        val expected = if (transport == "quack") System.getProperty("duckbridge.qualification.quack.sha256",
+            "7c5889640b38e494a39c0bf818f1e0e35fb68152a00e0dcc9f273a5f29935ff3")
             else "5170daa90a43296705127ef3c80834ba1cd275ec9d765a9f7eee346ab0087186"
         check(sha256 == expected) { "Unqualified $transport driver bytes: $jar ($sha256)" }
-        if (transport == "quack") check(driver == "0.11.0") { "Unexpected Quack driver: $driver" }
+        if (transport == "quack") check(driver == System.getProperty("duckbridge.qualification.quack.version", "0.11.0")) {
+            "Unexpected Quack driver: $driver"
+        }
         connection.createStatement().use { statement ->
             statement.execute("CREATE TEMP TABLE duckbridge_audit_boundary_null AS SELECT NULL AS v, CAST(NULL AS INTEGER) AS typed_v")
         }
