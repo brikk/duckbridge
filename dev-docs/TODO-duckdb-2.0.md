@@ -172,6 +172,12 @@ build.
 
 ## DB20-03: ICU removal and parity semantics
 
+October-30 [Unicode recheck](../trino-duckbridge/dev-docs/REPORT-unicode-version-recheck-2026-10-30.md):
+the shipped parity 0.5.1 already includes ICU 76.1 / Unicode 16. EV-E3's old data-version
+gap is closed for Trino 483 / JDK 25: all 1,112,064 scalars pass nine independent JDK
+checks each, with additional native-Trino and embedded/Quack predicate regressions.
+This does not establish arbitrary future-JDK or every-platform compatibility.
+
 **Why:** DuckDB 2.0 removes the ICU *library*. Its still-named `icu` extension
 implements timezones, calendars, and collations itself from IANA and native
 DuckDB code. Our parity extension separately vendors an old minimal ICU snapshot
@@ -591,9 +597,12 @@ The earlier peer deferral is partially resolved by released Quack JDBC **0.11.1*
 [final adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md)
 passes all four explicit CANCEL/streaming/DISCONNECT gates and 701 Trino + 85 Doris tests,
 plus the live Java-17 scanner lane. Autonomous orphan-session reaping remains an explicit
-**red acceptance task** against core f96420ed46. The shared follow-up also retains two
-unexplained pre-cut response truncations observed before passing diagnostic/full reruns;
-no test was relaxed and no underlying truncation fix is claimed.
+**red acceptance task** against core f96420ed46. The subsequent
+[HTTP investigation](../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md)
+reproduces pre-cut truncations and traces receive-window stalls on Docker's published-port
+loopback leg, independently reproduced with raw HTTP and no SQL engine/driver/proxy.
+The mapped-port streaming gate remains intermittently red; direct-bridge controls are
+diagnosis only. No network mitigation, timeout relaxation or underlying fix is claimed.
 
 Quack JDBC 0.11 passes real server query cancellation (SQLState57014), network-cut streaming
 failure and independently bounded DISCONNECT acceptance tasks. The exact test contracts,

@@ -100,6 +100,12 @@ release command passed all four gates and module checks unchanged. The shared
 follow-up TODO retains the truncation investigation alongside server reaping;
 the passing rerun is not presented as proof of a truncation fix.
 
+Subsequent [HTTP investigation](REPORT-http-response-truncation-2026-10-30.md)
+reproduces the failure and locates TCP receive-window stalls on the host-loopback
+published-port forwarding leg, with raw-HTTP and direct-bridge controls. The
+original qualification results above are retained; the streaming acceptance task
+remains intermittently red until a real correction passes its unchanged route.
+
 ## Remaining limits
 
 The driver patch bounds the CANCEL caller and fails closed on an unconfirmed

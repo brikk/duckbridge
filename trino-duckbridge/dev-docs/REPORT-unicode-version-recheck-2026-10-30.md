@@ -61,6 +61,12 @@ than replace, the prior whitespace/normalization corpus.
 `build/http-unicode-investigation/unicode-targeted.log`,
 `unicode-targeted-summary.json` and saved `unicode-targeted-results/` XML.
 
+Full Trino `check` and `verifyPluginAssembly` also pass: **891 tests, zero
+failures/errors/skips**, including the new Unicode regressions. Evidence:
+`full-trino-check.log`, `full-trino-summary.json` and saved `full-trino-results/`.
+This module result is separate from the still-red published-port HTTP stress
+acceptance observation described in the [HTTP report](REPORT-http-response-truncation-2026-10-30.md).
+
 This closes the old Unicode-data mismatch for the current profile. It does not
 promise compatibility with arbitrary future JDK/Trino versions, constitute a new
 cross-platform exhaustive run, or re-run the entire Unicode normalization

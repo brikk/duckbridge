@@ -61,8 +61,9 @@ class TestQuackNetworkLifecycle {
         if (::network.isInitialized) network.close()
     }
 
-    private fun connection(timeout: String = "PT1S"): Connection = QuackDriver().connect(
-        "jdbc:quack://${proxy.host}:${proxy.getMappedPort(8666)}", Properties().apply {
+    private fun connection(timeout: String = "PT1S", bridgeControl: Boolean = false): Connection = QuackDriver().connect(
+        if (bridgeControl) "jdbc:quack://${proxy.currentContainerInfo.networkSettings.networks.values.single().ipAddress}:8666"
+        else "jdbc:quack://${proxy.host}:${proxy.getMappedPort(8666)}", Properties().apply {
             setProperty("token", server.token)
             setProperty("connectTimeout", "PT1S")
             setProperty("requestTimeout", timeout)
@@ -101,15 +102,19 @@ class TestQuackNetworkLifecycle {
     }
 
     /** Strict acceptance gate; run :qualifyQuackStreaming. Published 0.10 failed this contract. */
-    fun qualifyPartialResultNeverBecomesSuccessfulEofAfterConnectionLoss() {
-        connection("PT5S").use { connection ->
+    fun qualifyPartialResultNeverBecomesSuccessfulEofAfterConnectionLoss(bridgeControl: Boolean = false) {
+        val started = System.nanoTime()
+        println("STREAM route=${if (bridgeControl) "direct-bridge-diagnostic-control" else "published-port-acceptance"}")
+        connection("PT5S", bridgeControl).use { connection ->
             connection.createStatement().use { statement ->
                 // PREPARE drains whole batches. A compressed sequence can fit millions of rows
                 // in one native batch yet exceed the client's expanded-allocation budget.
                 // Flat hash values force multiple default-sized batches without raising limits.
-                val cursor = (connection as QuackConnection).session().cursor(
+                println("STREAM initial-start session=${(connection as QuackConnection).session().connectionId()}")
+                val cursor = connection.session().cursor(
                     "SELECT CAST(hash(range) & 9223372036854775807 AS BIGINT) AS value FROM range(8000000)",
                 )
+                println("STREAM initial-ready rows=${cursor.materializedRowCount()} elapsed=${Duration.ofNanos(System.nanoTime() - started)}")
                 assertThat(cursor.materializedRowCount()).describedAs("Initial inline prefix must require another wire fetch")
                     .isLessThan(8_000_000)
                 // This is the same public JDBC wrapper used by QuackStatement.execute(). The
@@ -117,6 +122,7 @@ class TestQuackNetworkLifecycle {
                 QuackResultSet(statement, cursor).use { rows ->
                     assertThat(rows.next()).isTrue()
                     endpoint.disable()
+                    println("STREAM deliberate-cut elapsed=${Duration.ofNanos(System.nanoTime() - started)}")
                     try {
                         val failure = org.assertj.core.api.Assertions.catchThrowable { while (rows.next()) rows.getLong(1) }
                         assertThat(failure).withFailMessage("A partial stream must fail, not return EOF at row ${rows.row}")
@@ -300,13 +306,23 @@ class TestQuackNetworkLifecycle {
             try {
                 fixture.setUp()
                 when (args.single()) {
-                    "streaming" -> fixture.qualifyPartialResultNeverBecomesSuccessfulEofAfterConnectionLoss()
+                    "streaming", "streaming-bridge-control" ->
+                        repeat(Integer.getInteger("duckbridge.qualification.repetitions", 1).also { require(it > 0) }) { index ->
+                            println("STREAM iteration=${index + 1}")
+                            fixture.qualifyPartialResultNeverBecomesSuccessfulEofAfterConnectionLoss(
+                                bridgeControl = args.single() == "streaming-bridge-control",
+                            )
+                        }
                     "cancel" -> fixture.qualifyStatementCancellation()
                     "cancel-partition" -> fixture.qualifyCancellationUnderPartition()
                     "lease-reaping" -> fixture.qualifyHardPartitionClosesTheCallerAndLeaseExpiryReapsTheOrphan()
                     "disconnect" -> fixture.qualifyDisconnectDeadline()
                     else -> error("Unknown qualification gate")
                 }
+            } catch (error: Throwable) {
+                if (fixture::server.isInitialized) runCatching { System.err.println("Quack server failure evidence:\n${fixture.server.diagnostics()}") }
+                if (fixture::proxy.isInitialized) runCatching { System.err.println("Toxiproxy failure evidence:\n${fixture.proxy.logs}") }
+                throw error
             } finally { fixture.tearDown() }
         }
     }

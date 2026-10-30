@@ -85,6 +85,9 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
 
     fun proxyTarget(): String = "quack:$CONTAINER_PORT"
 
+    /** Read before fixture teardown so a failed HTTP body cannot erase its server evidence. */
+    fun diagnostics(): String = "state=${container.currentContainerInfo.state}\n${container.logs}"
+
     /** Restart only this fixture's server, preserving its mapped port, never a user's container. */
     fun restart() { container.dockerClient.restartContainerCmd(container.containerId).withTimeout(0).exec() }
 

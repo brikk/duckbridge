@@ -124,13 +124,14 @@ tasks.withType<JavaCompile> {
 }
 
 // Strict dependency acceptance gates, separate from JUnit: 0.10.0 failed these contracts.
-// Keep them executable unchanged when qualifying a corrected published driver.
+// The bridge diagnostic is deliberately a different task, never a replacement acceptance route.
 listOf("qualifyQuackStreaming" to "streaming", "qualifyQuackCancel" to "cancel",
     "qualifyQuackDisconnect" to "disconnect", "qualifyQuackCancelPartition" to "cancel-partition",
-    "qualifyQuackLeaseReaping" to "lease-reaping").forEach { (name, gate) ->
+    "qualifyQuackLeaseReaping" to "lease-reaping", "probeQuackStreamingBridge" to "streaming-bridge-control").forEach { (name, gate) ->
     tasks.register<JavaExec>(name) {
         group = "verification"
-        description = "Strict Quack $gate acceptance gate"
+        description = if (gate == "streaming-bridge-control") "Diagnostic bridge-route control; NOT published-port acceptance"
+            else "Strict Quack $gate acceptance gate"
         dependsOn(tasks.testClasses)
         classpath = sourceSets.test.get().runtimeClasspath
         mainClass.set("dev.brikk.duckbridge.trino.plugin.TestQuackNetworkLifecycle")

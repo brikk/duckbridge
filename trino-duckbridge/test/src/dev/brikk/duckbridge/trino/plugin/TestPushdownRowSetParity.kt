@@ -30,8 +30,9 @@ import org.junit.jupiter.api.TestInstance
  *
  * Two catalogs point at the SAME DuckDB file. [PUSHED] is the production connector; [LOCAL] uses
  * the same client/data path but an empty expression rewriter, so every function predicate remains a
- * Trino filter. For each predicate we prove the production plan removed that filter, the
- * baseline retained it, then compare sorted row IDs. This covers the complete WHERE path — planner
+ * Trino filter. Safe predicates must remove the production filter; unsupported planner overloads
+ * explicitly retain it. The baseline always retains its filter, then we compare sorted row IDs.
+ * This covers the complete WHERE path — planner
  * conversion, per-conjunct split, SQL emission, connection init, remote evaluation, JDBC decoding
  * and SQL three-valued logic over rows containing NULL — which scalar fixtures cannot prove.
  *
