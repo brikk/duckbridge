@@ -53,6 +53,10 @@ Schema discovery is scoped to the connection's current DuckDB catalog. Flat name
 are quoted literally; catalogs containing true nested schemas fail explicitly rather than flattening
 their ancestry. See the [namespace policy](trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md).
 
+Unqualified VARIANT/TUPLE/untyped-NULL carriers and unsafe composite text conversions are temporarily
+guarded. Explicit source casts remain a visible type choice; see the
+[boundary policy and revisit TODO](trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
+
 ## Quick start
 
 Catalog properties file (e.g. `etc/catalog/duckdb.properties`):

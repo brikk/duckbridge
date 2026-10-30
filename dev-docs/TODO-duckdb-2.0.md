@@ -345,6 +345,14 @@ type contract; otherwise retain it as a measured non-choice.
 
 ## DB20-08: `VARIANT`, JSON, and nested transport
 
+October-30 round 2: [temporary boundary policy](../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md)
+guards unqualified VARIANT/TUPLE/SQLNULL and unsafe composite auto-VARCHAR conversion.
+Native JDBC TUPLE-list getString crashes are retained as isolated child-JVM negative
+controls. Explicit source CASTs are a visible text choice, not typed support. Qualified
+arrays and documented Doris text mappings remain unchanged. Per user direction, revisit
+project TODO **5bdd9ba4** after the current storage/write-safety and benchmark rounds;
+do not treat the temporary guard as the completed type implementation below.
+
 **Why:** 2.0 makes shredded `VARIANT` end-to-end, including Parquet reads/writes,
 scan extraction pushdown, and `variant_*` functions. DuckDB also expects regular
 `JSON` to use `VARIANT` internally later. Today Trino's JDBC mapping has no

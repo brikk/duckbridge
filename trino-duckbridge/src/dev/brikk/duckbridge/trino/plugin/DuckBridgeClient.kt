@@ -328,7 +328,7 @@ class DuckBridgeClient
             typeHandle: JdbcTypeHandle,
         ): Optional<ColumnMapping> {
             if (lacksTemporalCarrier(typeHandle.jdbcTypeName().orElse(""))) return Optional.empty()
-            val forced = getForcedMappingToVarchar(typeHandle)
+            val forced = checkedVarcharMapping(session, typeHandle)
             if (forced.isPresent) {
                 return forced
             }
@@ -401,6 +401,14 @@ class DuckBridgeClient
                 return mapToUnboundedVarchar(typeHandle)
             }
             return Optional.empty()
+        }
+
+        private fun checkedVarcharMapping(session: ConnectorSession, typeHandle: JdbcTypeHandle): Optional<ColumnMapping> {
+            val forced = getForcedMappingToVarchar(typeHandle)
+            DuckBridgeBoundaryTypeGuard.verify(typeHandle.jdbcTypeName().orElse(""), typeHandle.jdbcType(),
+                forced.isPresent || (getUnsupportedTypeHandling(session) == CONVERT_TO_VARCHAR &&
+                    DuckBridgeArrayColumnMapping.fromTypeName(typeHandle.jdbcTypeName().orElse("")) == null))
+            return forced
         }
 
         override fun toWriteMapping(session: ConnectorSession, type: Type): WriteMapping =

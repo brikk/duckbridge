@@ -53,6 +53,12 @@ internal object DuckDbToDorisTypeMapper {
         val raw = duckdbType.trim()
         val normalized = raw.lowercase(Locale.ROOT)
 
+        // Temporary boundary guard; revisit project TODO 5bdd9ba4 after current qualification work.
+        if (normalized == "variant" || normalized.startsWith("tuple(")) {
+            failLoud(columnName, raw, "temporary boundary guard: no qualified dynamic/positional host carrier; " +
+                "use an explicit source CAST only if its different type is intended (revisit TODO 5bdd9ba4)")
+        }
+
         // ARRAY: DuckDB TYPE_NAME ends with "[]" (e.g. "INTEGER[]", "VARCHAR[]"). Element is the
         // prefix, mapped recursively — only element types the BE DuckDbTypeHandler decodes are
         // allowed (recursion fails loud for the rest).

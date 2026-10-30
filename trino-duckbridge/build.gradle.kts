@@ -281,6 +281,8 @@ tasks.named("processResources") {
 }
 
 tasks.test {
+    // Child-JVM raw-driver crash controls must load the exact same resolved test artifacts.
+    systemProperty("duckbridge.test.classpath", sourceSets.test.get().runtimeClasspath.asPath)
     useJUnitPlatform {
         (project.findProperty("excludeTags") as String?)
             ?.split(",")

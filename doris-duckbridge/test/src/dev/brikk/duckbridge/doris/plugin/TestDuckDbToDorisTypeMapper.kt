@@ -127,6 +127,16 @@ class TestDuckDbToDorisTypeMapper {
     }
 
     @Test
+    fun temporaryBoundaryGuardsHaveAnExplicitRevisitAndNoImplicitCast() {
+        for (type in listOf("VARIANT", "VARIANT[]", "TUPLE(INTEGER, VARCHAR)", "TUPLE(INTEGER, VARCHAR)[]")) {
+            assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType(type, "boundary") }
+                .hasMessageContaining("temporary boundary guard").hasMessageContaining("5bdd9ba4")
+                .hasMessageContaining("explicit source CAST")
+        }
+        assertThat(map("STRUCT(a INTEGER)").typeName).isEqualTo("STRING") // existing documented policy is unchanged
+    }
+
+    @Test
     fun failsLoudOnUnmappable() {
         assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType("INTERVAL", "span") }
             .isInstanceOf(DorisConnectorException::class.java)
