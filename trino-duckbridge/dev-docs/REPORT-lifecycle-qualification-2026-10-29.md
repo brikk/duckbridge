@@ -7,10 +7,10 @@ statements, Arrow C-data readers, an isolated Quack server and its diagnostic vi
 No mocked rows, source-format substitution, transparent query retry or shared
 service interruption is involved. Existing unsupported-type guards are unchanged.
 
-The Arrow and healthy-network idle/cleanup checks below pass. Network-partition
-cancellation is a separate acceptance contract and is recorded after its run;
-passing normal cancellation does not establish a bounded control request under
-a blackholed response.
+The Arrow and healthy-network idle/cleanup checks below pass. The separate
+**CANCEL-under-partition deadline gate is blocked on published Quack JDBC 0.11**:
+the control acknowledgement can wait for the general request timeout. Passing
+normal cancellation does not establish this deadline contract.
 
 ## Real bug found: close could miss lazy query startup
 
@@ -96,3 +96,88 @@ Result retention/reconnect caching is not enabled by this test.
 Evidence: `build/quack-heartbeat-sessions.log`. It includes the actual elapsed wait,
 not a mocked clock. Targeted success does not yet claim all partition, catalog
 conflict or prepared-schema-change cases are qualified.
+
+## Network cancellation: restored delivery versus a prolonged partition
+
+The existing active-query helper now observes an actual marked query with a
+15-second engine fallback and 30-second HTTP timeout. Neither can explain a
+successful two-second ordinary cancellation gate; its error must be SQLState
+57014. After a confirmed ordinary cancel, the same autocommit connection must
+execute its next control query successfully.
+
+A new positive test holds all downstream responses, sends CANCEL, and observes
+the target's **cancelled** state using a separate direct server connection. Only
+then is response delivery restored. The original query must fail as cancellation,
+not return rows or successful EOF. Two precisely checked safe outcomes are allowed:
+
+- The cancellation ACK is confirmed and the same connection passes its control.
+- The held TCP response is lost: cancel reports `Cancellation could not be
+  confirmed`, the connection is explicitly closed, and reuse fails as closed.
+
+Arbitrary errors are not equivalent. The target session ID must disappear after
+physical close, and no SQL is replayed. Timeout-toxic removal can sever a held
+response; a test must not demand a confirmed ACK when the network actually lost it.
+
+### Blocked independent deadline
+
+```bash
+./gradlew :trino-duckbridge:qualifyQuackCancelPartition
+```
+
+This **strict additional acceptance task remains red on 0.11**. It holds the
+CANCEL response beyond a five-second allowance for a two-second control request
+plus fail-closed DISCONNECT, while retaining a 30-second ordinary timeout. The
+observed failure is TimeoutException waiting for `cancel()`.
+
+The source cause is exact: QuackHttpTransport uses `control` to suppress multiple
+endpoint attempts, but only `disconnect` selects the short timeout. CANCEL still
+uses the long query/request timeout; QuackSession.cancel blocks in that send
+before its fail-closed catch can run. No timeout reduction, asynchronous adapter,
+test skip or local driver substitution hides the failed contract.
+
+[Driver handoff and reproduction](HANDOFF-quack-cancel-partition-2026-10-29.md).
+Initial evidence: `build/quack-cancel-network-fault.log`. The default regression
+suite and this explicit dependency-acceptance gate are reported separately; a
+green module check is not a claim that this gate passed.
+
+## Fixture correction exposed by restart qualification
+
+Docker can reassign a dynamically published host port when a container is
+restarted through the Docker API. Testcontainers' GenericContainer keeps its
+original inspect response. Direct diagnostic observers therefore once connected
+to the old port, even though the proxy path had already recovered.
+
+The fixture now inspects the **current** mapping; the restart test verifies both
+the proxy path and direct observer. This is a concrete stale-address fix, not an
+environment-variance skip or relaxed network-failure assertion.
+
+## Abandoned-session lease cleanup: second blocked peer contract
+
+The hard-cut run proves a target request fails and its physical client closes
+within the deadline while DISCONNECT cannot reach the server. A separate direct
+observer confirms the target logical session exists. With no possible target
+heartbeat or reconnect, wait 65 seconds and require that session to disappear.
+
+On signed core `f96420ed46` it **remains present**. This is not the same as healthy
+heartbeat renewal: in `QuackServer::RenewConnectionLease` the expired entry is
+erased and cleaned only when a message addresses that session. The diagnostic
+snapshot merely copies active handles. A closed/lost client may never address
+its old ID again, so automatic abandoned-session resource cleanup is not proved.
+Red evidence: `build/quack-network-and-partition.log` (65-second test).
+
+```bash
+./gradlew :trino-duckbridge:qualifyQuackLeaseReaping
+```
+
+**User-directed deferral, 2026-10-30:** another agent is handling the peer changes.
+Keep both this gate and `qualifyQuackCancelPartition` as explicit failing
+acceptance tasks and revisit after corrected artifacts are available. The exact
+hard-cut test body and assertions are retained; it is not hidden with @Disabled,
+globally excluded or claimed passing by a green default regression suite. No
+target-session ping/watchdog, global timeout change or forced restart pretends
+to reap the orphan. The reaper itself belongs to the Quack server, separately
+from the JDBC CANCEL timeout correction.
+
+A focused revisit TODO is in the shared project backlog. Independent prepared
+schema/retry checks can proceed without waiting. No new driver artifact, native
+rebuild or release is assumed by this deferral.

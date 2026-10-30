@@ -125,7 +125,9 @@ tasks.withType<JavaCompile> {
 
 // Strict dependency acceptance gates, separate from JUnit: 0.10.0 failed these contracts.
 // Keep them executable unchanged when qualifying a corrected published driver.
-listOf("qualifyQuackStreaming" to "streaming", "qualifyQuackCancel" to "cancel", "qualifyQuackDisconnect" to "disconnect").forEach { (name, gate) ->
+listOf("qualifyQuackStreaming" to "streaming", "qualifyQuackCancel" to "cancel",
+    "qualifyQuackDisconnect" to "disconnect", "qualifyQuackCancelPartition" to "cancel-partition",
+    "qualifyQuackLeaseReaping" to "lease-reaping").forEach { (name, gate) ->
     tasks.register<JavaExec>(name) {
         group = "verification"
         description = "Strict Quack $gate acceptance gate"

@@ -18,11 +18,14 @@ import org.testcontainers.toxiproxy.ToxiproxyContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.Connection
 import java.sql.SQLException
+import java.sql.Statement
 import java.time.Duration
 import java.util.Properties
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Future
 
 private fun control(connection: Connection) {
     connection.createStatement().use { statement ->
@@ -132,37 +135,129 @@ class TestQuackNetworkLifecycle {
         try {
             server.restart()
             Unreliables.retryUntilSuccess(30, TimeUnit.SECONDS) { connection().use { control(it) } }
+            lifecycleConnection(server).use { lifecycleControl(it) } // direct observer must not retain a cached host port
             assertThatThrownBy { control(old) }.isInstanceOf(SQLException::class.java)
         } finally { old.close() }
         connection().use { control(it) }
     }
 
-    /** No timeout-as-cancel false positive: server fallback is 10s, request timeout 30s. */
+    /** No timeout-as-cancel false positive: server fallback is 15s, request timeout 30s. */
     fun qualifyStatementCancellation() {
-        val worker = Executors.newSingleThreadExecutor()
+        withActiveQuery("quack_cancellation_qualification") { connection, statement, query, _ ->
+            statement.cancel()
+            assertCancelled(query)
+            assertThat(connection.isClosed).isFalse()
+            control(connection)
+        }
+    }
+
+    @Test
+    fun testCancellationAfterResponseLossFailsTheQueryAndReleasesTheSession() {
+        var id = ""
+        withActiveQuery("quack_response_loss_cancellation") { connection, statement, query, workers ->
+            id = (connection as QuackConnection).session().connectionId()
+            val toxic = endpoint.toxics().timeout("cancel-response-loss", ToxicDirection.DOWNSTREAM, 0)
+            val cancelling = workers.submit { statement.cancel() }
+            try {
+                // Observe the real server-side cancel via a direct independent control connection,
+                // not the faulted proxy. Then restore ACK delivery; never replay the target SQL.
+                Unreliables.retryUntilSuccess(5, TimeUnit.SECONDS) {
+                    assertThat(sessionSnapshots(server).find { it.id == id }?.state).isEqualTo("cancelled")
+                }
+                assertThat(cancelling.isDone).isFalse()
+            } finally { toxic.remove() }
+            val cancelFailure = org.assertj.core.api.Assertions.catchThrowable { cancelling.get(5, TimeUnit.SECONDS) }
+            assertCancelled(query)
+            if (cancelFailure == null) {
+                assertThat(connection.isClosed).isFalse()
+                control(connection)
+            } else {
+                // Removing a timeout toxic can sever its held TCP response. A lost ACK may
+                // therefore fail closed; it must never turn into successful SQL or blind reuse.
+                assertThat(cancelFailure).isInstanceOf(java.util.concurrent.ExecutionException::class.java)
+                assertThat(cancelFailure.cause).isInstanceOf(SQLException::class.java)
+                assertThat(cancelFailure.cause?.message.orEmpty()).contains("Cancellation could not be confirmed")
+                assertThat(connection.isClosed).isTrue()
+                assertThatThrownBy { control(connection) }.isInstanceOf(SQLException::class.java).hasMessageContaining("closed")
+            }
+        }
+        Unreliables.retryUntilSuccess(5, TimeUnit.SECONDS) {
+            assertThat(sessionSnapshots(server).map { it.id }).doesNotContain(id)
+        }
+    }
+
+    /** Deferred peer acceptance gate, assertions unchanged; run :qualifyQuackLeaseReaping. */
+    fun qualifyHardPartitionClosesTheCallerAndLeaseExpiryReapsTheOrphan() {
+        var id = ""
+        withActiveQuery("quack_hard_partition_lease_cleanup") { connection, _, query, workers ->
+            id = (connection as QuackConnection).session().connectionId()
+            endpoint.disable()
+            try {
+                val failure = org.assertj.core.api.Assertions.catchThrowable { query.get(3, TimeUnit.SECONDS) }
+                assertThat(failure).isInstanceOf(java.util.concurrent.ExecutionException::class.java)
+                assertThat(failure.cause).isInstanceOf(SQLException::class.java)
+                workers.submit { connection.close() }.get(3, TimeUnit.SECONDS)
+                assertThat(connection.isClosed).isTrue()
+                assertThatThrownBy { control(connection) }.isInstanceOf(SQLException::class.java).hasMessageContaining("closed")
+                // DISCONNECT cannot be delivered through the cut. Prove a real abandoned logical
+                // session exists before testing server lease cleanup, rather than counting close().
+                assertThat(sessionSnapshots(server).map { it.id }).contains(id)
+            } finally { endpoint.enable() }
+        }
+        // No retry/reconnect or target heartbeat is possible after physical close. The default
+        // 60s lease, not an observer query or a forced server restart, must remove this orphan.
+        Thread.sleep(65_000)
+        assertThat(sessionSnapshots(server).map { it.id }).doesNotContain(id)
+        assertThat(sessionSnapshots(server)).hasSize(1)
+        connection().use { control(it) }
+    }
+
+    /** Strict independent CANCEL+fail-closed budget, even when the general timeout is 30s. */
+    fun qualifyCancellationUnderPartition() {
+        withActiveQuery("quack_partition_cancellation") { connection, statement, _, workers ->
+            val toxic = endpoint.toxics().timeout("cancel-partition", ToxicDirection.DOWNSTREAM, 0)
+            val cancelling = workers.submit { statement.cancel() }
+            var failure: Throwable? = null
+            try {
+                failure = org.assertj.core.api.Assertions.catchThrowable { cancelling.get(5, TimeUnit.SECONDS) }
+            } finally {
+                toxic.remove()
+                if (failure is TimeoutException) runCatching { cancelling.get(5, TimeUnit.SECONDS) }
+            }
+            assertThat(failure).describedAs("CANCEL plus fail-closed teardown must finish within 5s, not the general 30s request timeout")
+                .isInstanceOf(java.util.concurrent.ExecutionException::class.java)
+            assertThat(failure?.cause).isInstanceOf(SQLException::class.java)
+            assertThat(connection.isClosed).describedAs("Unconfirmed cancellation must not return a usable ambiguous session").isTrue()
+        }
+    }
+
+    private fun withActiveQuery(marker: String, action: (Connection, Statement, Future<*>, ExecutorService) -> Unit) {
+        val workers = Executors.newFixedThreadPool(2)
         connection("PT30S").use { connection ->
-            connection.createStatement().use { it.execute("SET max_execution_time=10000") }
+            connection.createStatement().use { it.execute("SET max_execution_time=15000") }
             connection.createStatement().use { statement ->
-                val marker = "quack_cancellation_qualification"
-                val query = worker.submit { statement.executeQuery("/* $marker */ SELECT sum(range) FROM range(1000000000000)").close() }
+                val query = workers.submit { statement.executeQuery("/* $marker */ SELECT sum(range) FROM range(1000000000000)").close() }
                 try {
                     Unreliables.retryUntilSuccess(3, TimeUnit.SECONDS) {
                         assertThat(query.isDone).isFalse()
                         assertThat(activeQueryContains(marker)).isTrue()
                     }
-                    statement.cancel()
-                    val failure = org.assertj.core.api.Assertions.catchThrowable { query.get(2, TimeUnit.SECONDS) }
-                    assertThat(failure).describedAs("cancel must interrupt the active query, not wait for its 10s deadline")
-                        .isInstanceOf(java.util.concurrent.ExecutionException::class.java)
-                    assertThat(failure.cause?.message.orEmpty()).containsIgnoringCase("interrupt")
-                    assertThat((failure.cause as SQLException).sqlState).isEqualTo("57014")
+                    action(connection, statement, query, workers)
                 } finally {
                     query.cancel(true)
-                    worker.shutdownNow()
-                    worker.awaitTermination(5, TimeUnit.SECONDS)
+                    workers.shutdownNow()
+                    assertThat(workers.awaitTermination(5, TimeUnit.SECONDS)).isTrue()
                 }
             }
         }
+    }
+
+    private fun assertCancelled(query: Future<*>) {
+        val failure = org.assertj.core.api.Assertions.catchThrowable { query.get(2, TimeUnit.SECONDS) }
+        assertThat(failure).describedAs("cancel must interrupt the active query, not wait for its 15s deadline")
+            .isInstanceOf(java.util.concurrent.ExecutionException::class.java)
+        assertThat(failure.cause?.message.orEmpty()).containsIgnoringCase("interrupt")
+        assertThat((failure.cause as SQLException).sqlState).isEqualTo("57014")
     }
 
     fun qualifyDisconnectDeadline() {
@@ -207,6 +302,8 @@ class TestQuackNetworkLifecycle {
                 when (args.single()) {
                     "streaming" -> fixture.qualifyPartialResultNeverBecomesSuccessfulEofAfterConnectionLoss()
                     "cancel" -> fixture.qualifyStatementCancellation()
+                    "cancel-partition" -> fixture.qualifyCancellationUnderPartition()
+                    "lease-reaping" -> fixture.qualifyHardPartitionClosesTheCallerAndLeaseExpiryReapsTheOrphan()
                     "disconnect" -> fixture.qualifyDisconnectDeadline()
                     else -> error("Unknown qualification gate")
                 }

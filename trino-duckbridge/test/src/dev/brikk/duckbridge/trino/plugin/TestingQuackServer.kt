@@ -15,6 +15,7 @@ package dev.brikk.duckbridge.trino.plugin
 
 import com.gizmodata.quack.jdbc.sql.QuackConnection
 import com.gizmodata.quack.jdbc.sql.QuackDriver
+import com.github.dockerjava.api.model.ExposedPort
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.Network
 import org.testcontainers.containers.wait.strategy.Wait
@@ -73,7 +74,10 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
     }
 
     val host: String get() = container.host
-    val mappedPort: Int get() = container.getMappedPort(CONTAINER_PORT)
+    // Docker restart can reassign a dynamically published host port. GenericContainer caches its
+    // original inspect response, so independent observers must resolve the current binding.
+    val mappedPort: Int get() = container.currentContainerInfo.networkSettings.ports.bindings
+        .getValue(ExposedPort.tcp(CONTAINER_PORT)).first().hostPortSpec.toInt()
 
     /** `jdbc:quack://host:mappedPort` — the base-jdbc `connection-url` for the T3 catalog. */
     fun connectionUrl(): String = "jdbc:quack://$host:$mappedPort"
