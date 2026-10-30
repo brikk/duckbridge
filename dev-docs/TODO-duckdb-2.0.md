@@ -1,7 +1,8 @@
 # TODO: DuckDB 2.0 readiness
 
 **Status:** DuckDB 2.0.0 is qualified for Trino (2026-10-21) and the matching Doris-master
-API-24/JNI-6 lane (2026-10-28). Both use Quack JDBC 0.10.0 with negotiated-v3 regression checks.
+API-24/JNI-6 lane (2026-10-28). Both now select released Quack JDBC 0.11.1 with negotiated-v3
+regression checks; see the [October-30 adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md).
 This tracks remaining stable-ABI, storage, dedicated protocol-conformance and advanced-feature work.
 See [the October-28 qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api24-duckdb2-2026-10-28.md).
 
@@ -18,10 +19,10 @@ version alone:
 - Trino pushdown depends on a version-pinned native `trino_parity` extension.
   Doris instead has its own small, audited SQL-function allowlist.
 
-The maintained lanes pin DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.10.0`, parity source
+The maintained lanes pin DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.11.1`, parity source
 `b216dc13a9`, and signed `trino_parity` 0.5.1 community binaries for Linux amd64/arm64, macOS arm64
 and Windows amd64. Doris is separately qualified on master `082736138b7`, API 24 / JNI 6,
-DuckDB 2.0.0 / Quack JDBC 0.10.0. Its old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
+DuckDB 2.0.0 / Quack JDBC 0.11.1. Its old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
 this is master-development ASAN correctness evidence, not a published Doris-5.x release rollout.
 
 ## Source material
@@ -586,9 +587,13 @@ passes external DDL/metadata refresh and parameter-error recovery on native/Quac
 plus actual held catalog-write conflicts on embedded/direct-Quack/native-wrapper paths.
 [Arrow lifecycle and idle cleanup](../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md)
 also pass their independent checks, including the fixed lazy-execute cancellation race.
-Per user direction, CANCEL-under-partition and autonomous orphan-session reaping stay
-as explicit **red acceptance tasks**, pending another agent's peer changes. The shared
-backlog has a focused revisit TODO; do not treat a green default suite as those gates passing.
+The earlier peer deferral is partially resolved by released Quack JDBC **0.11.1**:
+[final adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md)
+passes all four explicit CANCEL/streaming/DISCONNECT gates and 701 Trino + 85 Doris tests,
+plus the live Java-17 scanner lane. Autonomous orphan-session reaping remains an explicit
+**red acceptance task** against core f96420ed46. The shared follow-up also retains two
+unexplained pre-cut response truncations observed before passing diagnostic/full reruns;
+no test was relaxed and no underlying truncation fix is claimed.
 
 Quack JDBC 0.11 passes real server query cancellation (SQLState57014), network-cut streaming
 failure and independently bounded DISCONNECT acceptance tasks. The exact test contracts,
