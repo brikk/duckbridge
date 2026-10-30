@@ -44,9 +44,9 @@ internal class DuckBridgeDorisMetadata(
         connections.withConnection { conn ->
             val catalog = mainCatalog(conn)
             val out = ArrayList<String>()
-            conn.metaData.getTables(catalog, database, "%", USER_TABLE_TYPES).use { rs ->
+            conn.metaData.getTables(catalog, literalPattern(conn, database), "%", USER_TABLE_TYPES).use { rs ->
                 while (rs.next()) {
-                    out.add(rs.getString("TABLE_NAME"))
+                    if (rs.getString("TABLE_CAT") == catalog && rs.getString("TABLE_SCHEM") == database) out.add(rs.getString("TABLE_NAME"))
                 }
             }
             out
@@ -59,7 +59,14 @@ internal class DuckBridgeDorisMetadata(
     ): Optional<ConnectorTableHandle> =
         connections.withConnection { conn ->
             val catalog = mainCatalog(conn)
-            val exists = conn.metaData.getTables(catalog, database, table, USER_TABLE_TYPES).use { it.next() }
+            val exists = conn.metaData.getTables(catalog, literalPattern(conn, database), literalPattern(conn, table), USER_TABLE_TYPES).use { rows ->
+                var exact = false
+                while (rows.next()) {
+                    if (rows.getString("TABLE_CAT") == catalog && rows.getString("TABLE_SCHEM") == database &&
+                        rows.getString("TABLE_NAME") == table) exact = true
+                }
+                exact
+            }
             if (exists) {
                 Optional.of(DuckBridgeTableHandle(catalog, database, table))
             } else {
@@ -113,35 +120,21 @@ internal class DuckBridgeDorisMetadata(
 
     // ---- resolution helpers ----
 
-    /**
-     * The connection's main catalog: the single non-system, non-temp catalog quack reports. DuckDB
-     * exposes `system` + `temp` internally plus the user's DB (`memory` in-memory, or the attached
-     * name). v1 uses exactly one user catalog (ATTACH/multi-catalog deferred — report §Open
-     * question), so more than one is a fail-loud (we won't guess which the user meant).
-     */
+    /** JDBC Quack currently returns null for getCatalog; ask the engine, never guess from ATTACH listings. */
     private fun mainCatalog(conn: Connection): String {
-        conn.catalog?.takeIf { it.isNotBlank() && it !in SYSTEM_CATALOGS }?.let { return it }
-        val user = ArrayList<String>()
-        conn.metaData.catalogs.use { rs ->
-            while (rs.next()) {
-                val cat = rs.getString("TABLE_CAT")
-                if (cat != null && cat !in SYSTEM_CATALOGS) {
-                    user.add(cat)
-                }
+        val catalog = conn.createStatement().use { statement ->
+            statement.executeQuery("SELECT current_database()").use { rows ->
+                check(rows.next()) { "DuckDB did not report its current catalog" }
+                rows.getString(1)
             }
         }
-        return when (user.size) {
-            1 -> user[0]
-            0 -> throw DorisConnectorException(
-                "duckbridge: the DuckDB/Quack server at '${config.jdbcUrl}' exposes no user catalog " +
-                    "(only ${SYSTEM_CATALOGS.joinToString()}). Attach or create a database.",
-            )
-            else -> throw DorisConnectorException(
-                "duckbridge: the DuckDB/Quack server exposes multiple user catalogs " +
-                    "(${user.joinToString()}). v1 supports a single (main) catalog only — multi-catalog " +
-                    "ATTACH mapping is not implemented yet (see the P4 report §Open question).",
+        if (catalog.isNullOrBlank() || catalog in SYSTEM_CATALOGS) {
+            throw DorisConnectorException(
+                "duckbridge: '${config.jdbcUrl}' has no current user catalog. Select a user database; internal catalogs are not exposed.",
             )
         }
+        requireFlatNamespace(conn, catalog)
+        return catalog
     }
 
     /** User schemas (Doris databases) under [catalog]: non-system schemas only. */
@@ -160,10 +153,13 @@ internal class DuckBridgeDorisMetadata(
 
     /** Resolve a table's columns to duckbridge handles, mapping each type off the faithful TYPE_NAME. */
     private fun resolveColumns(conn: Connection, handle: DuckBridgeTableHandle): List<DuckBridgeColumnHandle> {
+        requireFlatNamespace(conn, handle.catalog)
         val out = ArrayList<DuckBridgeColumnHandle>()
-        conn.metaData.getColumns(handle.catalog, handle.database, handle.table, "%").use { rs ->
+        conn.metaData.getColumns(handle.catalog, literalPattern(conn, handle.database), literalPattern(conn, handle.table), "%").use { rs ->
             var ordinal = 0
             while (rs.next()) {
+                if (rs.getString("TABLE_CAT") != handle.catalog || rs.getString("TABLE_SCHEM") != handle.database ||
+                    rs.getString("TABLE_NAME") != handle.table) continue
                 val name = rs.getString("COLUMN_NAME")
                 val duckdbType = rs.getString("TYPE_NAME")
                 val nullable = rs.getInt("NULLABLE") != DatabaseMetaData.columnNoNulls
@@ -178,6 +174,26 @@ internal class DuckBridgeDorisMetadata(
             )
         }
         return out
+    }
+
+    private fun literalPattern(conn: Connection, name: String): String {
+        val escape = conn.metaData.searchStringEscape
+        check(escape.isNotEmpty()) { "DuckDB metadata must provide its literal pattern escape" }
+        return name.replace(escape, escape + escape).replace("_", escape + "_").replace("%", escape + "%")
+    }
+
+    private fun requireFlatNamespace(conn: Connection, catalog: String) {
+        conn.prepareStatement(
+            "SELECT schema_name,parent_schema FROM duckdb_schemas() WHERE database_name=? AND parent_schema_oid IS NOT NULL ORDER BY oid LIMIT 1",
+        ).use { statement ->
+            statement.setString(1, catalog)
+            statement.executeQuery().use { rows ->
+                if (rows.next()) throw DorisConnectorException(
+                    "Nested DuckDB schema '${rows.getString(1)}' under '${rows.getString(2)}' in catalog '$catalog' cannot be exposed " +
+                        "through flat JDBC schema metadata: ancestry would be lost. Use a database with flat schemas or explicit native SQL; " +
+                        "literal dots in flat schema names remain supported.")
+            }
+        }
     }
 
     private fun ConnectorTableHandle.asDuckBridgeHandle(): DuckBridgeTableHandle =

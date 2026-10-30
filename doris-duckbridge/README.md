@@ -15,6 +15,8 @@ The subsequent [0.11 driver qualification](../trino-duckbridge/dev-docs/REPORT-q
 re-runs the real Java-17 FE/BE scanner lane without rebuilding or patching the native engine.
 The [0.11.1 release qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md)
 adds the bounded CANCEL-under-partition contract; autonomous server lease reaping remains separate.
+The [namespace policy](../trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md) keeps literal
+dotted names distinct and rejects true nested-schema catalogs before ambiguous metadata can escape.
 Metadata, JDBC scans, predicate/function pushdown, temporal values, LARGEINT, ARRAY, VARBINARY,
 and concurrent scans run through DuckDB/Quack. Internal design:
 [`dev-docs/DESIGN-jdbc-scan-contract.md`](dev-docs/DESIGN-jdbc-scan-contract.md).

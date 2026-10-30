@@ -112,6 +112,56 @@ class TestDuckBridgeDorisMetadataOverQuack {
     }
 
     @Test
+    fun literalDotsAndMetadataWildcardsDoNotMergeNamesOrColumns() {
+        server.exec("CREATE SCHEMA \"literal.schema\"", "CREATE TABLE \"literal.schema\".\"select\" (id INTEGER)",
+            "INSERT INTO \"literal.schema\".\"select\" VALUES (22)",
+            "CREATE TABLE sales.\"exact_%\" (wanted INTEGER)", "CREATE TABLE sales.exact_xy (unwanted VARCHAR)")
+        assertThat(metadata.listDatabaseNames(null)).contains("literal.schema")
+        val dotted = metadata.getTableHandle(null, "literal.schema", "select").get()
+        assertThat(metadata.getColumnHandles(null, dotted).keys).containsExactly("id")
+        assertDottedScan(dotted as DuckBridgeTableHandle)
+        val wildcard = metadata.getTableHandle(null, "sales", "exact_%").get()
+        assertThat(metadata.getColumnHandles(null, wildcard).keys).containsExactly("wanted")
+        assertThat(metadata.getTableHandle(null, "sales", "exact_")).isEmpty()
+    }
+
+    private fun assertDottedScan(handle: DuckBridgeTableHandle) {
+        val sql = DuckBridgeQueryBuilder.buildQuery(handle.catalog, handle.database, handle.table,
+            metadata.getColumnHandles(null, handle).values.toList(), null, -1)
+        server.openConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery(sql).use { rows ->
+                    assertThat(rows.next()).isTrue()
+                    assertThat(rows.getInt(1)).isEqualTo(22)
+                    assertThat(rows.next()).isFalse()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun nestedSchemasFailBeforeAdvertisingAmbiguousLeafNames() {
+        server.exec("CREATE SCHEMA hierarchy", "CREATE SCHEMA hierarchy.sales", "CREATE TABLE hierarchy.sales.simple (wrong_column VARCHAR)")
+        try {
+            assertThatThrownBy { metadata.listDatabaseNames(null) }.hasMessageContaining("Nested DuckDB schema")
+            assertThatThrownBy { metadata.getTableHandle(null, "sales", "simple") }.hasMessageContaining("Nested DuckDB schema")
+        } finally { server.exec("DROP SCHEMA hierarchy CASCADE") }
+    }
+
+    @Test
+    fun attachedCatalogsCannotChangeTheCurrentCatalogNamespace() {
+        server.exec("ATTACH ':memory:' AS sibling", "CREATE SCHEMA sibling.sales",
+            "CREATE TABLE sibling.sales.simple (wrong_column VARCHAR)", "CREATE SCHEMA sibling.parent",
+            "CREATE SCHEMA sibling.parent.child")
+        try {
+            val handle = metadata.getTableHandle(null, "sales", "simple").get() as DuckBridgeTableHandle
+            assertThat(handle.catalog).isEqualTo("memory")
+            assertThat(metadata.getColumnHandles(null, handle).keys).containsExactly("id", "name")
+            assertThat(metadata.listDatabaseNames(null)).doesNotContain("parent", "child")
+        } finally { server.exec("DETACH sibling") }
+    }
+
+    @Test
     fun resolvesTableHandleAndUnicodeNames() {
         val handle = metadata.getTableHandle(null, "sales", "tãble_ünï")
         assertThat(handle).isPresent

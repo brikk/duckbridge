@@ -372,6 +372,12 @@ Relevant code: Trino `DuckBridgeClient.toColumnMapping`,
 
 ## DB20-09: nested schemas
 
+October-30 round 1: [namespace qualification](../trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md)
+proves metadata ancestry loss in both pinned drivers, adds explicit nested-catalog refusal,
+and fixes exact metadata pattern escaping/current-catalog scope. Flat dotted/quoted/keyword
+names are exercised on all four Trino paths and Doris. Full nested addressability remains
+a separate path-aware namespace design; no ambiguous encoding or silent flattening is enabled.
+
 **Why:** DuckDB 2.0 permits schemas inside schemas. Both connectors currently
 model DuckDB's traditional catalog/schema/table namespace and quote a schema name
 as one component. A nested schema can become inaccessible or ambiguously

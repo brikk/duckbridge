@@ -32,6 +32,7 @@ import io.trino.plugin.jdbc.JdbcTypeHandle
 import io.trino.plugin.jdbc.LongWriteFunction
 import io.trino.plugin.jdbc.PreparedQuery
 import io.trino.plugin.jdbc.QueryBuilder
+import io.trino.plugin.jdbc.RemoteTableName
 import io.trino.plugin.jdbc.expression.ParameterizedExpression
 import io.trino.plugin.jdbc.StandardColumnMappings.bigintColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.bigintWriteFunction
@@ -84,6 +85,7 @@ import io.trino.spi.type.TimestampWithTimeZoneType
 import io.trino.spi.type.TimeWithTimeZoneType
 import io.trino.spi.type.VarcharType
 import java.sql.Connection
+import java.sql.DatabaseMetaData
 import java.sql.PreparedStatement
 import java.sql.SQLException
 import java.sql.Types
@@ -224,16 +226,31 @@ class DuckBridgeClient
         // so base-jdbc's metadata lookups all miss). See DuckDBDatabaseMetaData#getTables.
         override fun getTableTypes(): Optional<List<String>> = Optional.of(ImmutableList.of("TABLE", "VIEW"))
 
+        override fun listSchemas(connection: Connection): Collection<String> {
+            val catalog = DuckBridgeNamespaceGuard.requireFlat(connection)
+            return connection.metaData.getSchemas(catalog, null).use { rows ->
+                buildSet {
+                    while (rows.next()) rows.getString("TABLE_SCHEM").let { if (filterRemoteSchema(it)) add(it) }
+                }
+            }
+        }
+
+        override fun getColumns(remoteTableName: RemoteTableName, metadata: DatabaseMetaData): java.sql.ResultSet {
+            DuckBridgeNamespaceGuard.requireFlat(metadata.connection)
+            return super.getColumns(remoteTableName, metadata)
+        }
+
         @Throws(SQLException::class)
         override fun getTables(
             connection: Connection,
             schemaName: Optional<String>,
             tableName: Optional<String>,
         ): java.sql.ResultSet {
+            val catalog = DuckBridgeNamespaceGuard.requireFlat(connection)
             val metadata = connection.metaData
             return metadata.getTables(
-                null,
-                schemaName.orElse(null),
+                catalog,
+                escapeObjectNameForMetadataQuery(schemaName, metadata.searchStringEscape).orElse(null),
                 escapeObjectNameForMetadataQuery(tableName, metadata.searchStringEscape).orElse(null),
                 getTableTypes().map { it.toTypedArray() }.orElse(null),
             )

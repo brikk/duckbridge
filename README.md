@@ -49,6 +49,10 @@ See the [0.11.1 release qualification](trino-duckbridge/dev-docs/REPORT-quack-0.
 for bounded cancellation and the [0.11/nanos qualification](trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
 for verified transport paths and explicit remaining type limitations.
 
+Schema discovery is scoped to the connection's current DuckDB catalog. Flat names containing dots
+are quoted literally; catalogs containing true nested schemas fail explicitly rather than flattening
+their ancestry. See the [namespace policy](trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md).
+
 ## Quick start
 
 Catalog properties file (e.g. `etc/catalog/duckdb.properties`):
