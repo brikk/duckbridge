@@ -41,7 +41,7 @@ import org.junit.jupiter.api.TestInstance
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestPushdownRowSetParity : AbstractTestQueryFramework() {
-    private data class Case(val label: String, val predicate: String)
+    private data class Case(val label: String, val predicate: String, val pushes: Boolean = true)
 
     override fun createQueryRunner(): QueryRunner {
         val connectionUrl = DuckBridgeQueryRunner.freshDatabaseUrl()
@@ -99,7 +99,14 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
                 (5,  '',        '',   3, -2.0, DATE '2024-02-29', DATE '2025-02-28', TIMESTAMP '2024-01-01 00:00:00.000'),
                 (6,  NULL,      'N', NULL, NULL, NULL, NULL, NULL),
                 (7,  'δοκιμή',  'D', 10,  1.0, DATE '2000-02-29', DATE '2001-02-28', TIMESTAMP '2000-02-29 01:02:03.456'),
-                (8,  'abc' || chr(10), 'L', 8, 4.0, DATE '2020-12-31', DATE '2021-01-01', TIMESTAMP '2024-11-03 01:30:00.000')
+                (8,  'abc' || chr(10), 'L', 8, 4.0, DATE '2020-12-31', DATE '2021-01-01', TIMESTAMP '2024-11-03 01:30:00.000'),
+                (9, U&'\2C2F', NULL, NULL, NULL, NULL, NULL, NULL),
+                (10, U&'\2C5F', NULL, NULL, NULL, NULL, NULL, NULL),
+                (11, U&'\+010570', NULL, NULL, NULL, NULL, NULL, NULL),
+                (12, U&'\+010597', NULL, NULL, NULL, NULL, NULL, NULL),
+                (13, U&'\1C89', NULL, NULL, NULL, NULL, NULL, NULL),
+                (14, U&'\1C8A', NULL, NULL, NULL, NULL, NULL, NULL),
+                (15, U&'\+0105D2\0307', NULL, NULL, NULL, NULL, NULL, NULL)
             """.trimIndent(),
         )
     }
@@ -120,9 +127,14 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
                 // Trino's reference runner, whose table/functions are unrelated to these two catalogs.
                 val pushedPlan = explain(pushedSql)
                 val localPlan = explain(localSql)
-                assertThat(pushedPlan)
-                    .`as`("production predicate must actually push: %s", case.predicate)
-                    .doesNotContain("filterPredicate")
+                if (case.pushes) {
+                    assertThat(pushedPlan)
+                        .`as`("production predicate must actually push: %s", case.predicate)
+                        .doesNotContain("filterPredicate")
+                } else {
+                    assertThat(pushedPlan).describedAs("Unimplemented planner overload stays local: %s", case.predicate)
+                        .contains("filterPredicate")
+                }
                 assertThat(localPlan)
                     .`as`("baseline predicate must remain in Trino: %s", case.predicate)
                     .contains("filterPredicate")
@@ -147,6 +159,14 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
             Case("BARE string + unicode + NULL", "length(s) = 6"),
             Case("ALIAS upper simple mapping", "upper(s) = U&'STRA\\00DFE'"),
             Case("ALIAS lower dotted I", "lower(s) = 'i'"),
+            Case("Unicode 14 Glagolitic lower", "lower(s) = U&'\\2C5F'"),
+            Case("Unicode 14 Glagolitic upper", "upper(s) = U&'\\2C2F'"),
+            Case("Unicode 14 Vithkuqi lower", "lower(s) = U&'\\+010597'"),
+            Case("Unicode 14 Vithkuqi upper", "upper(s) = U&'\\+010570'"),
+            Case("Unicode 16 Cyrillic lower", "lower(s) = U&'\\1C8A'"),
+            Case("Unicode 16 Cyrillic upper", "upper(s) = U&'\\1C89'"),
+            // Trino plans normalize(s) as normalize(s,'NFC'); our catalog has only arity 1.
+            Case("Unicode 16 NFC composition stays local", "normalize(s) = U&'\\+0105C9'", pushes = false),
             Case("substring gated safe shape", "substring(s, 2, 2) = 'tr'"),
             Case("replace gated safe shape", "replace(s, 'a', 'x') = 'xbc123'"),
             Case("lpad gated safe shape", "lpad(s, 3, '-') = '--İ'"),

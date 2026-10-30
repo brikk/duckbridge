@@ -285,6 +285,39 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
         assertThat(ids).containsExactly(3L)
     }
 
+    @Test
+    fun unicode16PredicatesOverQuackMatchNativeTrino() {
+        assertThat(parityAvailable).describedAs("Unicode recheck requires the actual bundled parity extension").isTrue()
+        val values = "(1,chr(11311)),(2,chr(11359)),(3,chr(66928)),(4,chr(66967))," +
+            "(5,chr(7305)),(6,chr(7306)),(7,chr(67026)||chr(775)),(8,CAST(NULL AS VARCHAR))"
+        val table = "${DuckBridgeQueryRunner.SCHEMA}.unicode_version"
+        quackConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("CREATE TABLE $table AS SELECT * FROM (VALUES $values) t(id,s)")
+                try {
+                    for (predicate in listOf("lower(s)=chr(11359)", "upper(s)=chr(11311)",
+                        "lower(s)=chr(66967)", "upper(s)=chr(66928)", "lower(s)=chr(7306)",
+                        "upper(s)=chr(7305)", "normalize(s)=chr(67017)")) {
+                        assertUnicodePredicate(predicate, values)
+                    }
+                } finally { statement.execute("DROP TABLE $table") }
+            }
+        }
+    }
+
+    private fun assertUnicodePredicate(predicate: String, values: String) {
+        val sql = "SELECT id FROM unicode_version WHERE $predicate ORDER BY id"
+        if (predicate.startsWith("normalize")) {
+            // Trino's planned arity-2 normalization is not in the pushdown catalog.
+            assertThat(explain(sql)).contains("filterPredicate")
+        } else {
+            assertThat(explain(sql)).doesNotContain("filterPredicate")
+        }
+        val actual = computeActual(sql).materializedRows
+        val expected = computeActual("SELECT id FROM (VALUES $values) t(id,s) WHERE $predicate ORDER BY id").materializedRows
+        assertThat(actual).describedAs("Quack Unicode predicate: %s", predicate).isEqualTo(expected)
+    }
+
     private fun explain(sql: String): String =
         computeActual("EXPLAIN (TYPE DISTRIBUTED) $sql")
             .materializedRows

@@ -465,7 +465,7 @@ object SemanticFixtures {
                     "straße", "ß", "ẞ", "İ", "I", "ı", "ΟΔΥΣΣΕΥΣ", "ΣΑΣ", "ǅ", "ǆ", "ﬁ", "ŉ", "ΐ", "ǰ", "\uD801\uDC00", "\uD801\uDC28",
                     "ᾈ", "ᾀ", "Ⅷ", "ⓐ", "\u212A", "\u212B", "ſ", "\u2126", "ǈ", "ǉ", "ﬀ", "①", "ｆｕｌｌ", "\u1E9B\u0323", "\u0130\u0307",
                     "\u01C4", "\u10D0", "\u1C90", "\uA7C5", "Café 日本", "", "abc",
-                )
+                ) + UnicodeVersionCases.caseMappingInputs
             for (s in caseCorpus) {
                 add(fx("lower", 1, "ICU simple mapping: ${cp(s)}", call("lower", VARCHAR, str(s))))
                 add(fx("upper", 1, "ICU simple mapping: ${cp(s)}", call("upper", VARCHAR, str(s))))
@@ -486,7 +486,7 @@ object SemanticFixtures {
             }
             // A constant containing U+0000 has no plain-literal spelling in DuckDB SQL → never pushed.
             add(np("trim", 1, "NUL-bearing constant not pushed", call("trim", VARCHAR, str("\u0000x\u0000"))))
-            for (s in listOf("e\u0301", "\u00E9", "A\u030A", "\u212B", "ﬁ", "①", "")) {
+            for (s in listOf("e\u0301", "\u00E9", "A\u030A", "\u212B", "ﬁ", "①", "") + UnicodeVersionCases.normalizationInputs) {
                 add(fx("normalize", 1, "NFC: ${cp(s)}", call("normalize", VARCHAR, str(s))))
             }
             for (h in listOf("", "00", "ff", "deadbeef", "616263", "e29c93", "41".repeat(200))) {

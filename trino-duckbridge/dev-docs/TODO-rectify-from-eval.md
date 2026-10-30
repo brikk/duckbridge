@@ -394,7 +394,12 @@ in default `PARITY` mode (`WHERE upper(s) = <Trino's upper>` over a DuckDB table
   calls `SetFallible()` (API already present in pinned v1.5.5), so latest reports `Empty key` as the
   intended query error rather than an internal contract violation.
 
-- [ ] **EV-E3 Unicode-version skew** — the vendored ICU is 66.1 (Unicode 13,
+- [x] **EV-E3 Unicode-version skew** — **resolved in parity 0.5.0 and reverified
+  against bundled 0.5.1 on 2026-10-30.** ICU 76.1 / Unicode 16 replaces the old
+  ICU 66.1 baseline. All 1,112,064 Unicode scalars (nine JDK checks each), new
+  native-Trino scalar/sequence fixtures and embedded/Quack predicate checks pass.
+  See [the current-profile recheck](REPORT-unicode-version-recheck-2026-10-30.md).
+  Historical finding and fix rationale follow: the vendored ICU was 66.1 (Unicode 13,
   `duckdb/extension/icu/third_party/icu/common/unicode/uvernum.h:142`); Trino runs on the
   worker JDK (JDK 25 → Unicode 16). Code points whose case mapping / whitespace property /
   NFC data were added or changed between Unicode 13 and 16 will diverge even after EV-E1.
