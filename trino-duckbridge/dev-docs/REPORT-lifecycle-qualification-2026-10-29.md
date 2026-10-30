@@ -181,3 +181,15 @@ from the JDBC CANCEL timeout correction.
 A focused revisit TODO is in the shared project backlog. Independent prepared
 schema/retry checks can proceed without waiting. No new driver artifact, native
 rebuild or release is assumed by this deferral.
+
+## Final independent verification
+
+Trino `check` and `verifyPluginAssembly` pass with **701 tests, zero
+failures/errors/skips** (`build/lifecycle-final-checks.log`). This includes the
+healthy-network, Arrow race/cleanup and real heartbeat checks, plus the later
+[prepared-schema/catalog-conflict tests](REPORT-prepared-catalog-lifecycle-2026-10-30.md).
+
+The two explicit peer acceptance tasks remain **blocked/red**, not counted as
+passing or silently relaxed. Their revisit TODO records the expected corrected
+driver/server artifacts. No dependency switch, native rebuild, publication,
+deployment or push was performed for this lifecycle follow-up.

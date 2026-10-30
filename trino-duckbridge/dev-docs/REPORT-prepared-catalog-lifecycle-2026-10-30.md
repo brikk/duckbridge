@@ -74,7 +74,10 @@ was introduced.
 
 **Eight targeted tests pass**, with both/two or three transport paths exercised
 inside each test. Evidence: `build/prepared-catalog-lifecycle.log`.
-Final module checks/package verification are recorded after completion.
+Final Trino `check` and `verifyPluginAssembly` pass: **701 tests, zero
+failures/errors/skips** (`build/lifecycle-final-checks.log`). The separate
+CANCEL-partition and orphan-reaping acceptance tasks remain deferred/red as
+directed by the user; they are not counted as passed by that module result.
 
 Remaining work is explicitly tracked rather than hidden: deferred peer fixes
 and their exact gates are described in
