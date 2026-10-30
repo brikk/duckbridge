@@ -581,6 +581,15 @@ with a named contract, or rejected before scan execution.
 
 ## DB20-16: transactions, retries, and prepared statements
 
+October-30 update: [prepared-schema/catalog retry proof](../trino-duckbridge/dev-docs/REPORT-prepared-catalog-lifecycle-2026-10-30.md)
+passes external DDL/metadata refresh and parameter-error recovery on native/Quack JDBC,
+plus actual held catalog-write conflicts on embedded/direct-Quack/native-wrapper paths.
+[Arrow lifecycle and idle cleanup](../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md)
+also pass their independent checks, including the fixed lazy-execute cancellation race.
+Per user direction, CANCEL-under-partition and autonomous orphan-session reaping stay
+as explicit **red acceptance tasks**, pending another agent's peer changes. The shared
+backlog has a focused revisit TODO; do not treat a green default suite as those gates passing.
+
 Quack JDBC 0.11 passes real server query cancellation (SQLState57014), network-cut streaming
 failure and independently bounded DISCONNECT acceptance tasks. The exact test contracts,
 the corrected compressed-sequence probe diagnosis and the remaining race scope are in
