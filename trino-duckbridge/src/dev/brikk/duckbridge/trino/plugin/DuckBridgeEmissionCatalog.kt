@@ -105,7 +105,8 @@ internal object DuckBridgeEmissionCatalog {
             // mod/2 is Bare but gated (TYPE_GATES) to a non-zero constant divisor: Trino throws
             // DIVISION_BY_ZERO where DuckDB returns NULL, which would silently drop the row (EV-A12).
             put(NameArity("mod", 2), Emission.Bare)
-            put(NameArity("power", 2), Emission.Bare)
+            // power is NOT pushed: native pow differs from Java Math.pow on special values and
+            // finite rounding, and a shared NaN result still changes DuckDB/Trino WHERE comparisons.
             // sqrt / ln / log2 / log10 / asin / acos are NOT pushed (EV-B2): Trino returns IEEE
             // NaN/-Infinity outside the domain where DuckDB throws, but wrapping in CASE is still
             // unsafe in a predicate because DuckDB and Trino's runtime filter path order NaN

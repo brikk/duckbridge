@@ -174,6 +174,8 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
             Case("concat_ws all-VARCHAR gate", "concat_ws('-', s, s2) = 'Alice-A'"),
             Case("strpos code-point semantics", "strpos(s, '123') > 0"),
             Case("mod non-zero divisor gate", "mod(n, 3) = 1"),
+            Case("power NaN comparison stays local", "power(x, 0.5) > 0", pushes = false),
+            Case("power alias stays local", "pow(x, 0.5) > 0 OR x IS NULL", pushes = false),
             Case("OPERATOR bitwise_and", "bitwise_and(n, 1) = 1"),
             Case("INLINE regexp_extract no-match NULL", "regexp_extract(s, '[0-9]+') IS NULL"),
             Case("RENAME regexp_like RE2-safe", "regexp_like(s, '^[a-z]+')"),

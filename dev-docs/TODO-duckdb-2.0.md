@@ -35,6 +35,12 @@ passes **920 Trino tests**, zero failures/errors/skips, and assembly verificatio
 Doris checks remain green against the unchanged 89-test baseline (test task
 up-to-date). This pass does not widen runtime capabilities or rerun external gates.
 
+The later [POWER audit/fix](../trino-duckbridge/dev-docs/REPORT-power-edge-audit-2026-10-31.md)
+finds real finite/NaN wrong-result pushdown and applies the user-approved local
+Trino fallback. **926 Trino tests** and assembly verification pass; all 713 scalar
+pairs and 14 production predicate row sets match Trino after that fix. Doris is
+unchanged and not rerun by this Trino-only task.
+
 **Open external/environment acceptance issues, separate from those module checks:**
 
 - Published-port HTTP streaming remains intermittently red; the actual host
@@ -777,10 +783,15 @@ new setting probe while that conservative gate remains in force.
 
 ### Other arithmetic changes
 
-- [ ] Re-prove bare `power/2` after DuckDB #22753 made `pow` IEEE-754 compliant.
-  Include `-0.0`, odd/even exponents, negative base with fractional exponent,
-  zero to negative powers, NaN, infinities, and overflow; compare exact Trino
-  values and error/null behavior.
+- [x] Audit bare `power/2` after DuckDB #22753: the
+  [power edge report](../trino-duckbridge/dev-docs/REPORT-power-edge-audit-2026-10-31.md)
+  records 713 input pairs and 14 actual production/local predicate plans/row sets.
+  It finds eight scalar and eight predicate-shape differences, including finite
+  rounding and NaN comparisons. Existing bare emission is **unsafe**, not qualified.
+- [x] Apply the user-approved correctness fix for `power/2`: remove bare emission
+  and retain native Trino evaluation, including SQL alias `pow`. The raw native
+  counterexamples remain diagnostic evidence; production fallback must match exact
+  Trino values and predicate row sets. Full native parity/comparison design is separate.
 - [ ] Re-probe decimal literal binding and casts after unbound DECIMAL literals,
   automatic promotion past BIGINT, float-to-decimal precision fixes, and stricter
   rejection of non-integral `DECIMAL(p,s)` parameters.

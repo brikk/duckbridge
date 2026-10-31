@@ -667,13 +667,16 @@ class TestDuckBridgeExpressionTranslator {
                 DuckBridgeExpressionTranslator.NameArity("substring", 3),
                 DuckBridgeExpressionTranslator.NameArity("starts_with", 2),
                 DuckBridgeExpressionTranslator.NameArity("abs", 1),
-                DuckBridgeExpressionTranslator.NameArity("power", 2),
                 DuckBridgeExpressionTranslator.NameArity("regexp_like", 2),
                 DuckBridgeExpressionTranslator.NameArity("lower", 1),
                 DuckBridgeExpressionTranslator.NameArity("upper", 1),
                 DuckBridgeExpressionTranslator.NameArity("reverse", 1),
                 DuckBridgeExpressionTranslator.NameArity("chr", 1),
                 DuckBridgeExpressionTranslator.NameArity("date_trunc", 2),
+            )
+            .doesNotContain(
+                DuckBridgeExpressionTranslator.NameArity("power", 2),
+                DuckBridgeExpressionTranslator.NameArity("pow", 2),
             )
     }
 
