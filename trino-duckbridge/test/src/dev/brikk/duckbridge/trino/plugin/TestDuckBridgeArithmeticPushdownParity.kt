@@ -102,6 +102,23 @@ class TestDuckBridgeArithmeticPushdownParity : AbstractTestQueryFramework() {
         }
     }
 
+    @Test
+    fun functionModuloZeroAndDynamicDivisorsStayLocalAndThrowEndToEnd() {
+        withTable("mod_function_zero", "SELECT * FROM (VALUES (10, 2), (20, 0), (30, 5)) AS t(id, divisor)") {
+            for (divisor in listOf("0", "divisor")) {
+                val sql = "SELECT id FROM mod_function_zero WHERE mod(id, $divisor) = 0"
+                val plan = computeActual("EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
+                assertThat(plan).describedAs("mod(id, %s) must retain the Trino filter", divisor)
+                    .contains("filterPredicate")
+                val thrown = catchThrowable { drain(sql) }
+                assertThat(thrown).describedAs("mod(id, %s) must preserve division-by-zero failure", divisor)
+                    .isNotNull()
+                assertThat(thrown.message?.lowercase().orEmpty())
+                    .containsAnyOf("division by zero", "divide by zero", "/ by zero")
+            }
+        }
+    }
+
     private fun drain(sql: String) {
         val rows = computeActual(sql).materializedRows
         for (row in rows) {

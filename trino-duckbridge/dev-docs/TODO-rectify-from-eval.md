@@ -5,6 +5,16 @@ Each item is labelled `EV-nn` so it can be picked up and closed one at a time;
 tick the box and add a one-line resolution note (commit, or "won't fix: reason")
 when done. Order within a section is roughly severity.
 
+**Current-profile note (2026-10-31):** the detailed findings below preserve their
+original 1.5.5-era evidence. Current pins and open qualification gates are tracked
+in [DuckDB 2.0 readiness](../../dev-docs/TODO-duckdb-2.0.md). In particular EV-C6's
+original blanket nanos refusal was superseded by
+[typed nanos qualification](REPORT-quack-0.11-nanos-2026-10-29.md), and EV-E3 is
+closed for Trino 483 / JDK 25 / parity 0.5.1 by the
+[Unicode recheck](REPORT-unicode-version-recheck-2026-10-30.md). Do not reopen the
+historical defects merely from their original descriptions, or extend a completed
+profile's proof to unqualified carriers/platforms.
+
 **Verification method used by the evaluation.** Trino-side values were computed
 through the repo's own query runner (Trino 483, `DuckBridgeQueryRunner`); DuckDB-side
 values against the bundled `duckdb_jdbc 1.5.5.0`. Both engines were run, not
@@ -257,8 +267,14 @@ constant divisor; `concat_ws` all-VARCHAR; `CAST`/`TRY_CAST` refuse string→non
   0.4.0 fixed empty-key behavior. EV-E2 is now done and the gate removed; embedded + Quack
   end-to-end tests prove normal HMAC predicates push and empty-key rows fail remotely like Trino.
 
-- [x] **EV-C6 timestamp precision** — **done, fail closed based on live JDBC probe.** DuckDB
-  JDBC 1.5.5 reports TIMESTAMP_NS by type name but returns `.987654321` as `.987654` through
+- [x] **EV-C6 timestamp precision** — **original resolution: fail closed; current
+  carrier-specific support supersedes the blanket refusal.**
+  [October-29 qualification](REPORT-quack-0.11-nanos-2026-10-29.md) proves exact
+  scalar TIMESTAMP_NS/TIME_NS on all four paths, TIME_NS lists on all four,
+  TIMESTAMP_NS lists and zoned nanos on Arrow/direct Quack, and precision-7..9
+  writes. Native JDBC timestamp-list/historical-zoned-text and Arrow TIMETZ
+  refusals remain. Nanos predicates are still local. Historical probe below:
+  DuckDB JDBC 1.5.5 reports TIMESTAMP_NS by type name but returns `.987654321` as `.987654` through
   `getObject(LocalDateTime)`, `java.sql.Timestamp`, and `getString`; mapping it to Trino
   `TIMESTAMP(9)` would merely label already-lost data as nanosecond-precise, while falling through
   to the old generic `TIMESTAMP_MICROS` path silently truncated it. `DuckBridgeScalarColumnMappings`

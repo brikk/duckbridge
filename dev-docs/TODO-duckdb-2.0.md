@@ -25,6 +25,45 @@ and Windows amd64. Doris is separately qualified on master `082736138b7`, API 24
 DuckDB 2.0.0 / Quack JDBC 0.12.0. Its old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
 this is master-development ASAN correctness evidence, not a published Doris-5.x release rollout.
 
+## Reconciled current state — 2026-10-31
+
+The four requested rounds are complete: exact flat-namespace routing (`e5075bd`),
+temporary boundary guards (`cc899bc`), released Quack 0.12.0 plus storage/trigger
+safety (`10a69d4`), and test-only scan benchmarks (`b224686`). The subsequent
+[tracker reconciliation and arithmetic regression](../trino-duckbridge/dev-docs/REPORT-readiness-reconciliation-2026-10-31.md)
+passes **920 Trino tests**, zero failures/errors/skips, and assembly verification.
+Doris checks remain green against the unchanged 89-test baseline (test task
+up-to-date). This pass does not widen runtime capabilities or rerun external gates.
+
+**Open external/environment acceptance issues, separate from those module checks:**
+
+- Published-port HTTP streaming remains intermittently red; the actual host
+  networking correction is unidentified/unapplied. See the
+  [HTTP investigation](../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md).
+- Autonomous orphan-session reaping remains red against signed core `f96420ed46`.
+  Healthy heartbeat renewal and bounded client teardown are qualified, not a
+  substitute for server expiry. See the
+  [lifecycle report](../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md).
+- Native JDBC's TUPLE-list string getter still crashes in the isolated negative
+  control. The requested post-round revisit is **done**; the guard and underlying
+  type/getter TODO remain open. See the
+  [boundary policy](../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
+- Doris JNI's ordinary-UTF-8/modified-UTF-8 mismatch still blocks OVERLAY
+  qualification. Await the native correction; no local rebuild/bypass is planned.
+  See the [OVERLAY report](../doris-duckbridge/dev-docs/REPORT-overlay-qualification-2026-10-29.md).
+
+**Local capability/qualification backlog:** faithful new-type mappings, full nested
+schema addressability, remaining temporal/optimizer/storage-fault coverage and
+dedicated protocol conformance. Stable extension ABI, CONNECT, Java table functions
+and a production chunk reader are optional designs, not automatic upgrades.
+Current unsafe paths remain refused; benchmark results did not change defaults.
+
+The priority list below originated in the preview scan; its gate labels apply to
+the capability/platform being enabled, not every historical proposal. Checked
+items have evidence for their stated scope. Unchecked combined/wider items must
+not erase completed subgates or imply a supported capability is absent. Dated
+reports preserve their original artifact identities; current pins are above.
+
 ## Source material
 
 - [A Preview of DuckDB v2.0](https://duckdb.org/2026/08/17/duckdb-20-highlights)
@@ -59,11 +98,11 @@ important are:
 | Change | Upstream evidence | Duckbridge consequence |
 |---|---|---|
 | Quack negotiates v1/v3; 0.10 fixes `must_invalidate` handling | `duckdb-quack` PRs [#229](https://github.com/duckdb/duckdb-quack/pull/229), [#245](https://github.com/duckdb/duckdb-quack/pull/245); released brikk driver 0.10.0 | Both connector suites require negotiated v3 against DuckDB 2.0. Dedicated lease/resource/conformance work remains separate. |
-| Untyped `NULL` remains `SQLNULL` at result/table boundaries | DuckDB [#23017](https://github.com/duckdb/duckdb/pull/23017), `b0f224ed` | New JDBC/Arrow/Quack metadata and vector type; current host maps do not handle it explicitly. |
+| Untyped `NULL` remains `SQLNULL` at result/table boundaries | DuckDB [#23017](https://github.com/duckdb/duckdb/pull/23017), `b0f224ed` | Explicit unsupported guards are in place; faithful host type support remains separate. |
 | Every error invalidates an explicit transaction by default | DuckDB [#22674](https://github.com/duckdb/duckdb/pull/22674), `a2044776` | Retry and pooled-connection code must rollback/reset or replace connections after failure. |
 | Prepared statements now use SQL `PREPARE`/`EXECUTE`/`DEALLOCATE` internally | DuckDB [#24273](https://github.com/duckdb/duckdb/pull/24273), `b5e4f5be` | Re-test bindings, schema changes, close/cancel, and Quack execution timing. |
 | Strong timestamp types plus `TIMESTAMPTZ_NS` | DuckDB [#22489](https://github.com/duckdb/duckdb/pull/22489), [#22412](https://github.com/duckdb/duckdb/pull/22412) | New type spelling/metadata and changed downcast rounding at our microsecond boundary. |
-| Integer modulo/division by zero now throws by default | DuckDB [#25004](https://github.com/duckdb/duckdb/pull/25004), `5efbc8a5` | 2.0 aligns with Trino, but exposes an existing unsafe `mod/2` pushdown on the 1.5.5 lane. |
+| Integer modulo/division by zero now throws by default | DuckDB [#25004](https://github.com/duckdb/duckdb/pull/25004), `5efbc8a5` | The original `mod/2` zero-divisor hole is already guarded: only nonzero integer constant divisors push; integer `/` and `%` operators remain local. |
 | `pow` changed to IEEE-754 behavior | DuckDB [#22753](https://github.com/duckdb/duckdb/pull/22753), `1b8a8819` | Re-prove the pushed `power/2` edge corpus, including signed zero, NaN, infinity, and domain errors. |
 | Extension/CLI x86 CPU baseline may rise | DuckDB [#24391](https://github.com/duckdb/duckdb/pull/24391), `721f57a9` | Community parity binaries may require x86-64-v2; the CLI may require v3 and can SIGILL on old hosts. |
 | Quack adds heartbeats, bounded teardown, result retention/read-ahead, and scoped secrets | `duckdb-quack` PRs [#240](https://github.com/duckdb/duckdb-quack/pull/240), [#228](https://github.com/duckdb/duckdb-quack/pull/228), [#229](https://github.com/duckdb/duckdb-quack/pull/229), [#245](https://github.com/duckdb/duckdb-quack/pull/245), [#262](https://github.com/duckdb/duckdb-quack/pull/262) | Connection lifetime, server memory, cancellation, and authentication behavior all change. |
@@ -99,26 +138,29 @@ important are:
 DuckDB version pin, Quack has client/server protocol compatibility, and
 `quack-jdbc` is not the DuckDB Java driver.
 
-- [x] Adopt DuckDB 2.0.0 as Trino's main lane while retaining Doris's independent 1.5.6 lane.
+- [x] Adopt DuckDB 2.0.0 for Trino and the separately qualified Doris-master API-24/JNI-6 lane;
+  preserve the old Doris API-13 / 1.5.6 artifacts as rollback, not the active source pin.
 - [x] Pin and record `duckdb_jdbc`, DuckDB CLI/server, Quack driver and parity extension independently
   in the 2026-10-21 qualification report.
 - [x] Qualify released `quack-jdbc` 0.9.0 against the DuckDB-2.0 server's retained protocol-v1
   compatibility. Protocol-v3 features remain follow-up work.
 - [x] Adopt released 0.10.0 for both connectors; prove actual driver/server identity and negotiated
   v3, existing semantic/remote/Arrow suites, ordinary-query-error recovery and Doris live JNI scans.
-- [ ] Implement/prove the v2/v3 protocol additions in `quack-jdbc`: indexed and
+- [ ] Complete dedicated conformance of the released driver's v3 additions: indexed and
   acknowledged fetch batches, terminal batch counts, read-ahead ordering, the
-  heartbeat request/lease handshake, and new error/cleanup behavior. Do not
-  simply change the version constant.
+  heartbeat request/lease handshake, and new error/cleanup behavior. Actual v3
+  negotiation, healthy idle renewal and bounded CANCEL/DISCONNECT are already
+  qualified; full wire/resource conformance and autonomous server reaping are not.
 - [x] Re-vendor `duckdb-trino-parity-extension` to `b216dc13a9`, including DuckDB v2.0.0 and matching
   CI tools.
 - [x] Exercise Trino embedded JDBC, direct `quack-jdbc`, embedded Arrow and Quack/Arrow.
-- [ ] Exercise Doris metadata/JNI scans after the required Doris-5.x runtime boundary is available.
+- [x] Exercise Doris metadata/JNI scans on the exact master API-24/JNI-6 boundary,
+  including live Java-17 smoke with released Quack 0.12.0. No published Doris-5.x rollout is claimed.
 - [ ] Probe 1.5-client/2.0-server and 2.0-client/1.5-server Quack combinations.
   Support only combinations the protocol and parity-extension results prove;
   otherwise reject/document mixed versions clearly.
 - [x] Bump Trino's Quack test server, CI/release extension fetch path, bundled binary and compatibility
-  documentation together. Doris remains deliberately pinned separately.
+  documentation together. Doris's native baseline remains independently qualified.
 - [x] Advance the maintained lane beyond `duckdb_jdbc:1.5.5.1`: `1.5.6.0` passed the full
   Trino and Doris suites on 2026-10-10.
 
@@ -145,13 +187,15 @@ the old unstable C++ API and internal catalog helpers directly:
 The history also contains sweeping pre-C-API-v2 breakage: immutable
 `LogicalType`/`Value`/function sets, private query-result and prepared-statement
 members, new vector writers/sizes, C++17 as the minimum, a revamped extension
-build system, and removal of the amalgamation build. Expect a source port even if
-the entrypoint itself still exists.
+build system, and removal of the amalgamation build. Exact-version qualification
+below is complete; stable-ABI migration remains separate from that mechanical port.
 
-- [ ] First make the existing implementation compile and pass unchanged in
-  meaning against 2.0. Do not combine semantic changes with the mechanical port.
-- [ ] Build/load/test the extension on every shipped native platform and Wasm
-  target. Confirm `trino_meta()` reports exactly the expected ten functions.
+- [x] Qualify the exact-version 2.0 extension implementation; signed 0.5.1 is bundled
+  and exercised by connector tests. See the
+  [signed release report](../trino-duckbridge/dev-docs/REPORT-signed-parity-0.5.1-duckdb-2.0.0-2026-10-23.md).
+- [x] Install/load/smoke all ten functions and metadata on the four shipped native
+  platforms in that release's required matrix. Wasm is not a JVM connector target;
+  this does not claim every extension target or oldest-CPU qualification.
 - [ ] Confirm whether the new stable API covers vectorized scalar functions,
   BLOB/VARCHAR access, exception propagation, and a zero-argument metadata table
   function well enough to replace the internal APIs.
@@ -160,7 +204,7 @@ the entrypoint itself still exists.
   to preserve its implementation as a macro.
 - [ ] Port to the stable ABI as a separate follow-up and prove whether one binary
   really loads across later DuckDB versions before changing packaging policy.
-- [ ] Keep exact-version binaries until that cross-version proof exists.
+- [x] Keep exact-version signed binaries; cross-version stable-ABI proof is not claimed.
 - [ ] Decide whether extension-schema APIs change registration/search-path
   behavior. Keep `trino_*` and `trino_meta()` unqualified only if loading the
   extension normally and under an alias resolves them identically.
@@ -180,24 +224,22 @@ This does not establish arbitrary future-JDK or every-platform compatibility.
 
 **Why:** DuckDB 2.0 removes the ICU *library*. Its still-named `icu` extension
 implements timezones, calendars, and collations itself from IANA and native
-DuckDB code. Our parity extension separately vendors an old minimal ICU snapshot
+DuckDB code. Our parity extension separately vendors ICU 76.1 / Unicode 16
 because Trino's Java semantics differ from DuckDB's built-ins. DuckDB's removal
 does not prove that we can remove our copy.
 
-- [ ] Keep vendored ICU for the first 2.0-compatible parity build unless the
-  existing build becomes impossible. A switch to DuckDB's native Unicode code is
-  a semantic change and needs separate proof.
-- [ ] Re-run every current smoking gun: dotted-I lowercasing, sharp-S uppercasing,
+- [x] Retain independently vendored ICU in the 2.0 parity build. Replacing it with
+  DuckDB's Unicode implementation would still require separate semantic proof.
+- [x] Re-run current smoking guns: dotted-I lowercasing, sharp-S uppercasing,
   combining-mark and ZWJ reversal, Java-whitespace trim, and NFC normalization.
-- [ ] Add a generated Unicode corpus comparing `trino_lower`, `trino_upper`, trim,
+- [x] Add a generated Unicode corpus comparing `trino_lower`, `trino_upper`, trim,
   and normalize directly with Trino/Java, not merely with DuckDB 1.5.
 - [ ] Record the provenance/version/security-maintenance plan for the now
   independently vendored ICU sources. They can no longer be described as a copy
   of DuckDB's current bundled implementation after 2.0.
-- [ ] Decide deliberately whether to stay on the 1.5.5-vendored ICU snapshot or
-  refresh it. Main passed through ICU 77.1 and 78.3 before removing the library;
-  copying either update changes Unicode data and requires the same Trino corpus
-  proof as replacing ICU entirely.
+- [x] Verify the actual bundled ICU version and current JDK parity rather than
+  retaining the stale ICU-66.1/Unicode-13 assumption. ICU 76.1 / Unicode 16 is
+  qualified for Trino 483 / JDK 25; a future ICU/JDK change needs its own proof.
 - [ ] Re-run the binary string-comparison canary and ordering/`IN`/TopN fixtures
   under 2.0. The new collation implementation must not change our default-binary
   assumption.
@@ -228,8 +270,14 @@ direct `quack-jdbc` and Doris still need their own protocol qualification.
 - [x] Qualify `quack-jdbc` 0.9.0 against the 2.0 server for metadata, prepared parameters,
   errors, token auth, arrays, wide integers, timestamps and concurrent result streams.
 - [x] Confirm DuckDB 2.0's retained protocol-v1 compatibility through the direct Quack suite.
-- [ ] Add explicit cancellation, TLS and long-running/retained-result qualification.
-- [ ] Re-run pool/churn and long-running-result tests; use the new Quack metrics
+- [x] Qualify actual server cancellation/57014, CANCEL-under-partition deadline
+  and bounded DISCONNECT with released Quack 0.12.0; see the
+  [release report](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md).
+- [ ] Complete TLS and long-running/retained-result qualification. Published-port
+  streaming and autonomous lease expiry remain separate red acceptance gates.
+- [x] Verify 65-second healthy idle renewal and twenty physical-session/heartbeat
+  cleanup cycles. This does not prove abandoned-server-session expiry.
+- [ ] Extend pool/churn and long-running-result tests; use the new Quack metrics
   and logs to distinguish server execution, result transport, and client decode.
 - [ ] Prototype `CONNECT engine` in `QuackDuckBridgeExecutor` and compare it with
   `quack_query_by_name`. Determine whether it preserves the DuckDB driver's Arrow
@@ -262,8 +310,9 @@ Relevant code: `QuackDuckBridgeExecutor.kt`, `QuackParameterInliner.kt`,
 intending to preserve DuckSQL. Duckbridge generates and sometimes nests SQL, so
 "users should not notice" still needs a connector-level proof.
 
-- [ ] Run the generated-SQL suites against a 2.0 preview. While still useful,
-  also run 1.5.5 with the experimental PEG parser (`CALL enable_peg_parser()`).
+- [ ] Complete a dedicated old/new-parser differential campaign beyond the
+  generated SQL already exercised by the final-2.0 connector suites. A preview
+  bump is no longer pending; any old-parser oracle must be isolated test tooling.
 - [ ] Cover quoted identifiers that are keywords, Unicode, embedded quotes,
   three-part names, every literal/cast shape, arrays, empty projections,
   `ORDER BY`/`LIMIT`, parity calls, and date/time literals.
@@ -298,8 +347,10 @@ server operator's responsibility but needs the same compatibility statement.
 
 - [x] Build fixtures for: 1.5-created read-only in 2.0, 1.5-created then written/
   checkpointed in 2.0, 2.0-created reopened in 2.0, and attempted 1.5 rollback.
-- [ ] Include wide tables, ART indexes, deletes, `DICT_FSST` strings, corruption
-  detection, and concurrent open/write cases called out by the new format.
+- [x] Include wide tables, explicit ART indexes, committed deletes and full ordered
+  value digests in the isolated old/new storage fixtures.
+- [ ] Add codec-specific `DICT_FSST` coverage, corruption/WAL/crash recovery and
+  concurrent cross-process open/write cases; general fixture success does not prove them.
 - [x] Determine exactly which operation upgrades a 1.5 file and whether a 2.0
   compatibility setting can create/write an old-format file. Document observed
   behavior; do not assume opening alone is harmless.
@@ -335,11 +386,16 @@ Current fit:
 | Trino direct `quack-jdbc` | no | Different driver/API. |
 | Doris `JdbcJniScanner` over `quack-jdbc` | no | Would require driver/scanner work or the separate ADBC route. |
 
-- [ ] Add a scalar-only prototype for Trino embedded using the same
+- [x] Build and benchmark a test-only public-API scalar reader with common prepared
+  SQL, binds, Pages, NULL/value checks and independent JDK expectations.
+- [ ] If production adoption is requested, integrate the prototype using the same
   base-jdbc-built prepared SQL and bindings as `DuckBridgeArrowPageSource`.
-- [ ] Benchmark row JDBC vs chunked vs Arrow on narrow/wide, primitive/text,
-  selective/non-selective, small/large, and cancellation workloads. Measure
-  native memory, Java heap, JNI calls, and conversion CPU.
+- [x] Benchmark five reader modes on small/large/selective numeric, Unicode text,
+  wide/nullable and early-close workloads in two fresh forks per cell. Retain
+  wall/caller-CPU/allocation and separately sampled memory evidence; no universal win.
+- [ ] Before production adoption, extend to cancellation workloads, instrument
+  JNI transitions and complete native-peak/Trino-memory qualification. Existing
+  phase samples are not complete native-memory peaks or instrumented JNI counts.
 - [ ] Verify nulls, unsigned/wide integers, decimal, date/time/timestamptz, BLOB,
   UUID, metadata, empty projection, and errors at chunk boundaries.
 - [ ] Preserve backpressure, early close, cancellation, statement lifetime, and
@@ -362,9 +418,10 @@ October-30 round 2: [temporary boundary policy](../trino-duckbridge/dev-docs/REP
 guards unqualified VARIANT/TUPLE/SQLNULL and unsafe composite auto-VARCHAR conversion.
 Native JDBC TUPLE-list getString crashes are retained as isolated child-JVM negative
 controls. Explicit source CASTs are a visible text choice, not typed support. Qualified
-arrays and documented Doris text mappings remain unchanged. Per user direction, revisit
-project TODO **5bdd9ba4** after the current storage/write-safety and benchmark rounds;
-do not treat the temporary guard as the completed type implementation below.
+arrays and documented Doris text mappings remain unchanged. The requested post-round
+revisit of project TODO **5bdd9ba4** is complete: the isolated native crash still
+reproduces. Keep the guard and underlying type/getter TODO open; do not repeat the
+revisit as if pending or treat the guard as the full typed implementation below.
 
 **Why:** 2.0 makes shredded `VARIANT` end-to-end, including Parquet reads/writes,
 scan extraction pushdown, and `variant_*` functions. DuckDB also expects regular
@@ -404,7 +461,7 @@ model DuckDB's traditional catalog/schema/table namespace and quote a schema nam
 as one component. A nested schema can become inaccessible or ambiguously
 flattened even if no query uses the new DDL.
 
-- [ ] Probe JDBC and Quack metadata for `finance.reports.q3`: `TABLE_CAT`,
+- [x] Probe JDBC and Quack metadata for nested paths: `TABLE_CAT`,
   `TABLE_SCHEM`, `TABLE_NAME`, search patterns, and the SQL needed to reference it.
 - [ ] Account for Quack's current representation: schemas from the server's
   default catalog stay at the attached root, while another remote catalog is
@@ -414,10 +471,12 @@ flattened even if no query uses the new DDL.
   referenced as `s1.child.table` only after making the attached catalog current;
   adding an explicit catalog would need a fourth name part. Current Trino/Doris
   SQL always assumes a catalog/schema/table triple and cannot blindly reuse this.
-- [ ] Decide whether to represent, encode, flatten, or explicitly reject nested
-  schemas in Trino and Doris. Do not silently merge distinct schema paths.
-- [ ] Test listing, resolving, quoting, creating, renaming, and querying objects
-  whose path components themselves contain dots and keyword names.
+- [x] Explicitly reject normal host metadata for a current catalog containing true
+  nested schemas in both connectors. Do not silently merge distinct schema paths.
+- [x] Test exact flat dotted/quoted/keyword/wildcard names, current-catalog scope and
+  Trino create/write/rename/drop on all four paths, plus Doris metadata/query routing.
+- [ ] Design full path-aware nested-schema addressability before replacing the guard;
+  flat literal dots must remain distinct from actual ancestry.
 - [ ] Keep Doris's current single-user-catalog rule separate from nested-schema
   mapping; they are different namespace dimensions.
 
@@ -465,14 +524,16 @@ remain engine-unsupported and are checked for explicit rejection without mutatio
 adds row/statement, before/after triggers and transition tables. Doris Duckbridge
 is read-only, but a remote server may still expose triggered tables.
 
-- [ ] Smoke-test Trino insert/update/delete against tables with BEFORE/AFTER and
-  row/statement triggers, including trigger failures and audit-table side effects.
+- [x] Smoke-test Trino insert/update/delete against the supported BEFORE/AFTER
+  statement and AFTER ROW trigger shapes, including failures, exact affected
+  counts and audit effects. Unsupported engine combinations reject without mutation.
 - [x] Verify transaction/rollback behavior and affected-row reporting through
   embedded and Quack transports.
-- [ ] Confirm metadata listing does not misclassify trigger-created objects and
-  that trigger side effects do not break temporary-table/rename-based writes.
-- [ ] Treat trigger semantics as DuckDB behavior; do not claim trigger pushdown or
-  management support unless connector APIs explicitly expose it.
+- [x] Confirm triggers do not appear as tables and staged Trino insertion fires the
+  target trigger once per affected source row.
+- [ ] Extend to arbitrary temporary-table/rename-based writes and trigger shapes
+  beyond the proved fixtures; no general trigger lifecycle support is claimed.
+- [x] Keep trigger management as native DuckDB behavior, not a new connector API.
 
 ## DB20-12: Java table functions
 
@@ -518,9 +579,9 @@ of Trino/Doris parity.
 
 October-28 first-pass inventory and 56 typed JSON comparisons are retained in
 [the intake report](../doris-duckbridge/dev-docs/REPORT-duckdb2-function-intake-2026-10-28.md).
-It found duplicate-key and invalid-JSON expression differences; no new pushdown was enabled.
-The sibling brikk-sql generated catalog is still 1.5.6. Full refreshed-overload/type comparison and
-the broader semantic matrix below remain open; name inventory alone does not tick those gates.
+It found duplicate-key and invalid-JSON expression differences; no new pushdown was enabled
+by that first pass. Its stale sibling catalog was superseded by the published intake below;
+the broader semantic matrix remains separate from completed catalog refresh work.
 
 Update: [published brikk-sql 0.21.0 intake](../doris-duckbridge/dev-docs/REPORT-published-function-intake-2026-10-28.md)
 now compares same-policy 1.5.6/2.0 function/type contracts against a live JDBC capture,
@@ -579,11 +640,11 @@ predicates remain local; this is not generic date-function pushdown qualificatio
 native six-digit ceiling and packed-TIMETZ refusal are unchanged.
 
 October-29 [boundary capture](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md)
-records actual JDBC/Quack NULL/CTAS/nested/temporal metadata and getters. The released drivers
-preserve naive nanos; old driver-truncation claims are corrected, but host nanos mappings remain
-unqualified and guarded. Doris untyped NULL errors are actionable; packed TIMETZ is rejected
-before falsely advertising time text. Arrow, broader temporal extremes and full host support
-remain open; the checkboxes below include those wider gates.
+records actual JDBC/Quack NULL/CTAS/nested/temporal metadata and getters. Its then-pending
+Trino nanos mappings were subsequently qualified by the report above; the blanket
+driver-truncation/host-unsupported claim is obsolete. Doris untyped NULL errors are
+actionable; packed TIMETZ is rejected before falsely advertising time text. Remaining
+carrier refusals, broader temporal extremes and full host support stay separate.
 
 **Why:** several type-system changes are not headline features but cross every
 JDBC/Arrow/Quack boundary we own.
@@ -598,16 +659,16 @@ against the old boundary behavior.
   arrays/struct fields, and a pass-through query whose computed column is NULL.
 - [ ] Record `DATA_TYPE`, `TYPE_NAME`, class name, `getObject`/`getString`, Arrow
   vector, and Quack logical type for each path.
-- [ ] Add an explicit SQLNULL mapping or a clear unsupported error. Do not let
+- [x] Add clear SQLNULL unsupported guards in both hosts. Do not let
   `Types.OTHER` fall into the array-name special case or an accidental VARCHAR
-  conversion.
+  conversion. This is explicit rejection, not typed SQLNULL support.
 - [ ] Use `legacy_disable_null_type=true` only as a differential diagnostic. Do
   not make a global legacy setting the permanent substitute for type support.
 
 DuckDB #22489 changes timestamp internals and downcast rounding; #22412 adds
-`TIMESTAMPTZ_NS`. The current Trino JDBC map assumes every JDBC `TIMESTAMP` is
-microsecond `TIMESTAMP`, has no explicit `TIMESTAMPTZ` arm, while Doris recognizes
-`TIMESTAMP_NS` but not a nanosecond-with-zone spelling.
+`TIMESTAMPTZ_NS`. Trino now dispatches by exact native type name before JDBC type
+code, with explicit seconds/millis/micros/nanos and zoned mappings on qualified
+carriers. Doris's six-digit precision ceiling remains a separate host limitation.
 
 - [ ] Capture exact JDBC and Quack type names/codes for `TIMESTAMP_S`,
   `TIMESTAMP_MS`, `TIMESTAMP`, `TIMESTAMP_NS`, `TIMESTAMPTZ`,
@@ -633,11 +694,11 @@ passes external DDL/metadata refresh and parameter-error recovery on native/Quac
 plus actual held catalog-write conflicts on embedded/direct-Quack/native-wrapper paths.
 [Arrow lifecycle and idle cleanup](../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md)
 also pass their independent checks, including the fixed lazy-execute cancellation race.
-The earlier peer deferral is partially resolved by released Quack JDBC **0.11.1**:
-[final adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md)
-passes all four explicit CANCEL/streaming/DISCONNECT gates and 701 Trino + 85 Doris tests,
-plus the live Java-17 scanner lane. Autonomous orphan-session reaping remains an explicit
-**red acceptance task** against core f96420ed46. The subsequent
+The earlier CANCEL-deadline deferral was resolved by released Quack JDBC **0.11.1**;
+current [0.12.0 qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md)
+retains strict healthy-CANCEL/57014, partition-CANCEL and bounded DISCONNECT gates,
+plus live Java-17 scanner verification. Autonomous orphan-session reaping remains an
+explicit **red acceptance task** against core f96420ed46. The
 [HTTP investigation](../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md)
 reproduces pre-cut truncations and traces receive-window stalls on Docker's published-port
 loopback leg, independently reproduced with raw HTTP and no SQL engine/driver/proxy.
@@ -651,25 +712,29 @@ the corrected compressed-sequence probe diagnosis and the remaining race scope a
 
 October-29 [pool subgate](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md):
 real Quack 0.10/Hikari 6.0 single-slot reuse passes parser/binder/execution-error recovery,
-aborted-transaction rollback on pool return, prepared rebinding and early result close. This
-does not close the remaining catalog-conflict, network/cancel, schema-change or Arrow gates.
+aborted-transaction rollback on pool return, prepared rebinding and early result close.
+Later reports above qualify specific catalog-conflict, schema-change, Arrow and
+CANCEL contracts; the full network/resource campaign is still not implied.
 
 **Why:** DuckDB #22674 makes every parser/binder/execution error invalidate an
 explicit transaction by default, and #24273 reimplements C++ prepared statements
 through SQL `PREPARE`/`EXECUTE`/`DEALLOCATE`. Both changes affect lifecycle and
 error recovery even when query results are unchanged.
 
-- [ ] Re-run `DuckDbCatalogWriteRetry` with catalog conflicts and injected
-  parser/binder/execution errors. A fresh `Statement` on the same connection may
-  no longer be enough; prove rollback/autocommit state or replace the connection.
+- [x] Exercise production `DuckDbCatalogWriteRetry` under actual held/committed
+  catalog conflicts on three transports; real parser/binder/execution errors do
+  not retry. Autocommit recovery is proved; arbitrary write retry is not enabled.
 - [ ] Verify Trino connection-pool and Doris Hikari return paths never pool an
   aborted transaction. The next borrower must get a clean session or a hard
   failure, not delayed "transaction is aborted" errors.
 - [ ] Test multi-statement init and cleanup sequences: extension load, probe,
   timezone setup, tuning, secret creation, attach/connect, query, and detach.
-- [ ] Test prepared SELECT reuse across table/schema changes, stale statistics,
-  parameter type changes, cancellation, result close, statement close,
-  connection close, and concurrent close.
+- [x] Test prepared SELECT/SELECT * across external ADD COLUMN and drop/recreate
+  with type changes, typed NULL/integer rebinds and conversion-error recovery on
+  native/Quack JDBC. A failed native statement closes; fresh-statement recovery
+  is distinct from Quack's same-statement reuse.
+- [ ] Extend prepared reuse to stale statistics and all combined parameter,
+  cancellation, result/statement/connection-close and concurrent-close races.
 - [ ] Confirm prepared-statement destruction/deallocation does not keep a
   connection/database alive and that closing the connection first is safe.
 - [ ] Pin when Quack starts executing work. Its current remote table-function path
@@ -691,22 +756,24 @@ remote write.
 **Why:** DuckDB main contains user-visible semantic changes in functions we push.
 These need cross-engine fixtures, not only successful-query smoke tests.
 
-### Urgent 1.5.5 issue: `mod/2`
+### Resolved zero-divisor pushdown hole; exceptional-case follow-up
 
-The translator correctly refuses operator `$divide` and `$modulo`, because
-DuckDB 1.5.5 returns `NULL` on a zero divisor while Trino throws. However,
-`NameArity("mod", 2)` is separately emitted as a bare DuckDB function and its
-fixture only covers `mod(7, 3)`. DuckDB's `mod` is an alias of `%`, so
-`mod(x, 0)` has the same unsafe 1.5.5 behavior. DuckDB #25004 changes 2.0 to throw
-by default, but that does not make the maintained 1.5 lane safe.
+The original 1.5.5 `mod/2` finding was fixed by EV-A12. The current emission
+catalog requires a **nonzero integer constant divisor**; zero, NULL and dynamic
+divisors do not emit. `$divide` and `$modulo` operators also remain local.
+The fix does not depend on DuckDB 2.0's division-by-zero default or require a
+new setting probe while that conservative gate remains in force.
 
-- [ ] Add a live `mod(x, 0)` cross-engine predicate fixture immediately.
-- [ ] On 1.5.5, remove `mod/2` from the pushable catalog or back it with a parity
-  function that throws. Do not wait for the 2.0 upgrade to close this hole.
-- [ ] On 2.0, require `null_on_division_by_zero=false` before `mod/2` can push;
-  an operator-set compatibility value of `true` restores the unsafe NULL result.
-- [ ] Keep integer `/` unpushed after 2.0: DuckDB true division still differs
-  from Trino truncation even though zero-divisor errors now align.
+- [x] Guard `mod/2` against zero/dynamic divisors. `SemanticFixtures` retains the
+  zero-divisor non-push assertion; row-set tests prove a nonzero-divisor case pushes.
+- [x] Keep integer `/` and `%` operators local, with exact row/plan checks and
+  end-to-end division/modulo-by-zero error regressions.
+- [x] Add explicit function-call `mod(id,0)` and `mod(id,divisor)` local-plan/error
+  integration coverage in `TestDuckBridgeArithmeticPushdownParity`. Both retain
+  `filterPredicate` and raise Trino's division-by-zero error. Targeted class:
+  seven tests passed, no failures/errors/skips; see the reconciliation report.
+- [ ] If runtime-divisor pushdown is proposed later, prove exceptional inputs and
+  `null_on_division_by_zero` settings first; the engine default is not sufficient.
 
 ### Other arithmetic changes
 
