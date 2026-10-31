@@ -27,8 +27,15 @@ repositories {
     mavenCentral()
 }
 
+// Test-only, separate-process storage oracle. Never added to a connector/test runtime classpath.
+val legacyStorageDriver by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
 // Use Trino BOM for all managed dependency versions
 dependencies {
+    add(legacyStorageDriver.name, "org.duckdb:duckdb_jdbc:1.5.6.0")
     // BOM import — controls versions for io.trino, io.airlift, jackson, opentelemetry, etc.
     implementation(platform(libs.trino.bom))
     testImplementation(platform(libs.trino.bom))
@@ -281,6 +288,7 @@ tasks.named("processResources") {
 }
 
 tasks.test {
+    systemProperty("duckbridge.test.legacyJdbcJar", legacyStorageDriver.singleFile.absolutePath)
     // Child-JVM raw-driver crash controls must load the exact same resolved test artifacts.
     systemProperty("duckbridge.test.classpath", sourceSets.test.get().runtimeClasspath.asPath)
     useJUnitPlatform {

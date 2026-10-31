@@ -43,10 +43,10 @@ cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin
 Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
 see below).
 
-Source builds use Quack JDBC **0.11.1** for both the Trino and Doris connectors. Existing published
+Source builds use Quack JDBC **0.12.0** for both the Trino and Doris connectors. Existing published
 release artifacts are unchanged by this source update.
-See the [0.11.1 release qualification](trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md)
-for bounded cancellation and the [0.11/nanos qualification](trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
+See the [0.12.0 release qualification](trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md)
+for triggered-DML counts and bounded cancellation, and the [0.11/nanos qualification](trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
 for verified transport paths and explicit remaining type limitations.
 
 Schema discovery is scoped to the connection's current DuckDB catalog. Flat names containing dots

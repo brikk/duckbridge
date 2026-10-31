@@ -1,8 +1,8 @@
 # TODO: DuckDB 2.0 readiness
 
 **Status:** DuckDB 2.0.0 is qualified for Trino (2026-10-21) and the matching Doris-master
-API-24/JNI-6 lane (2026-10-28). Both now select released Quack JDBC 0.11.1 with negotiated-v3
-regression checks; see the [October-30 adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.11.1-release-2026-10-30.md).
+API-24/JNI-6 lane (2026-10-28). Both now select released Quack JDBC 0.12.0 with negotiated-v3
+regression checks; see the [October-31 adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md).
 This tracks remaining stable-ABI, storage, dedicated protocol-conformance and advanced-feature work.
 See [the October-28 qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api24-duckdb2-2026-10-28.md).
 
@@ -19,10 +19,10 @@ version alone:
 - Trino pushdown depends on a version-pinned native `trino_parity` extension.
   Doris instead has its own small, audited SQL-function allowlist.
 
-The maintained lanes pin DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.11.1`, parity source
+The maintained lanes pin DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.12.0`, parity source
 `b216dc13a9`, and signed `trino_parity` 0.5.1 community binaries for Linux amd64/arm64, macOS arm64
 and Windows amd64. Doris is separately qualified on master `082736138b7`, API 24 / JNI 6,
-DuckDB 2.0.0 / Quack JDBC 0.11.1. Its old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
+DuckDB 2.0.0 / Quack JDBC 0.12.0. Its old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
 this is master-development ASAN correctness evidence, not a published Doris-5.x release rollout.
 
 ## Source material
@@ -285,21 +285,27 @@ result under the old and new parser.
 
 ## DB20-06: storage format v2
 
+October-31 round 3: [storage/write-safety proof and runbook](../trino-duckbridge/dev-docs/REPORT-storage-trigger-safety-2026-10-31.md)
+uses isolated 1.5.6/2.0.0 child JVMs and disposable files. Old-format read-only opens
+are byte-identical; supported writes/checkpoints preserve old readability. New default
+2.0 files reject old readers; explicit compatibility and copy-upgrade/backup rollback
+are verified. This is not corruption/WAL crash recovery or arbitrary new-feature compatibility.
+
 **Why:** DuckDB 2.0 changes the default on-disk storage format. Trino embedded
 deployments can open operator-owned database files directly; an accidental write
 may affect rollback even when a read query was the intent. Remote storage is the
 server operator's responsibility but needs the same compatibility statement.
 
-- [ ] Build fixtures for: 1.5-created read-only in 2.0, 1.5-created then written/
+- [x] Build fixtures for: 1.5-created read-only in 2.0, 1.5-created then written/
   checkpointed in 2.0, 2.0-created reopened in 2.0, and attempted 1.5 rollback.
 - [ ] Include wide tables, ART indexes, deletes, `DICT_FSST` strings, corruption
   detection, and concurrent open/write cases called out by the new format.
-- [ ] Determine exactly which operation upgrades a 1.5 file and whether a 2.0
+- [x] Determine exactly which operation upgrades a 1.5 file and whether a 2.0
   compatibility setting can create/write an old-format file. Document observed
   behavior; do not assume opening alone is harmless.
-- [ ] Add a deployment runbook: backup, stop writers, upgrade, validate, and the
+- [x] Add a deployment runbook: backup, stop writers, upgrade, validate, and the
   point after which binary rollback requires restoring the backup.
-- [ ] Keep a persistent-file compatibility test in CI or a release probe rather
+- [x] Keep a persistent-file compatibility test in CI or a release probe rather
   than testing only `jdbc:duckdb:` in-memory databases.
 
 **Exit:** operators know whether rollback is possible before the connector opens
@@ -441,13 +447,20 @@ queries/resources under cancellation.
 
 ## DB20-11: triggers and connector writes
 
+October-31 round 3: [triggered-write qualification](../trino-duckbridge/dev-docs/REPORT-storage-trigger-safety-2026-10-31.md)
+checks exact Trino INSERT/UPDATE/DELETE counts and target/audit rows, native row/statement
+triggers, BEFORE/AFTER timing, transition tables, atomic failures and explicit JDBC rollback.
+Released Quack 0.12.0 fixes the count classification in the driver itself; no consumer
+count inference or replay is used. BEFORE ROW, row-level UPDATE and ROW-trigger RETURNING
+remain engine-unsupported and are checked for explicit rejection without mutation.
+
 **Why:** Trino's embedded/direct-JDBC path supports DDL and writes. DuckDB 2.0
 adds row/statement, before/after triggers and transition tables. Doris Duckbridge
 is read-only, but a remote server may still expose triggered tables.
 
 - [ ] Smoke-test Trino insert/update/delete against tables with BEFORE/AFTER and
   row/statement triggers, including trigger failures and audit-table side effects.
-- [ ] Verify transaction/rollback behavior and affected-row reporting through
+- [x] Verify transaction/rollback behavior and affected-row reporting through
   embedded and Quack transports.
 - [ ] Confirm metadata listing does not misclassify trigger-created objects and
   that trigger side effects do not break temporary-table/rename-based writes.
