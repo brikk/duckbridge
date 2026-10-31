@@ -57,6 +57,10 @@ Unqualified VARIANT/TUPLE/untyped-NULL carriers and unsafe composite text conver
 guarded. Explicit source casts remain a visible type choice; see the
 [boundary policy and revisit TODO](trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
 
+[Embedded scan benchmarks](trino-duckbridge/dev-docs/REPORT-scan-benchmarks-2026-10-31.md) compare row,
+chunked and Arrow APIs without changing defaults; numeric gains are modest and Arrow wins on the
+tested text workload. The scalar prototype is test-only, not another supported execution engine.
+
 ## Quick start
 
 Catalog properties file (e.g. `etc/catalog/duckdb.properties`):

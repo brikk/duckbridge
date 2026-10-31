@@ -148,6 +148,19 @@ listOf("qualifyQuackStreaming" to "streaming", "qualifyQuackCancel" to "cancel",
     }
 }
 
+tasks.register<JavaExec>("benchmarkScans") {
+    group = "verification"
+    description = "Test-only embedded scalar scan benchmark; never changes connector transport defaults"
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.brikk.duckbridge.trino.plugin.ScanBenchmark")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) })
+    maxHeapSize = "1g"
+    jvmArgs("--add-modules=jdk.incubator.vector", "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow")
+    args(layout.buildDirectory.dir("scan-benchmark").get().asFile.absolutePath)
+}
+
 // ---- Bundle trino_parity DuckDB extension into the plugin jar ----
 //
 // DuckDB 2 community signatures require the binary AND DuckDB-generated .info provenance. Signed
@@ -379,6 +392,10 @@ val verifyPluginAssembly by tasks.registering {
             .single { it.name.startsWith("trino-duckbridge-") && it.name.endsWith(".jar") }
         val serviceEntry = "META-INF/services/io.trino.spi.Plugin"
         val registered = ZipFile(connectorJar).use { zip ->
+            check(zip.entries().asSequence().none {
+                it.name.startsWith("dev/brikk/duckbridge/trino/plugin/ScanBenchmark") ||
+                    it.name.startsWith("dev/brikk/duckbridge/trino/plugin/TestScanBenchmark")
+            }) { "test-only benchmark classes must not be packaged in the connector" }
             zip.getEntry(serviceEntry)?.let { entry ->
                 zip.getInputStream(entry).bufferedReader().readText().trim()
             }

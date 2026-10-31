@@ -107,3 +107,13 @@ verification pass: **903 Trino + 89 Doris tests**, zero failures/errors/skips
 (`full-checks.log`, `test-summary.json`, saved `test-results/`). The isolated
 native crash is a negative control, not counted as qualified type support.
 The revisit TODO stays open; no upstream issue is automatically filed.
+
+## Post-round-4 revisit — 2026-10-31
+
+The storage/write-safety and benchmark rounds are complete. The final benchmark
+regression suite reruns the isolated native JDBC 2.0.0.0 negative control and still
+observes the same TUPLE-list SIGSEGV/string-cast signature. Quack JDBC 0.12.0 fixes
+trigger-count classification, not that native driver getter. TODO **5bdd9ba4**
+remains open and the guard is retained pending a real fix and typed-path proof;
+the explicit-source-CAST option remains a visible user choice, not an inserted
+workaround. See [the benchmark report](REPORT-scan-benchmarks-2026-10-31.md).

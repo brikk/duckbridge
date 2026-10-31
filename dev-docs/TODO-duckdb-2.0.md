@@ -313,6 +313,13 @@ a production file, and the test suite pins that claim.
 
 ## DB20-07: chunked Java query results
 
+October-31 round 4: [embedded scalar benchmarks](../trino-duckbridge/dev-docs/REPORT-scan-benchmarks-2026-10-31.md)
+compare five public-API modes on six workloads, with two fresh forks/cell and full
+value/NULL/bind/Page checks. Chunked has modest numeric gains; Arrow wins on text;
+streaming is not uniformly faster. **Defaults remain unchanged.** This is a test-only,
+API-to-Page measured non-adoption, not a completed base-jdbc-integrated production
+page source or full type/cancellation/remote qualification; those wider items stay open.
+
 **Why:** `DuckDBChunkedResult` exposes lazy 2,048-row column vectors from a
 `DuckDBPreparedStatement`. It avoids JDBC's row/cell loop and, unlike the default
 non-streaming `ResultSet`, does not materialize the whole native result. It is not
