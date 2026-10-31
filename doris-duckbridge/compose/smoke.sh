@@ -173,7 +173,7 @@ if [[ "${duckdb_version}" != "v2.0.0" ]]; then
     log "DUCKDB VERSION FAIL: Quack server is '${duckdb_version:-<missing>}' (expected v2.0.0)."
     exit 1
 fi
-log "DUCKDB VERSION GREEN: Quack 0.11 driver lane is backed by DuckDB ${duckdb_version}."
+log "DUCKDB VERSION GREEN: ${expected_driver} lane is backed by DuckDB ${duckdb_version}."
 
 # Exercise a real restart with persisted metadata. The staged priority_networks setting must keep
 # the FE on the same static identity rather than selecting another container network.
