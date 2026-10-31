@@ -528,6 +528,12 @@ and tests actual generated SQL on exact-pin Doris and Trino 483. Java-17 tooling
 from plugin runtimes. The refreshed inventory work is complete; generic JSON, OVERLAY and
 regex lowerings still have concrete value/error/type blockers, so no new pushdown is enabled.
 
+October-31 REGEXP_COUNT closure: [producer handoff](../trino-duckbridge/dev-docs/HANDOFF-brikk-sql-regexp-count-2026-10-31.md)
+assigns reusable translation qualification to brikk-sql; DuckBridge's independent
+grammar guard and final pushdown/fallback enforcement are complete for the requested
+scope. Broader grammar and any future producer intake require a separate request;
+there is no pending local regex implementation or automatic release adoption.
+
 - [x] Inventory `json_set`, `json_insert`, `json_replace`, `json_remove`,
   `json_merge_patch_diff`, `json_deep_merge`, `json_normalize`, and
   `json_strip_nulls` for the planned DuckDB-namespaced Trino function surface.

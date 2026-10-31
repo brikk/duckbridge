@@ -71,3 +71,17 @@ engine version, driver version or string-pushdown trust setting was changed.
 The final combined follow-up, including two added temporal-guard tests, passes
 **662 Trino tests** with zero failures/errors/skips; see
 `build/function-followup-final-checks.log`.
+
+## Producer handoff and local closure — 2026-10-31
+
+The [self-contained brikk-sql handoff](HANDOFF-brikk-sql-regexp-count-2026-10-31.md)
+assigns reusable cross-engine translation qualification to the producer. DuckBridge
+retains final pushdown enforcement and local Trino fallback. Our independent guard
+and integration proof above complete the currently requested connector work;
+broader grammar is not an outstanding implementation promise here.
+
+Latest completed regression verification is **919 Trino + 89 Doris tests**, zero
+failures/errors/skips. This closure changes documentation only; no tests were
+rerun or capabilities widened for the handoff. No producer release watch,
+automatic version adoption or removal of the local guard is scheduled. A future
+producer intake requires a separate request and independent consumer validation.
