@@ -5,13 +5,18 @@ scans/projections/predicates into a user-operated DuckDB (remote via the Quack
 protocol, `jdbc:quack://…`), riding Doris's new `fe-connector` plugin SPI and the BE's
 existing JDBC JNI scanner.
 
-**Status:** qualified locally against pinned Doris master `082736138b7`, connector API 24 /
-JNI API 6, DuckDB **2.0.0** and Quack JDBC **0.12.0**. The complete matching ASAN runtime passed
+**Status:** qualified locally against pinned Doris master `8e10b235cf0`, connector API 26 /
+filesystem API 7 / JNI API 6, DuckDB **2.0.0** and Quack JDBC **0.12.0**. The complete matching ASAN runtime passed
 exact JDBC values, timezone/microsecond edges, security gates, concurrency, catalog lifecycle,
-persisted restart and plugin-scoped failure recovery. API-13 artifacts remain rollback. See
-[qualification](dev-docs/QUALIFICATION-api24-duckdb2-2026-10-28.md) and the
+persisted restart and plugin-scoped failure recovery. API-24/API-13 artifacts remain rollback. See
+[qualification](dev-docs/QUALIFICATION-api26-2026-11-01.md) and the
 [function-intake audit](dev-docs/REPORT-duckdb2-function-intake-2026-10-28.md).
-The subsequent [0.11 driver qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
+
+The [November-1 compatibility review](dev-docs/REVIEW-doris-api26-2026-11-01.md)
+records the conservative API-26 intake: no write, streaming, type or pushdown
+capability is newly enabled. This is a local master-development correctness
+lane, not a production rollout or performance claim. Earlier
+[0.11 driver qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
 re-runs the real Java-17 FE/BE scanner lane without rebuilding or patching the native engine.
 The [0.12.0 release qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md)
 retains bounded CANCEL-under-partition and fixes DML/result classification; autonomous server lease reaping remains separate.
@@ -77,8 +82,8 @@ Integration testing uses the compose environment in [`compose/`](compose/):
   (patched exact-pin BE — `JdbcJniScanner` is absent from stock 4.1.x, so the BE must be
   branch-built too), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
 - `compose/bake-images.sh` — bakes the FE/BE overlay images from the `--build-fe`/`--build-be`
-   output (`~/.cache/duckbridge/doris/output`); uses source-qualified API-24 image names, requires an
-   ASAN BE, and refuses to run while the build is still going. API-13 tags/volumes are preserved.
+    output (`~/.cache/duckbridge/doris/output`); uses source-qualified API-26 image names, requires an
+    ASAN BE, and refuses to run while the build is still going. API-24/API-13 tags/volumes are preserved.
 - `compose/smoke.sh` — install plugin → up → persisted-FE restart → health → catalog/metadata →
   lazy-JVM transition → exact scan/pushdown/concurrency assertions → `down -v`.
 

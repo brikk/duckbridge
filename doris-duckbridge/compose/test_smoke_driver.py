@@ -16,7 +16,7 @@ SOURCE = Path(__file__).resolve().parent
 
 class SmokeDriverTests(unittest.TestCase):
     def test_smoke_rejects_mismatched_fe_be_before_catalog_creation(self):
-        self.assert_rejected_versions("doris-0.0.0-082736138b7", "doris-0.0.0-stale-be")
+        self.assert_rejected_versions("doris-0.0.0-8e10b235cf0", "doris-0.0.0-stale-be")
 
     def test_smoke_rejects_matched_but_wrong_source_before_catalog_creation(self):
         self.assert_rejected_versions("doris-0.0.0-62e3d81a42b", "doris-0.0.0-62e3d81a42b")

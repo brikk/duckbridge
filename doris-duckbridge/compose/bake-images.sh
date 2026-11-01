@@ -3,8 +3,8 @@
 #
 # Stages a MINIMAL build context (copies output/fe + output/be out of the build tree)
 # and `docker build`s the two overlay images the compose consumes:
-#   • doris-fe:duckbridge-<pin>-api24       (stock image's init/JDK + exact-pin output/fe)
-#   • doris-be:duckbridge-<pin>-api24-asan  (stock image's init/JDK + exact-pin output/be)
+#   • doris-fe:duckbridge-<pin>-api26       (stock image's init/JDK + exact-pin output/fe)
+#   • doris-be:duckbridge-<pin>-api26-asan  (stock image's init/JDK + exact-pin output/be)
 #
 # The compose file NEVER references the build tree directly — this script is the only
 # bridge from that tree to the images. Run it AFTER the branch FE+BE build finishes
@@ -20,7 +20,7 @@
 # Usage:
 #   ./bake-images.sh              # bake both images
 #   ./bake-images.sh --fe         # bake only the FE image
-#   ./bake-images.sh --be         # bake only the BE image (jar-only fast path is TODO)
+#   ./bake-images.sh --be         # bake the complete patched BE, never a scanner-only overlay
 #
 # Env:
 #   DORIS_OUTPUT    branch build output dir (default: ~/.cache/duckbridge/doris/output)
@@ -42,8 +42,8 @@ BAKE_STAGE_DIR="${BAKE_STAGE_DIR:-$(cd -- "${HERE}/../.." && pwd -P)/build/bake-
 
 REPO_ROOT="$(cd -- "${HERE}/../.." && pwd -P)"
 PIN_SHA="$(sed -n 's/^PIN_SHA=//p' "${REPO_ROOT}/doris-patches/BASELINE")"
-FE_IMAGE="doris-fe:duckbridge-${PIN_SHA:0:11}-api24"
-BE_IMAGE="doris-be:duckbridge-${PIN_SHA:0:11}-api24-asan"
+FE_IMAGE="doris-fe:duckbridge-${PIN_SHA:0:11}-api26"
+BE_IMAGE="doris-be:duckbridge-${PIN_SHA:0:11}-api26-asan"
 
 DO_FE=1
 DO_BE=1
@@ -63,7 +63,7 @@ command -v "${DOCKER}" >/dev/null 2>&1 || die "container CLI '${DOCKER}' not fou
 
 # GUARD: refuse to run while the BE build container is still writing the output tree.
 # Baking mid-build would COPY a half-written output/be (broken doris_be / missing jars).
-if "${DOCKER}" ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(doris-be-build|duckbridge-api24-build-)'; then
+if "${DOCKER}" ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(doris-be-build|duckbridge-api[0-9]+-build-)'; then
     die "a Doris build container is still running — the build hasn't finished. \
 Baking now would copy a half-written output/be. Wait for it to exit, then re-run."
 fi
@@ -79,7 +79,7 @@ if [ "${DO_FE}" -eq 1 ]; then
         LC_ALL=C grep -aF "${PIN_SHA}" >/dev/null || die "FE artifact embeds a different source revision"
     unzip -p "${DORIS_OUTPUT}/fe/lib/fe-connector-spi-1.2-SNAPSHOT.jar" \
         META-INF/doris/connector-plugin-api-version.properties |
-        grep -x 'api.version=24.0' >/dev/null || die "FE artifact is not connector API 24"
+        grep -x 'api.version=26.0' >/dev/null || die "FE artifact is not connector API 26"
     S="${BAKE_STAGE_DIR}/fe-$$"
     rm -rf "${S}"; mkdir -p "${S}/output"
     trap 'rm -rf "${S}"' EXIT
@@ -90,7 +90,7 @@ if [ "${DO_FE}" -eq 1 ]; then
         -f "${HERE}/docker/doris-fe/Dockerfile" \
         -t "${FE_IMAGE}" \
         --label "org.opencontainers.image.revision=${PIN_SHA}" \
-        --label dev.brikk.doris.connector-api=24.0 \
+        --label dev.brikk.doris.connector-api=26.0 \
         --label dev.brikk.doris.jni-api=6.0 \
         --build-arg "BASE_IMAGE=${FE_BASE_IMAGE}" \
         --build-arg "OUTPUT_PATH=./output" \
@@ -110,12 +110,15 @@ if [ "${DO_BE}" -eq 1 ]; then
 Confirm tools/doris-baseline.sh --build-be finished cleanly before baking."
     fi
     LC_ALL=C grep -aq '__asan_init' "${DORIS_OUTPUT}/be/lib/doris_be" ||
-        die "the api24-asan image requires an ASAN build (BUILD_TYPE=ASAN)"
+        die "the api26-asan image requires an ASAN build (BUILD_TYPE=ASAN)"
     LC_ALL=C grep -aF "${PIN_SHA}" "${DORIS_OUTPUT}/be/lib/doris_be" >/dev/null ||
         die "BE artifact embeds a different source revision"
     unzip -p "${DORIS_OUTPUT}/be/lib/jni/spi/doris-jni-spi.jar" \
         META-INF/doris/jni-plugin-api-version.properties |
         grep -x 'api.version=6.0' >/dev/null || die "BE artifact is not JNI API 6"
+    unzip -Z1 "${DORIS_OUTPUT}/be/plugins/jni/jdbc/jdbc-scanner.jar" |
+        grep -x 'org/apache/doris/jdbc/DuckDbTypeHandler.class' >/dev/null ||
+        die "BE JDBC plugin lacks DuckDbTypeHandler; deploy the complete patched Java/JNI tree before baking"
     S="${BAKE_STAGE_DIR}/be-$$"
     rm -rf "${S}"; mkdir -p "${S}/output"
     trap 'rm -rf "${S}"' EXIT
@@ -126,7 +129,7 @@ Confirm tools/doris-baseline.sh --build-be finished cleanly before baking."
         -f "${HERE}/docker/doris-be/Dockerfile" \
         -t "${BE_IMAGE}" \
         --label "org.opencontainers.image.revision=${PIN_SHA}" \
-        --label dev.brikk.doris.connector-api=24.0 \
+        --label dev.brikk.doris.connector-api=26.0 \
         --label dev.brikk.doris.jni-api=6.0 \
         --label "dev.brikk.doris.patch-sha256=$(sha256sum "${REPO_ROOT}/doris-patches/be/0001-duckdb-type-handler.patch" | cut -d' ' -f1)" \
         --build-arg "BASE_IMAGE=${BE_BASE_IMAGE}" \

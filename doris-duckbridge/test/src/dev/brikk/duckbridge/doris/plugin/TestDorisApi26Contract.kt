@@ -3,6 +3,7 @@ package dev.brikk.duckbridge.doris.plugin
 import org.apache.doris.connector.spi.ConnectorContext
 import org.apache.doris.connector.spi.ConnectorValidationContext
 import org.apache.doris.connector.spi.scan.ConnectorScanRequest
+import org.apache.doris.connector.spi.scan.ConnectorScanContext
 import org.apache.doris.thrift.TPaimonFileDesc
 import org.apache.doris.thrift.TReportExecStatusParams
 import org.assertj.core.api.Assertions.assertThat
@@ -10,17 +11,18 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Proxy
 import java.util.Properties
+import java.util.Optional
 
-class TestDorisApi24Contract {
+class TestDorisApi26Contract {
     private val properties = mapOf("jdbc_url" to "jdbc:quack://localhost:9494")
 
     @Test
-    fun compileClosureIsApi24WithMatchingWireFields() {
+    fun compileClosureIsApi26WithMatchingWireFields() {
         val resource = "META-INF/doris/connector-plugin-api-version.properties"
         val version = Properties().apply {
-            checkNotNull(TestDorisApi24Contract::class.java.classLoader.getResourceAsStream(resource)).use { load(it) }
+            checkNotNull(TestDorisApi26Contract::class.java.classLoader.getResourceAsStream(resource)).use { load(it) }
         }
-        assertThat(version.getProperty("api.version")).isEqualTo("24.0")
+        assertThat(version.getProperty("api.version")).isEqualTo("26.0")
         assertThat(TReportExecStatusParams._Fields.PAIMON_COMMIT_MESSAGES.thriftFieldId.toInt()).isEqualTo(34)
         assertThat(TPaimonFileDesc._Fields.ORIGINAL_FILE_PATH.thriftFieldId.toInt()).isEqualTo(20)
     }
@@ -101,6 +103,8 @@ class TestDorisApi24Contract {
         assertThat(connector.getMetadata(null).supportsNativePartitionPlanning(null, handle)).isFalse()
         assertThat(connector.getMetadata(null).getSqlCacheVersion(null, handle)).isEmpty()
         assertThat(scan.supportsBatchScan(null, handle)).isFalse()
+        assertThat(scan.streamingSplitEstimate(null, handle, Optional.empty(), false)).isEqualTo(-1L)
+        assertThat(scan.partitionBatchSize(null, 100, 2)).isEqualTo(1024)
         assertThat(scan.supportsTableSample()).isFalse()
         val request = ConnectorScanRequest.builder(handle, emptyList()).build()
         val ranges = scan.planScan(null, request)
@@ -109,6 +113,26 @@ class TestDorisApi24Contract {
         assertThat(ranges.single().properties["table_type"]).isEqualTo("DUCKDB")
         assertThatThrownBy { scan.streamSplits(null, request) }
             .isInstanceOf(UnsupportedOperationException::class.java)
+    }
+
+    @Test
+    fun requestBatchCopiesPreserveTheSharedCancellationContextAndSafeDefaults() {
+        val handle = DuckBridgeTableHandle("memory", "sales", "customers")
+        val context = ConnectorScanContext()
+        val request = ConnectorScanRequest.builder(handle, emptyList()).scanContext(context).build()
+        val batch = request.withRequiredPartitions(listOf("p=1"))
+        assertThat(request.scanContext).isSameAs(context)
+        assertThat(batch.scanContext).isSameAs(context)
+        assertThat(batch.requiredPartitions).containsExactly("p=1")
+        assertThat(request.requiredPartitions).isEmpty()
+        assertThat(request.limit).isEqualTo(-1)
+        assertThat(request.isCountPushdown).isFalse()
+        assertThat(request.isAggregatePushdown).isFalse()
+        assertThat(context.isCancelled).isFalse()
+        context.cancel()
+        assertThat(batch.scanContext.isCancelled).isTrue()
+        assertThatThrownBy { batch.scanContext.checkCancelled() }
+            .isInstanceOf(java.util.concurrent.CancellationException::class.java)
     }
 
     private fun connector(properties: Map<String, String>): DuckBridgeConnector {

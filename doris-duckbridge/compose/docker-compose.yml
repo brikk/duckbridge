@@ -1,4 +1,4 @@
-name: doris-duckbridge-api24-08273613
+name: doris-duckbridge-api26-8e10b235
 
 # Three containers for doris-duckbridge probe/integration work:
 #   • doris-fe    — pristine pinned master FE hosting the duckbridge connector plugin
@@ -20,7 +20,7 @@ name: doris-duckbridge-api24-08273613
 
 services:
   doris-fe:
-    image: doris-fe:duckbridge-082736138b7-api24
+    image: doris-fe:duckbridge-8e10b235cf0-api26
     container_name: doris-duckbridge-fe
     hostname: doris-fe
     mem_limit: 5g
@@ -58,7 +58,7 @@ services:
       start_period: 60s
 
   doris-be:
-    image: doris-be:duckbridge-082736138b7-api24-asan
+    image: doris-be:duckbridge-8e10b235cf0-api26-asan
     container_name: doris-duckbridge-be
     hostname: doris-be
     mem_limit: 12g

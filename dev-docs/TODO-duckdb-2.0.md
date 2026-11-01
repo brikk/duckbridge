@@ -1,10 +1,10 @@
 # TODO: DuckDB 2.0 readiness
 
 **Status:** DuckDB 2.0.0 is qualified for Trino (2026-10-21) and the matching Doris-master
-API-24/JNI-6 lane (2026-10-28). Both now select released Quack JDBC 0.12.0 with negotiated-v3
+API-26/JNI-6 lane (2026-11-01). Both now select released Quack JDBC 0.12.0 with negotiated-v3
 regression checks; see the [October-31 adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md).
 This tracks remaining stable-ABI, storage, dedicated protocol-conformance and advanced-feature work.
-See [the October-28 qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api24-duckdb2-2026-10-28.md).
+See [the November-1 qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md).
 
 Duckbridge is exposed to this release in more places than the embedded JDBC
 version alone:
@@ -21,8 +21,8 @@ version alone:
 
 The maintained lanes pin DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.12.0`, parity source
 `b216dc13a9`, and signed `trino_parity` 0.5.1 community binaries for Linux amd64/arm64, macOS arm64
-and Windows amd64. Doris is separately qualified on master `082736138b7`, API 24 / JNI 6,
-DuckDB 2.0.0 / Quack JDBC 0.12.0. Its old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
+and Windows amd64. Doris is separately qualified on master `8e10b235cf0`, API 26 / filesystem 7 / JNI 6,
+DuckDB 2.0.0 / Quack JDBC 0.12.0. Its API-24 and old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
 this is master-development ASAN correctness evidence, not a published Doris-5.x release rollout.
 
 ## Reconciled current state — 2026-10-31
@@ -40,6 +40,12 @@ finds real finite/NaN wrong-result pushdown and applies the user-approved local
 Trino fallback. **926 Trino tests** and assembly verification pass; all 713 scalar
 pairs and 14 production predicate row sets match Trino after that fix. Doris is
 unchanged and not rerun by this Trino-only task.
+
+November-1 [Doris API-26 re-vendor](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md)
+subsequently passes **90 Doris tests**, exact complete JNI packaging, 182 selected
+upstream tests (18 unchanged external-database skips) and full live JDBC/Quack
+smoke. Trino code/dependency pins are unchanged by that re-vendor; the 926-test
+Trino result above remains its own prior qualification, not a new run.
 
 **Open external/environment acceptance issues, separate from those module checks:**
 
@@ -144,8 +150,8 @@ important are:
 DuckDB version pin, Quack has client/server protocol compatibility, and
 `quack-jdbc` is not the DuckDB Java driver.
 
-- [x] Adopt DuckDB 2.0.0 for Trino and the separately qualified Doris-master API-24/JNI-6 lane;
-  preserve the old Doris API-13 / 1.5.6 artifacts as rollback, not the active source pin.
+- [x] Adopt DuckDB 2.0.0 for Trino and the separately qualified Doris-master API-26/JNI-6 lane;
+  preserve the API-24 and old Doris API-13 / 1.5.6 artifacts as rollback, not the active source pin.
 - [x] Pin and record `duckdb_jdbc`, DuckDB CLI/server, Quack driver and parity extension independently
   in the 2026-10-21 qualification report.
 - [x] Qualify released `quack-jdbc` 0.9.0 against the DuckDB-2.0 server's retained protocol-v1
@@ -160,7 +166,7 @@ DuckDB version pin, Quack has client/server protocol compatibility, and
 - [x] Re-vendor `duckdb-trino-parity-extension` to `b216dc13a9`, including DuckDB v2.0.0 and matching
   CI tools.
 - [x] Exercise Trino embedded JDBC, direct `quack-jdbc`, embedded Arrow and Quack/Arrow.
-- [x] Exercise Doris metadata/JNI scans on the exact master API-24/JNI-6 boundary,
+- [x] Exercise Doris metadata/JNI scans on the exact master API-26/JNI-6 boundary,
   including live Java-17 smoke with released Quack 0.12.0. No published Doris-5.x rollout is claimed.
 - [ ] Probe 1.5-client/2.0-server and 2.0-client/1.5-server Quack combinations.
   Support only combinations the protocol and parity-extension results prove;
@@ -888,12 +894,12 @@ behavior, no duplicate non-idempotent requests, and no connection/result leaks.
   matrix against the final tag; v483-0.2.0 passed 642 connector tests plus four platform jobs.
 - [x] With Doris baseline artifacts bootstrapped, run
   `./gradlew :doris-duckbridge:test` plus the compose smoke against the final
-  Quack server and driver (API 24 / JNI 6, DuckDB 2.0.0 / driver 0.10.0: 72 tests and live smoke).
+  Quack server and driver (API 26 / JNI 6, DuckDB 2.0.0 / driver 0.12.0: 90 tests and live smoke).
 - [ ] Complete dedicated protocol-v3 conformance against both the DuckDB-extension client and
   released v3-selecting `quack-jdbc`; current connector regressions pass, but the full lease/resource
   campaign remains separate from ordinary DuckDB-2.0 support.
-- [x] Preserve Doris's qualified API-13 / 1.5.6 rollback while separately qualifying exact-pin
-  master API 24 / JNI 6 on DuckDB 2.0.0. No published Doris-5.x rollout is claimed.
+- [x] Preserve Doris's qualified API-24 and API-13 / 1.5.6 rollback while separately qualifying exact-pin
+  master API 26 / JNI 6 on DuckDB 2.0.0. No published Doris-5.x rollout is claimed.
 - [x] Update `README.md`, deployment examples, extension instructions, Docker pins and archived
   1.5.5 evidence together for the Trino lane.
 

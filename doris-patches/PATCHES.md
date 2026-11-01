@@ -4,11 +4,16 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`082736138b7` (2026-10-28, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`8e10b235cf0` (2026-10-31, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
 | BE | `be/0001-duckdb-type-handler.patch` | `be-java-extensions/jdbc-scanner` | new `DuckDbTypeHandler` + a `case "DUCKDB"` in `JdbcTypeHandlerFactory` |
+
+**API-26 qualified locally (2026-11-01):** matching SDK, complete patched Java/JNI
+packaging, upstream tests, 90 connector tests and the full JDBC/Quack live smoke
+pass. API-24 rollback assets remain intact. No production/performance claim is
+made. See [qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md).
 
 > **The FE patch is RETIRED.** `fe/0001-spi-ready-types-duckbridge.patch` (which whitelisted
 > `"duckbridge"` in `CatalogFactory.SPI_READY_TYPES`) is **gone as of pin `a0c10f0672b`**: upstream
@@ -35,8 +40,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `082736138b7f0e767f966cbb1434bc9ba85f29ec`
-> - **subject** = `[improvement](fe) Defer external catalog resource cleanup from replay (#69665)`
+> - **`PIN_SHA`** = `8e10b235cf030d486b6840cfd64b6218ab515e6d`
+> - **subject** = `[doc](regression) Translate the Iceberg write P0 coverage matrix into English (#69514)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** Apply the BE patch LOCALLY in a dedicated clean
@@ -174,6 +179,32 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-11-01 — re-vendor to exact `8e10b235cf0`; local qualification passed.**
+  User-authorized intake of DuckLake's October-31 build-reuse handoff. Connector API
+  **24→26**, filesystem API **6→7**, JNI API **6** and BE execution maximum **19**.
+  - Separate source worktree; shared staged checkout preserved. API-24 SDK,
+    distributions and image identities backed up before staging the hash-verified
+    29-file/eight-module closure into project-local `doris-m2/`.
+  - All 3,231 copied pristine FE/BE JAR/ELF hashes match the producer manifest.
+    Handler delta is four Java-only files; native inputs/pin match. No C++ rebuild
+    or old engine relabel is performed. Complete Java compilation and packaging
+    through upstream `OUTPUT_BE_BINARY=1` pass; all nine plugins pass six layout
+    checks. Shared SPI/bootstrap and native executable hashes remain unchanged.
+  - JNI SPI/bootstrap/toolkit/JDBC: **182 passed**, **18 unchanged external-database
+    skips**. Forced Java-17 connector check/assembly: **90 passed**, zero
+    failures/errors/skips. API-26 manifest, conservative capabilities, wire fields,
+    context propagation, exact driver identity and package isolation pass.
+  - Complete-image live JDBC/Quack smoke passes exact types/values/timezones,
+    security, concurrency, persisted catalog/FE restart and plugin-scoped failure
+    recovery. Actual running artifact hashes match; no sanitizer/crash pattern
+    appears in the captured 18 FE/BE log files. Only the run-owned stack was
+    stopped; volumes and old runtime images remain preserved.
+  - The first connector check was killed by a host-wide OOM before its module
+    tests ran. After the user freed capacity, heavy phases ran sequentially.
+    A separate confirmed `/tmp` user-quota failure was fixed by project-disk
+    smoke/temp staging, not weakened assertions. **23 Python checks** pass.
+  - [Evidence, image identities, exact paths and scope limits](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md).
 
 - **2026-10-28 — re-vendor to apache/doris `master` `082736138b7`; local qualification passed.**
   Connector API **13→24**, JNI API **5→6**, Thrift 0.24.0 and Maven `1.2-SNAPSHOT`.

@@ -4,6 +4,11 @@ The slow, real-cluster counterpart to `:doris-duckbridge:test`. It runs a pristi
 FE, the matching patched BE, and DuckDB/Quack, then asserts the connector end-to-end. Doris images
 must be baked before `up`; Compose does not compile Doris.
 
+**API-26 qualified locally (2026-11-01):** matching source/SDK, complete patched
+Java/JNI tree, 90 connector tests and the full live JDBC/Quack smoke pass. API-24
+rollback artifacts remain intact. This is ASAN correctness evidence, not a
+production/performance claim; see [qualification](../dev-docs/QUALIFICATION-api26-2026-11-01.md).
+
 ## Branch FE **and** branch BE — both required
 
 The connector SPI and **`JdbcJniScanner`** are absent from stock 4.1.x. Both engines must
@@ -22,8 +27,8 @@ Stock 4.1.4-rc04 still lacks both the SPI and `JdbcJniScanner`; see
    ```bash
    BUILD_TYPE=ASAN tools/doris-baseline.sh --build-fe --build-be   # JDK 17; multi-hour BE build
    ```
-2. **Baked images** `doris-fe:duckbridge-082736138b7-api24` +
-   `doris-be:duckbridge-082736138b7-api24-asan` (see below). The old API-13 image tags remain intact.
+2. **Baked images** `doris-fe:duckbridge-8e10b235cf0-api26` +
+   `doris-be:duckbridge-8e10b235cf0-api26-asan` (see below). The old API-24/API-13 image tags remain intact.
 3. **Plugin zip** — built on demand by `smoke.sh` (`./gradlew :doris-duckbridge:pluginZip`).
 4. **`.env`** — `cp .env.example .env` and set `QUACK_TOKEN` (smoke.sh auto-copies if absent).
 5. Docker (or podman — set `DOCKER=podman`).
@@ -77,11 +82,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
   Podman-on-macOS host↔VM file sharing can't drop the jar tree).
 - **No local-shuffle shim.** FE/BE source and Thrift must match; never disable planning paths
   to conceal a stale engine image.
-- **Fresh API-24 volumes.** The Compose project is `doris-duckbridge-api24-08273613`; its
-  FE metadata/plugin/log and BE storage/log volumes do not upgrade or remove API-13 volumes.
+- **Fresh API-26 volumes.** The Compose project is `doris-duckbridge-api26-8e10b235`; its
+  FE metadata/plugin/log and BE storage/log volumes do not upgrade or remove API-24/API-13 volumes.
 - **BE dist root** is `/opt/apache-doris/be`; keep the Dockerfile and storage/log mounts aligned.
 - **Pinned remote lane:** DuckDB `2.0.0` (`duckbridge/duckdb-quack:2.0.0`) and Quack JDBC
-  `0.10.0`. Build the server with `docker compose build duckdb-quack` after a version change.
+   `0.12.0`. Build the server with `docker compose build duckdb-quack` after a version change.
   These isolated fixtures deliberately serve plain HTTP; production TLS settings are unchanged.
 - **Read-only function intake:** `function_audit.py --output <file> [--brikk-sql-root <path>]`
   runs while the smoke is kept up. It records values/errors and the native registry; it never

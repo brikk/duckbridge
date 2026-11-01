@@ -114,7 +114,9 @@ fi
 # the drivers dir or a shared path and set driver_url — no checksum gate on the JNI path.)
 log "Staging quack-jdbc driver jar for the BE (from the plugin zip → .be-drivers)…"
 rm -rf "${HERE}/.be-drivers" && mkdir -p "${HERE}/.be-drivers"
-tmp_extract="$(mktemp -d)"
+# Keep generated driver staging on project disk: /tmp may be memory-backed or user-quota limited.
+mkdir -p "${REPO_ROOT}/build/smoke-stage"
+tmp_extract="$(mktemp -d "${REPO_ROOT}/build/smoke-stage/driver.XXXXXX")"
 unzip -oq "$zip_path" -d "$tmp_extract"
 driver_src="$(find "$tmp_extract" -name 'quack-jdbc-*.jar' | head -1)"
 if [[ -z "$driver_src" ]]; then
@@ -148,7 +150,7 @@ log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driv
 # Populate the named volume before the FE starts so its first plugin scan cannot observe an empty
 # directory and record a transient load failure. docker cp avoids unreliable macOS VM bind mounts.
 log "Installing plugin from $(basename "$zip_path") into the FE plugin volume…"
-PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api24-08273613}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api26-8e10b235}"
 VOL_NAME="${PROJECT_NAME}_fe-plugin-duckbridge"
 "${DOCKER}" volume create \
     --label "com.docker.compose.project=${PROJECT_NAME}" \
