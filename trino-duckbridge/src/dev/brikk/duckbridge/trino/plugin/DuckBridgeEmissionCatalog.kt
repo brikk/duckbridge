@@ -142,11 +142,8 @@ internal object DuckBridgeEmissionCatalog {
             put(NameArity("month", 1), Emission.Bare)
             put(NameArity("day", 1), Emission.Bare)
             put(NameArity("quarter", 1), Emission.Bare)
-            // date_trunc: DuckDB returns TIMESTAMP even for DATE input where Trino preserves DATE.
-            // The type differs but RESULTS do NOT in any pushed (comparison) context: DuckDB
-            // auto-casts DATE→TIMESTAMP at midnight, so `date_trunc('month', d) </>/= <date>` yields
-            // the same boolean as Trino's DATE comparison. Verified against embedded DuckDB and pinned
-            // by the date_trunc fixture; BARE is result-safe, no DATE gate needed.
+            // TODO(edge-audit): native DATE truncation changes type/range; zoned truncation can
+            // change overlap offsets. Common-case pushdown disposition is pending user review.
             put(NameArity("date_trunc", 2), Emission.Bare)
             // date_diff: Trino counts COMPLETE units elapsed (Joda getDifference); DuckDB's date_diff
             // counts partition BOUNDARIES crossed (date_diff('month', 2020-01-31, 2020-02-01) = 1 vs
@@ -238,8 +235,8 @@ internal object DuckBridgeEmissionCatalog {
         for (name in listOf("year", "month", "day", "quarter", "hour", "minute", "second", "millisecond", "to_unixtime")) {
             gates[NameArity(name, 1)] = arg0Tier
         }
-        // date_trunc(unit, x): gate the second arg. (date_diff's gate is below with the unit check.)
-        gates[NameArity("date_trunc", 2)] = argTier(1)
+        // Native DuckDB accepts units Trino rejects. Preserve local validation for invalid/dynamic units.
+        gates[NameArity("date_trunc", 2)] = dateTruncGate()
         // Tier A — DATE-only.
         val arg0DateStrict = arg(0, DateType::class.java)
         for (name in listOf("day_of_week", "day_of_year", "last_day_of_month", "week", "week_of_year", "year_of_week", "yow")) {
@@ -306,15 +303,23 @@ internal object DuckBridgeEmissionCatalog {
         gates[NameArity("date_diff", 3)] =
             ArgTypeGate { args, session ->
                 val inner = argTier(0)
-                constVarchar(args, 0)?.lowercase() in DATE_DIFF_UNITS &&
+                validTemporalUnit(args, listOf(1, 2)) &&
                     inner.accepts(listOf(args[1]), session) && inner.accepts(listOf(args[2]), session)
             }
         return gates.toMap()
     }
 
-    /** Units `date_diff` pushes as `date_sub`; verified complete-unit semantics on both engines. */
-    private val DATE_DIFF_UNITS: Set<String> =
-        setOf("millisecond", "second", "minute", "hour", "day", "week", "month", "quarter", "year")
+    private val DATE_UNITS: Set<String> = setOf("day", "week", "month", "quarter", "year")
+    private val TIMESTAMP_UNITS: Set<String> = DATE_UNITS + setOf("millisecond", "second", "minute", "hour")
+
+    private fun dateTruncGate(): ArgTypeGate = ArgTypeGate { args, session ->
+        argTier(1).accepts(args, session) && validTemporalUnit(args, listOf(1))
+    }
+
+    private fun validTemporalUnit(args: List<ConnectorExpression>, operands: List<Int>): Boolean {
+        val units = if (operands.any { args[it].type is DateType }) DATE_UNITS else TIMESTAMP_UNITS
+        return constVarchar(args, 0)?.lowercase(java.util.Locale.ROOT) in units
+    }
 
     private fun regexpCountGate(): ArgTypeGate = ArgTypeGate { args, _ ->
         args[0].type is VarcharType && constVarchar(args, 1)?.let(RegexpCountSafety::isSafe) == true

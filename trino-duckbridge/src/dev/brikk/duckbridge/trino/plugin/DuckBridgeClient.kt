@@ -86,10 +86,8 @@ import io.trino.spi.type.TimeWithTimeZoneType
 import io.trino.spi.type.VarcharType
 import java.sql.Connection
 import java.sql.DatabaseMetaData
-import java.sql.PreparedStatement
 import java.sql.SQLException
 import java.sql.Types
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoField.EPOCH_DAY
 import java.util.Optional
@@ -545,14 +543,6 @@ class DuckBridgeClient
             private val DECIMAL_PATTERN: Pattern = Pattern.compile("DECIMAL\\((?<precision>[0-9]+),(?<scale>[0-9]+)\\)")
             private val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd")
 
-            fun dateWriteFunction(): LongWriteFunction =
-                object : LongWriteFunction {
-                    override fun getBindExpression(): String = "CAST(? AS DATE)"
-
-                    @Throws(SQLException::class)
-                    override fun set(statement: PreparedStatement, index: Int, day: Long) {
-                        statement.setString(index, DATE_FORMATTER.format(LocalDate.ofEpochDay(day)))
-                    }
-                }
+            fun dateWriteFunction(): LongWriteFunction = DuckBridgeDateWriteFunction
         }
     }
