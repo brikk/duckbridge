@@ -9,12 +9,10 @@ with pushdown that goes far beyond the usual JDBC-connector floor: projections, 
 predicates, `LIMIT`/`ORDER BY ... LIMIT`, and a large catalog of scalar functions are
 executed inside DuckDB instead of in Trino.
 
-Pushdown correctness is held to Trino-identical semantics (NULLs, unicode, arithmetic
-edge cases, date/time zone rules). Most scalar functions are emitted as plain DuckDB
-SQL that DuckDB evaluates identically to Trino — proven by differential fixtures that
-run the same expression on Trino and on DuckDB and require identical outcomes; only the
-handful DuckDB *cannot* match natively are backed by the `trino_parity` DuckDB extension.
-When in doubt, an expression is not pushed — never wrong results.
+Pushdown uses a curated function catalog, argument/type gates and differential tests
+against Trino. Some calls use native DuckDB SQL; others use the `trino_parity` extension.
+See the [pushdown reference](trino-duckbridge/README-pushdown-reference.md) for supported
+cases, local fallbacks and **known unresolved math/timezone limitations**.
 
 ## Install
 
@@ -25,12 +23,11 @@ The connector is a standard Trino plugin (a directory of jars under `$TRINO_HOME
 plugin directory on the coordinator **and every worker**, then restart:
 
 ```sh
-tar -xzf trino-duckbridge-v483-0.1.0.tar.gz -C "$TRINO_HOME/plugin/"
-#  -> $TRINO_HOME/plugin/trino-duckbridge-v483-0.1.0/
+tar -xzf /path/to/downloaded-plugin.tar.gz -C "$TRINO_HOME/plugin/"
 ```
 
 Both `.tar.gz` and `.zip` are published, each with a `.sha256` sidecar. The version scheme is
-`<trino-major>-<semver>` — e.g. `483-0.1.0` targets **Trino 483**.
+`<trino-major>-<semver>`; use an archive targeting your Trino major version.
 
 **From source.** Requires JDK 25 (the Gradle toolchain resolves it on demand):
 
@@ -43,23 +40,16 @@ cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin
 Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
 see below).
 
-Source builds use Quack JDBC **0.12.0** for both the Trino and Doris connectors. Existing published
-release artifacts are unchanged by this source update.
-See the [0.12.0 release qualification](trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md)
-for triggered-DML counts and bounded cancellation, and the [0.11/nanos qualification](trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
-for verified transport paths and explicit remaining type limitations.
+The plugin bundles its JDBC drivers. Driver versions are pinned in
+[`gradle/libs.versions.toml`](gradle/libs.versions.toml).
 
 Schema discovery is scoped to the connection's current DuckDB catalog. Flat names containing dots
 are quoted literally; catalogs containing true nested schemas fail explicitly rather than flattening
-their ancestry. See the [namespace policy](trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md).
+their ancestry.
 
-Unqualified VARIANT/TUPLE/untyped-NULL carriers and unsafe composite text conversions are temporarily
-guarded. Explicit source casts remain a visible type choice; see the
-[boundary policy and revisit TODO](trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
-
-[Embedded scan benchmarks](trino-duckbridge/dev-docs/REPORT-scan-benchmarks-2026-10-31.md) compare row,
-chunked and Arrow APIs without changing defaults; numeric gains are modest and Arrow wins on the
-tested text workload. The scalar prototype is test-only, not another supported execution engine.
+Unsupported VARIANT/TUPLE/untyped-NULL carriers and unsafe composite text conversions
+are rejected explicitly. A user-requested source cast is a different, explicit type
+choice—not typed support for the original value.
 
 ## Quick start
 
@@ -83,8 +73,8 @@ SELECT count(*) FROM duckdb.main.events WHERE length(user_agent) > 40;
 ```
 
 For a remote server, the user runs their own DuckDB with `CALL quack_serve(...)`; the
-connector connects with the pure-JVM `quack-jdbc` driver. Nothing is installed or
-managed on the server by the connector.
+connector connects with the pure-JVM `quack-jdbc` driver. The connector does not start
+or manage the server; configure the required server-side extensions as described below.
 
 ## Configuration
 
@@ -114,7 +104,7 @@ SET SESSION duckdb.string_pushdown_mode = 'GUARDED';
 
 ### Type mapping
 
-The production JDBC path maps DuckDB's scalar types losslessly as follows (embedded and Quack):
+Supported scalar mappings on the production JDBC path (embedded and Quack):
 
 | DuckDB | Trino | Notes |
 |---|---|---|
@@ -128,12 +118,23 @@ The production JDBC path maps DuckDB's scalar types losslessly as follows (embed
 | `HUGEINT` / `UHUGEINT` | unsupported | Their extrema need 39 digits; Trino `DECIMAL` stops at 38. Never truncated or coerced by default. |
 
 `TIMESTAMP_S` / `TIMESTAMP_MS` read as Trino `TIMESTAMP(0)` / `TIMESTAMP(3)`; ordinary DuckDB
-`TIMESTAMP` reads as `TIMESTAMP(6)`. `TIMESTAMP_NS` is deliberately unsupported on the production
-JDBC path: DuckDB JDBC 2.0.0 truncates it to microseconds through `getObject`, `getTimestamp`, and
-even `getString`, so no connector mapping can recover the nanoseconds. It is omitted rather than
-silently mislabeled as `TIMESTAMP(9)` or `TIMESTAMP(6)`, even under generic convert-to-varchar mode.
-Writes support `VARBINARY`, `UUID`, and temporal types through precision 6; higher precision fails
-loud rather than truncate.
+`TIMESTAMP` reads as `TIMESTAMP(6)`. Scalar `TIMESTAMP_NS` and `TIME_NS` map to
+`TIMESTAMP(9)` and `TIME(9)` on the qualified JDBC and Arrow paths. Timestamp/time
+precision 7–9 writes use the corresponding native nanosecond storage types.
+
+Transport-specific limits remain explicit:
+
+- Native JDBC refuses `TIMESTAMP_NS` arrays and `TIMESTAMPTZ_NS` scalars because their
+  available carriers lose information. Direct Quack JDBC and the Arrow paths support
+  the qualified forms.
+- Both Arrow paths refuse `TIME WITH TIME ZONE` because the producer drops its offset;
+  the normal JDBC path supports the minute-aligned values described above.
+- Temporal precision above 9 is not supported. Nanos predicates/functions stay local;
+  read/write support does not imply pushdown.
+
+Writes also support `VARBINARY`, `UUID` and the supported microsecond temporal types.
+See the [type/carrier coverage](trino-duckbridge/dev-docs/TODO-datetime-timezones.md)
+for the exact path matrix and remaining refusals.
 
 ### Dynamic catalogs
 
@@ -162,54 +163,49 @@ The plugin must already be installed on every node; `CREATE CATALOG` only suppli
 
 ## Pushdown
 
-- **Projection + predicates** (`TupleDomain`): always on.
+- **Column projection and predicates** (`TupleDomain`), subject to type-specific gates.
 - **Scalar functions**: string, math, date/time, and more (see the full
   [pushdown reference](trino-duckbridge/README-pushdown-reference.md)). Most emit plain
   DuckDB SQL natively; a small set that DuckDB can't match is backed by the
   `trino_parity` extension. Per-conjunct: unsupported conjuncts stay in Trino,
   supported ones push.
 - **LIMIT** and **`ORDER BY ... LIMIT` (TopN)**.
-- `TIMESTAMP WITH TIME ZONE` functions push only when the
-  `pushdown_timestamp_with_timezone` session property is on (default on); the connector
-  aligns DuckDB's session `TimeZone` with Trino's.
+- Selected functions over `TIMESTAMP WITH TIME ZONE` require
+  `pushdown_timestamp_with_timezone` (default on); the connector aligns DuckDB's session
+  `TimeZone` with Trino's. This is not a blanket switch for every timezone expression.
 
 ### String pushdown mode dial
 
-String comparison and ordering carry a collation trust question that numeric/date
-predicates don't. `duckbridge.string-pushdown.mode` (per-query override:
+`duckbridge.string-pushdown.mode` (per-query override:
 `string_pushdown_mode`) dials how much string pushdown you trust; the default is
-`PARITY`. Non-string predicates (`length(s)=5`, `id>3`, `year(d)=2000`) push in every
-mode.
+`PARITY`. Non-string comparisons are independent of this dial but still need their
+own function/type gates; lowering the mode does not fix known math/timezone defects.
 
 | mode | string `=`/range/IN/TopN | retained filter | string LIKE | ALIAS fns (ICU/hash) | extension |
 |---|---|---|---|---|---|
 | `NULL_ONLY` | not pushed (only `IS [NOT] NULL`) | — | no | no | not needed |
 | `GUARDED` | pushed remotely **and kept** locally (exact pre-filter; `LIKE 'foo%'` still gets its prefix range for free) | yes | no | no | **not needed** |
-| `BINARY` | fully pushed (probe-verified byte semantics) | no | yes | no | not needed |
-| `FULL` | fully pushed (caller-asserted; no probe) | no | yes | no | not needed |
-| `PARITY` *(default)* | fully pushed (probe-verified) | no | yes | **yes** | required |
+| `BINARY` | eligible for full pushdown after comparison probe | when required by domain compaction | yes | no | not needed |
+| `FULL` | eligible for full pushdown (caller-asserted; no probe) | when required by domain compaction | yes | no | not needed |
+| `PARITY` *(default)* | eligible for full pushdown after comparison probe | when required by domain compaction | yes | **yes** | required |
 
-`GUARDED` is the extension-free exact mode for plain OLAP filters: it pre-filters
-remotely but re-checks every row in Trino, so results are identical to `NULL_ONLY` even
-if DuckDB's collation were ever non-binary. `BINARY`/`PARITY` verify DuckDB's byte
-semantics with a live comparison probe on first connection and fail loud on divergence
-(e.g. a Quack server with a `nocase` collation) — telling you to drop to `GUARDED`.
+`GUARDED` retains the exact VARCHAR value-domain filter in Trino and withholds
+NUL-bearing domains. It is not a general repair for function defects.
+`BINARY`/`PARITY` run a comparison probe on each connection and fail explicitly on
+divergence. The reference explains the domain, expression and TopN rules separately.
 
-### The `trino_parity` extension — only the functions DuckDB can't match
+### The `trino_parity` extension
 
 The [`trino_parity` DuckDB extension](https://github.com/brikk/duckdb-trino-parity-extension)
-backs **only the functions whose semantics DuckDB cannot match natively**: ICU case
-folding / trim / `normalize` (`lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`,
+provides the connector's ten native parity functions: ICU case
+mapping / trim / `normalize` (`lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`,
 `normalize/1`) and the vendored-crypto hashes (`xxhash64`, `sha512`, `hmac_sha256`) —
-10 functions in all. Everything else (the ~69 other pushable functions) is emitted as
-plain DuckDB SQL that DuckDB evaluates identically to Trino, verified by differential
-fixtures (Trino result vs DuckDB result for the same expression, incl. NULL / unicode /
-domain-edge / zone inputs).
+these calls require the `PARITY` mode. Other catalog entries use extension-free
+DuckDB SQL, subject to the gates and known limitations in the pushdown reference.
 
 The extension is required only in the default `PARITY` string-pushdown mode (above), and
-only for those 10 functions. When `PARITY` promises pushdown the extension can't back,
-results could be wrong, so a missing extension is a hard, clearly-worded error — never a
-quiet fallback.
+only for those ten functions. Missing required extension support is an explicit error,
+not a quiet fallback.
 
 The extension is published on the DuckDB **community-extensions** repository, so any DuckDB of the
 matching version can obtain it — no manual binary management:
@@ -250,13 +246,12 @@ How the connector gets it, per transport:
   *server* can read — then the connector issues the instance-wide, idempotent `LOAD` while opening
   each connection. Either way every BINARY/PARITY connection runs one consolidated validation
   `SELECT`: `default_collation` + all comparison/ordering canaries, plus `trino_meta()` in PARITY.
-  That fresh one-round-trip check detects a restarted server, a missing extension, or changed
-  collation before a pushed predicate can return wrong rows.
+  The fresh check validates extension availability and comparison settings rather than
+  relying on cached assumptions about the server.
 - **Running without the extension**: set `duckbridge.string-pushdown.mode=GUARDED` (or any
-  non-`PARITY` mode). Only the 10 extension-backed functions drop out; the ~69 natively-emitted
-  functions still push, alongside projection, predicate (domain), and LIMIT/TopN pushdown. All
-  queries remain correct — the 10 are simply evaluated by Trino above the scan. (This replaces the
-  former `duckbridge.parity.enabled=false`.)
+  non-`PARITY` mode). Extension-backed calls stay in Trino. Other pushdowns remain
+  subject to their normal gates and the selected mode's string/TopN restrictions;
+  disabling the extension does not fix the known native-function limitations.
 
 ## Lance and Vortex (experimental)
 
@@ -281,13 +276,6 @@ Details, function signatures, and examples:
 The [`doris-duckbridge`](doris-duckbridge/README.md) sibling connects Doris to remote DuckDB/Quack
 through Doris's connector SPI and matching JNI plugin runtime.
 
-## Future development
-
-- **Arrow columnar engine** — a columnar data plane that decodes DuckDB Arrow streams
-  directly into Trino pages instead of row-by-row JDBC. Present in the codebase behind
-  `duckbridge.execution-engine` for local benchmarking; not the production path yet.
-- **Aggregate pushdown** (`COUNT`/`MIN`/`MAX`/`SUM`), parity-verified per aggregate.
-
 ## Build & test
 
 Requires JDK 25 (the Gradle toolchain resolves it on demand). Docker is needed for the
@@ -299,7 +287,7 @@ use.
 ./gradlew :trino-duckbridge:detekt
 ```
 
-Dependency versions provided by Trino (including Arrow 19 for Trino 483) come from the Trino BOM;
+Dependency versions provided by Trino come from the Trino BOM;
 `gradle/libs.versions.toml` only pins dependencies this project owns independently. An offline build
 is supported after the exact task graph has been resolved online at least once:
 
@@ -312,15 +300,13 @@ is supported after the exact task graph has been resolved online at least once:
 fails and names what must first be resolved online. Network-backed Lance/Vortex tests have their own
 availability assumptions and are not made hermetic by Gradle's offline flag.
 
-## Parity extension
+Development follow-ups are listed in the [categorized project TODO](dev-docs/TODO-backlog.md).
+Detailed qualification evidence and change history live in the modules' `dev-docs/` directories.
 
-The signed `trino_parity` 0.5.1 extension ships through DuckDB
-[community-extensions](https://duckdb.org/community_extensions/). The release matrix runs
-`.github/scripts/fetch-parity-extension.sh` natively on Linux amd64/arm64, macOS arm64 and Windows
-amd64, then combines the verified binary/provenance pairs into one plugin package.
+### Building the parity extension
 
-For a reproducible local package matching the root DuckDB pin, fetch the signed binary for the
-current host first:
+For a local plugin package, fetch the signed community binary matching the pinned
+DuckDB version and current host first:
 
 ```sh
 ./.github/scripts/fetch-parity-extension.sh

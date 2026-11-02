@@ -2,34 +2,35 @@
 
 Apache Doris → DuckDB connector: the Doris sibling of `trino-duckbridge`. Doris pushes
 scans/projections/predicates into a user-operated DuckDB (remote via the Quack
-protocol, `jdbc:quack://…`), riding Doris's new `fe-connector` plugin SPI and the BE's
+protocol, `jdbc:quack://…`), using Doris's `fe-connector` plugin SPI and the BE's
 existing JDBC JNI scanner.
 
-**Status:** qualified locally against pinned Doris master `8e10b235cf0`, connector API 26 /
-filesystem API 7 / JNI API 6, DuckDB **2.0.0** and Quack JDBC **0.12.0**. The complete matching ASAN runtime passed
-exact JDBC values, timezone/microsecond edges, security gates, concurrency, catalog lifecycle,
-persisted restart and plugin-scoped failure recovery. API-24/API-13 artifacts remain rollback. See
-[qualification](dev-docs/QUALIFICATION-api26-2026-11-01.md) and the
-[function-intake audit](dev-docs/REPORT-duckdb2-function-intake-2026-10-28.md).
+**Status:** read-only development connector for the pinned Doris master baseline and
+DuckDB **2.0.0**. The matched FE/BE runtime is locally qualified for correctness;
+this is not a production rollout or performance claim. The plugin bundles its Quack
+JDBC driver; dependency versions are pinned in
+[`../gradle/libs.versions.toml`](../gradle/libs.versions.toml).
 
-The [November-1 compatibility review](dev-docs/REVIEW-doris-api26-2026-11-01.md)
-records the conservative API-26 intake: no write, streaming, type or pushdown
-capability is newly enabled. This is a local master-development correctness
-lane, not a production rollout or performance claim. Earlier
-[0.11 driver qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
-re-runs the real Java-17 FE/BE scanner lane without rebuilding or patching the native engine.
-The [0.12.0 release qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md)
-retains bounded CANCEL-under-partition and fixes DML/result classification; autonomous server lease reaping remains separate.
-The [namespace policy](../trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md) keeps literal
-dotted names distinct and rejects true nested-schema catalogs before ambiguous metadata can escape.
-Metadata, JDBC scans, predicate/function pushdown, temporal values, LARGEINT, ARRAY, VARBINARY,
-and concurrent scans run through DuckDB/Quack. Internal design:
-[`dev-docs/DESIGN-jdbc-scan-contract.md`](dev-docs/DESIGN-jdbc-scan-contract.md).
+Metadata, JDBC scans, predicate/function pushdown, supported temporal values,
+LARGEINT, ARRAY, VARBINARY and concurrent scans run through DuckDB/Quack.
+Schema discovery keeps literal dotted names distinct and rejects catalogs containing
+true nested schemas rather than flattening them.
+
+## Limitations
+
+- Read-only: no connector write support.
+- Function pushdown uses a [curated allowlist](dev-docs/REPORT-doris-duckdb-function-divergence.md),
+  not the Trino connector's catalog. JSON mutation and OVERLAY functions are not enabled.
+- Untyped NULL requires a declared source type. Packed TIMETZ is rejected rather than
+  exposed as misleading time text; native temporal precision is limited to six digits.
+- Autonomous server orphan-session expiry and published-port streaming have open
+  acceptance issues; see the [categorized backlog](../dev-docs/TODO-backlog.md).
 
 ## Doris baseline & patches
 
-This connector targets pinned apache/doris `master` (the connector SPI is upstream, but not yet in
-a release) and runs on a pristine FE plus one patched BE component. Everything is pinned and scripted:
+This connector requires the exact apache/doris source baseline below and runs on a
+pristine FE plus one patched BE component. Do not substitute an unqualified Doris
+release or mix FE/BE pins. Everything is pinned and scripted:
 
 - **Pin**: [`../doris-patches/BASELINE`](../doris-patches/BASELINE) — the exact commit on
   apache/doris master.
@@ -37,13 +38,13 @@ a release) and runs on a pristine FE plus one patched BE component. Everything i
   (LARGEINT/ARRAY/VARBINARY-faithful JDBC value coercion). Rationale, apply procedure,
   and the re-vendor log: [`../doris-patches/PATCHES.md`](../doris-patches/PATCHES.md).
 - **Script**: [`../tools/doris-baseline.sh`](../tools/doris-baseline.sh)
-   - `--check-only` (default) — blobless-clone master at the pin into
+  - `--check-only` (default) — blobless-clone master at the pin into
     `~/.cache/duckbridge/doris` (`DORIS_SRC` overrides) and verify all patches apply
-     clean (`git apply --3way --check`, fail loud on drift).
-     An existing checkout/worktree must be clean; staged/untracked work is never reset or removed.
+    cleanly (`git apply --3way --check`, fail loud on drift).
+    An existing checkout/worktree must be clean; staged/untracked work is never reset or removed.
   - `--install-spi-jars` — build `fe-connector-spi` / `fe-thrift`
-    from the **patched pin** into the project-local repo `doris-duckbridge/doris-m2/`
-    (~1 min). This is the **required bootstrap** before first build.
+    from the **patched pin** into the project-local repo `doris-duckbridge/doris-m2/`.
+    This is the **required bootstrap** before first build.
   - `--build-fe` / `--build-be` — full patched FE/BE builds (opt-in, long; BE is a
     multi-hour C++ build; capped at 8 parallel jobs).
 
@@ -67,25 +68,19 @@ the module itself), matching `thrift` for `fe-thrift` codegen (`DORIS_THRIFT` en
 
 ## Test environment
 
-Published function metadata/transpiler libraries are opt-in **audit-only** dependencies, not
-plugin/runtime dependencies. Java-17 capture, overload/type diff and native semantic probes:
-[`dev-docs/REPORT-published-function-intake-2026-10-28.md`](dev-docs/REPORT-published-function-intake-2026-10-28.md).
-
-Current follow-up: [JSON mutation blockers](dev-docs/REPORT-json-mutations-2026-10-29.md) and
-[boundary/pool contracts](dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md). Untyped NULL
-requires a declared source type; TIMETZ currently fails rather than exposing packed wire bits
-as time text. OVERLAY remains a [test-only blocked candidate](dev-docs/REPORT-overlay-qualification-2026-10-29.md).
-
 Integration testing uses the compose environment in [`compose/`](compose/):
 
 - `compose/docker-compose.yml` — `doris-fe` (pristine pinned master FE + our plugin), `doris-be`
-  (patched exact-pin BE — `JdbcJniScanner` is absent from stock 4.1.x, so the BE must be
-  branch-built too), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
+   (patched exact-pin BE), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
 - `compose/bake-images.sh` — bakes the FE/BE overlay images from the `--build-fe`/`--build-be`
-    output (`~/.cache/duckbridge/doris/output`); uses source-qualified API-26 image names, requires an
-    ASAN BE, and refuses to run while the build is still going. API-24/API-13 tags/volumes are preserved.
+    output (`~/.cache/duckbridge/doris/output`); uses source-qualified image names, requires an
+    ASAN BE, and refuses to run while the build is still going.
 - `compose/smoke.sh` — install plugin → up → persisted-FE restart → health → catalog/metadata →
   lazy-JVM transition → exact scan/pushdown/concurrency assertions → `down -v`.
 
 See [`compose/README.md`](compose/README.md) for the three commands and prerequisites. The
 plugin zip (`plugins/connector/duckbridge/` layout) is produced by the `pluginZip` Gradle task.
+
+Internal scan/runtime design: [JDBC scan contract](dev-docs/DESIGN-jdbc-scan-contract.md).
+Qualification evidence and baseline history are kept in [`dev-docs/`](dev-docs/)
+and [`doris-patches/PATCHES.md`](../doris-patches/PATCHES.md), rather than this setup guide.
