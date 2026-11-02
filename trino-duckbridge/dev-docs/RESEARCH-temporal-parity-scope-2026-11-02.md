@@ -1,5 +1,25 @@
 # Temporal parity: size and integration assessment — 2026-11-02
 
+## Subsequent selected disposition
+
+After this assessment the user selected the bounded known-session-zone sub-day
+truncation work, then explicitly approved the exposed BCE YEAR correction.
+Qualification found a smaller public-SQL implementation: DuckDB 2.0's
+`epoch_us`, `date_part('timezone', ...)` and `make_timestamptz` express Joda's
+exact input-offset time-field rounding. Zoned YEAR uses native era/year fields.
+No parity-extension source, metadata, version or binary changes are needed.
+See the [implementation report](REPORT-timestamp-truncation-2026-11-02.md).
+
+DuckDB 2.0's directory is still named `extension/icu`, but its build uses the
+replacement native calendar/timezone code and compressed IANA 2026e data. Do not
+infer that this work requires DuckDB's former ICU dependency from that path name.
+The parity extension's separate disabled-calendar ICU configuration described
+below is not a reason to introduce another timezone library.
+
+DATE/calendar truncation and general WITH_TIMEZONE composition remain separate,
+unselected work. The original sizing assessment below is historical, not the
+current implementation prescription or a request for a native release.
+
 ## Scope
 
 Code-inspection assessment requested by the user, **not implementation approval**.

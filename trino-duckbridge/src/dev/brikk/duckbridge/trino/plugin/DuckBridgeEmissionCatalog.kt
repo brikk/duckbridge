@@ -145,13 +145,16 @@ internal object DuckBridgeEmissionCatalog {
             // match gate is not a proof of repeated/zero-width match iteration semantics.
             put(NameArity("regexp_count", 2), Emission.Inline { a -> "length(regexp_extract_all(${a[0]}, ${a[1]}))" })
             // Date / time
-            put(NameArity("year", 1), Emission.Bare)
+            put(NameArity("year", 1), Emission.Contextual { rendered, args, _ ->
+                DuckBridgeTimestampTruncation.year(rendered[0], args[0])
+            })
             put(NameArity("month", 1), Emission.Bare)
             put(NameArity("day", 1), Emission.Bare)
             put(NameArity("quarter", 1), Emission.Bare)
-            // TODO(edge-audit): native DATE truncation changes type/range; zoned truncation can
-            // change overlap offsets. Common-case pushdown disposition is pending user review.
-            put(NameArity("date_trunc", 2), Emission.Bare)
+            // Zoned time fields preserve the input offset; DATE/calendar-field parity is separate.
+            put(NameArity("date_trunc", 2), Emission.Contextual { rendered, args, _ ->
+                DuckBridgeTimestampTruncation.render(rendered, args)
+            })
             // date_diff: Trino counts COMPLETE units elapsed (Joda getDifference); DuckDB's date_diff
             // counts partition BOUNDARIES crossed (date_diff('month', 2020-01-31, 2020-02-01) = 1 vs
             // Trino 0). DuckDB's date_sub is the complete-units form (EV-A2). Unit list gated to the

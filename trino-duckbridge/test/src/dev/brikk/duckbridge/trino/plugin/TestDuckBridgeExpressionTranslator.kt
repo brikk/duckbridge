@@ -586,7 +586,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(2024L, BIGINT),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly("(year(\"tstz\") = 2024)")
+            .containsExactly("(${DuckBridgeTimestampTruncation.year("\"tstz\"", Variable("tstz", TIMESTAMP_TZ_MILLIS))} = 2024)")
     }
 
     @Test
