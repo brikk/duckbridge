@@ -22,6 +22,8 @@ import io.trino.spi.expression.ConnectorExpression
 import io.trino.spi.expression.Constant
 import io.trino.spi.type.BigintType
 import io.trino.spi.type.DateType
+import io.trino.spi.type.DoubleType
+import io.trino.spi.type.RealType
 import io.trino.spi.type.IntegerType
 import io.trino.spi.type.SmallintType
 import io.trino.spi.type.TimestampType
@@ -124,7 +126,14 @@ internal object DuckBridgeEmissionCatalog {
             put(NameArity("radians", 1), Emission.Bare)
             // cbrt is NOT pushed (EV-A13): Java's Math.cbrt is exact for perfect cubes (cbrt(-27) = -3)
             // where DuckDB's yields -3.0000000000000004 — an equality predicate would miss the row.
-            put(NameArity("sign", 1), Emission.Bare)
+            put(NameArity("sign", 1), Emission.Contextual { rendered, args, _ ->
+                val value = rendered[0]
+                when (args[0].type) {
+                    is DoubleType -> floatingSign(value, "DOUBLE")
+                    is RealType -> floatingSign(value, "FLOAT")
+                    else -> "sign($value)"
+                }
+            })
             put(NameArity("pi", 0), Emission.Bare)
             // Regex. All regex entries are gated (TYPE_GATES) to a constant pattern that passes the
             // RE2-safe allowlist (EV-A8): Trino compiles with Joni (Java syntax), DuckDB with RE2, and
@@ -315,6 +324,9 @@ internal object DuckBridgeEmissionCatalog {
     private fun dateTruncGate(): ArgTypeGate = ArgTypeGate { args, session ->
         argTier(1).accepts(args, session) && validTemporalUnit(args, listOf(1))
     }
+
+    private fun floatingSign(value: String, type: String): String =
+        "(CASE WHEN isnan($value) OR $value=0 THEN $value ELSE CAST(sign($value) AS $type) END)"
 
     private fun validTemporalUnit(args: List<ConnectorExpression>, operands: List<Int>): Boolean {
         val units = if (operands.any { args[it].type is DateType }) DATE_UNITS else TIMESTAMP_UNITS

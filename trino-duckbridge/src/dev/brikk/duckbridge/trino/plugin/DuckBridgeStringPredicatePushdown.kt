@@ -38,8 +38,8 @@ import io.trino.spi.predicate.Domain
  * | GUARDED | pushed as superset pre-filter; 0x00-bearing domains skipped entirely | **yes** |
  * | BINARY/FULL/PARITY | full pushdown (probe-verified byte semantics) | no |
  *
- * Non-string columns keep their standard [FULL_PUSHDOWN] controller in every mode (numeric/date/
- * boolean comparisons are byte-exact cross-engine).
+ * Non-string columns are independent of this mode. Floating domains have a separate NaN-aware
+ * controller; other scalar domains keep their standard controller.
  */
 internal object DuckBridgeStringPredicatePushdown {
     val VARCHAR_PUSHDOWN: PredicatePushdownController =

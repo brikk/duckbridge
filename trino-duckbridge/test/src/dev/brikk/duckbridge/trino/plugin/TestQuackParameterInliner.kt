@@ -20,6 +20,7 @@ import io.trino.spi.TrinoException
 import io.trino.spi.type.BigintType.BIGINT
 import io.trino.spi.type.BooleanType.BOOLEAN
 import io.trino.spi.type.DateType.DATE
+import io.trino.spi.type.DoubleType.DOUBLE
 import io.trino.spi.type.DecimalType.createDecimalType
 import io.trino.spi.type.Int128
 import io.trino.spi.type.RealType.REAL
@@ -30,6 +31,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.math.BigInteger
+import java.sql.DriverManager
+import java.sql.Connection
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -87,6 +90,37 @@ class TestQuackParameterInliner {
     fun inlinesRealAsCast() {
         val q = PreparedQuery("SELECT * FROM t WHERE r = ?", listOf(param(REAL, java.lang.Float.floatToIntBits(2.5f).toLong())))
         assertThat(QuackParameterInliner.inline(q)).isEqualTo("SELECT * FROM t WHERE r = CAST('2.5' AS REAL)")
+    }
+
+    @Test
+    fun infinityBoundsPreserveFloatingTypesAndValues() {
+        DriverManager.getConnection("jdbc:duckdb:").use { connection ->
+            for (type in listOf(REAL, DOUBLE)) {
+                for (number in listOf(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
+                    val value: Any = if (type == REAL) java.lang.Float.floatToRawIntBits(number.toFloat()).toLong() else number
+                    val sql = QuackParameterInliner.inline(PreparedQuery("SELECT typeof(x),x FROM (SELECT ? AS x)", listOf(param(type, value))))
+                    assertInfinityLiteral(connection, sql, if (type == REAL) "FLOAT" else "DOUBLE", number)
+                }
+            }
+        }
+    }
+
+    private fun assertInfinityLiteral(connection: Connection, sql: String, type: String, number: Double) {
+        connection.createStatement().use { statement ->
+            statement.executeQuery(sql).use { rows ->
+                check(rows.next())
+                assertThat(rows.getString(1)).isEqualTo(type)
+                assertThat(rows.getDouble(2)).isEqualTo(number)
+            }
+        }
+    }
+
+    @Test
+    fun nanParametersStillFailLoud() {
+        for ((type, value) in listOf(REAL to java.lang.Float.floatToRawIntBits(Float.NaN).toLong(), DOUBLE to Double.NaN)) {
+            val query = PreparedQuery("SELECT ?", listOf(param(type, value)))
+            assertThatThrownBy { QuackParameterInliner.inline(query) }.isInstanceOf(TrinoException::class.java).hasMessageContaining("NaN")
+        }
     }
 
     @Test

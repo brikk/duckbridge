@@ -289,7 +289,10 @@ object DuckBridgeExpressionTranslator {
                 }
                 val left = translateOrNull(args[0], assignments, session, ctx)
                 val right = translateOrNull(args[1], assignments, session, ctx)
-                return if (left == null || right == null) null else "($left $operator $right)"
+                return if (left == null || right == null) null
+                else if (args.any { DuckBridgeFloatingExpressions.isFloating(it.type) })
+                    DuckBridgeFloatingExpressions.comparison(left, operator, right)
+                else "($left $operator $right)"
             }
         }
         arithmeticOperator(name)?.let { arithmetic ->
@@ -315,7 +318,10 @@ object DuckBridgeExpressionTranslator {
             name == StandardFunctions.NULLIF_FUNCTION_NAME && args.size == 2 -> {
                 val left = translateOrNull(args[0], assignments, session, ctx)
                 val right = translateOrNull(args[1], assignments, session, ctx)
-                return if (left == null || right == null) null else "nullif($left, $right)"
+                return if (left == null || right == null) null
+                else if (args.any { DuckBridgeFloatingExpressions.isFloating(it.type) })
+                    "(CASE WHEN ${DuckBridgeFloatingExpressions.comparison(left, "=", right)} THEN NULL ELSE $left END)"
+                else "nullif($left, $right)"
             }
             name == StandardFunctions.NEGATE_FUNCTION_NAME && args.size == 1 -> {
                 val inner = translateOrNull(args[0], assignments, session, ctx)
@@ -383,7 +389,7 @@ object DuckBridgeExpressionTranslator {
     /**
      * True iff either operand of a 2-arg comparison is a string type (VARCHAR or CHAR). Such
      * comparisons carry the collation/byte-ordering trust question the mode dial gates; everything
-     * else (numeric, date, boolean) is byte-exact across engines and pushes in every mode.
+     * else is independent of string collation (floating comparisons have their own IEEE rendering).
      */
     private fun comparesStringOperand(args: List<ConnectorExpression>): Boolean =
         args.any { it.type is VarcharType || it.type is io.trino.spi.type.CharType }
@@ -482,8 +488,11 @@ object DuckBridgeExpressionTranslator {
         if (!castSemanticsAlign(operand.type, call.type)) {
             return null
         }
-        val inner = translateOrNull(operand, assignments, session, ctx)
-        return if (inner == null) null else "$castKeyword($inner AS $targetType)"
+        val inner = translateOrNull(operand, assignments, session, ctx) ?: return null
+        if (operand.type is DateType && call.type is VarcharType && (call.type as VarcharType).isUnbounded) {
+            return DuckBridgeDateExpressions.toVarchar(inner)
+        }
+        return "$castKeyword($inner AS $targetType)"
     }
 
     /**
@@ -493,8 +502,8 @@ object DuckBridgeExpressionTranslator {
      *  - DOUBLE/REAL → VARCHAR (EV-A10): Java `Double.toString` vs DuckDB formatting
      *    (1.0E7 vs 10000000.0, 1.0E20 vs 1e+20).
      *  - TIMESTAMP/TIME/DECIMAL-family and anything not in [duckdbTypeName] → VARCHAR: rendering
-     *    (precision digits, trailing zeros) is engine-specific; only exact-integer, boolean and DATE
-     *    render identically.
+     *    (precision digits, trailing zeros) is engine-specific. Unbounded DATE text uses an explicit
+     *    astronomical-year formatter rather than DuckDB's native BC spelling.
      */
     private fun castSemanticsAlign(source: Type, target: Type): Boolean {
         val sourceIsString = source is VarcharType || source is io.trino.spi.type.CharType

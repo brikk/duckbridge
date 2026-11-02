@@ -144,6 +144,27 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
     }
 
     @Test
+    fun floatingRangeBoundsExcludeNanWithoutLosingInfinityOverQuackArrow() {
+        computeActual("CREATE TABLE floating_edges(id BIGINT,r REAL,d DOUBLE)")
+        try {
+            computeActual("INSERT INTO floating_edges VALUES " +
+                "(1,CAST('NaN' AS REAL),nan()),(2,CAST('Infinity' AS REAL),infinity())," +
+                "(3,CAST('-Infinity' AS REAL),-infinity()),(4,REAL '-0.0',DOUBLE '-0.0')," +
+                "(5,REAL '0.0',DOUBLE '0.0'),(6,REAL '1.0',DOUBLE '1.0'),(7,NULL,NULL)")
+            for (column in listOf("r", "d")) {
+                val ids = computeActual("SELECT id FROM floating_edges WHERE $column>0 ORDER BY id")
+                    .materializedRows.map { it.getField(0) as Long }
+                assertThat(ids).containsExactly(2L, 6L)
+                val notPositive = computeActual("SELECT id FROM floating_edges WHERE NOT ($column>0) ORDER BY id")
+                    .materializedRows.map { it.getField(0) as Long }
+                assertThat(notPositive).containsExactly(1L, 3L, 4L, 5L)
+            }
+        } finally {
+            computeActual("DROP TABLE floating_edges")
+        }
+    }
+
+    @Test
     fun timestampPredicateInlinedOverQuackArrow() {
         val ids =
             computeActual("SELECT id FROM t WHERE ts >= TIMESTAMP '1995-01-01 00:00:00' ORDER BY id")

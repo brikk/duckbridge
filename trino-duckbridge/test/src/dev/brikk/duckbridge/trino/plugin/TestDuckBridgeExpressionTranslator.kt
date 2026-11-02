@@ -571,7 +571,7 @@ class TestDuckBridgeExpressionTranslator {
         // there is no zone → stays in Trino.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly("(CAST(epoch(timezone('UTC', \"ts\")) AS DOUBLE) = 0.0)")
+            .containsExactly(DuckBridgeFloatingExpressions.comparison("CAST(epoch(timezone('UTC', \"ts\")) AS DOUBLE)", "=", "0.0"))
     }
 
     // --- TIMESTAMP WITH TIME ZONE gated by session property -----------------
@@ -612,7 +612,7 @@ class TestDuckBridgeExpressionTranslator {
                 Constant(0.0, DOUBLE),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly("(CAST(epoch(\"tstz\") AS DOUBLE) = 0.0)")
+            .containsExactly(DuckBridgeFloatingExpressions.comparison("CAST(epoch(\"tstz\") AS DOUBLE)", "=", "0.0"))
     }
 
     @Test

@@ -81,8 +81,8 @@ object QuackParameterInliner {
     /** REAL native value is the float's int bits packed in a long (Trino's REAL javaType). */
     private fun renderReal(intBits: Long): String {
         val f = java.lang.Float.intBitsToFloat(intBits.toInt())
-        if (f.isNaN() || f.isInfinite()) {
-            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a non-finite REAL parameter ($f)")
+        if (f.isNaN()) {
+            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a NaN REAL parameter")
         }
         return "CAST('$f' AS REAL)"
     }
@@ -134,9 +134,10 @@ object QuackParameterInliner {
     }
 
     private fun renderDouble(d: Double): String {
-        if (d.isNaN() || d.isInfinite()) {
-            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a non-finite DOUBLE parameter ($d)")
+        if (d.isNaN()) {
+            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a NaN DOUBLE parameter")
         }
+        if (d.isInfinite()) return "CAST('$d' AS DOUBLE)"
         return d.toString()
     }
 

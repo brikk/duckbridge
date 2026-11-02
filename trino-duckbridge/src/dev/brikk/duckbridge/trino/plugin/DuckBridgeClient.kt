@@ -343,8 +343,8 @@ class DuckBridgeClient
                 Types.SMALLINT -> return Optional.of(smallintColumnMapping())
                 Types.INTEGER -> return Optional.of(integerColumnMapping())
                 Types.BIGINT -> return Optional.of(bigintColumnMapping())
-                Types.FLOAT -> return Optional.of(realColumnMapping())
-                Types.DOUBLE -> return Optional.of(doubleColumnMapping())
+                Types.FLOAT -> return Optional.of(DuckBridgeFloatingPredicatePushdown.mapping(realColumnMapping()))
+                Types.DOUBLE -> return Optional.of(DuckBridgeFloatingPredicatePushdown.mapping(doubleColumnMapping()))
                 Types.DECIMAL -> {
                     val decimalTypeName = typeHandle.jdbcTypeName().orElseThrow()
                     // Use type name because DuckDB does not report scale in metadata.
