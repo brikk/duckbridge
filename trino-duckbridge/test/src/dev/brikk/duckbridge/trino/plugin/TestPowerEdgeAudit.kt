@@ -133,21 +133,84 @@ class TestPowerEdgeAudit : AbstractTestQueryFramework() {
     }
 
     @Test
-    fun testPowerAndPowCannotEmitWithOrWithoutParityOrStringComparisonTrust() {
+    fun testWithdrawnMathCannotEmitWithOrWithoutParityOrStringComparisonTrust() {
         val assignments: Map<String, ColumnHandle> = listOf("b", "e").associateWith { name ->
             JdbcColumnHandle(name, JdbcTypeHandle(Types.DOUBLE, Optional.of("DOUBLE"), Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty()), DOUBLE)
         }
-        for (name in listOf("power", "pow")) {
+        for ((name, arity) in listOf("power" to 2, "pow" to 2, "atan" to 1, "atan2" to 2, "cosh" to 1)) {
+            val args = if (arity == 2) listOf(Variable("b", DOUBLE), Variable("e", DOUBLE)) else listOf(Variable("b", DOUBLE))
+            val expression = Call(DOUBLE, FunctionName(name), args)
             for (alias in listOf(false, true)) {
                 for (strings in listOf(false, true)) {
                     assertThat(DuckBridgeExpressionTranslator.translate(
-                        Call(DOUBLE, FunctionName(name), listOf(Variable("b", DOUBLE), Variable("e", DOUBLE))),
+                        expression,
                         assignments, null, aliasAvailable = alias, stringComparisonAllowed = strings,
                     )).describedAs("%s must not emit with alias=%s strings=%s", name, alias, strings).isNull()
+                    assertThat(DuckBridgeExpressionTranslator.translate(
+                        Call(DOUBLE, FunctionName("abs"), listOf(expression)),
+                        assignments, null, aliasAvailable = alias, stringComparisonAllowed = strings,
+                    )).describedAs("Nested %s must remain local", name).isNull()
                 }
             }
         }
+    }
+
+    @Test
+    fun testAtanAtan2AndCoshPreserveExactLocalValuesAndPredicates() {
+        Files.createDirectories(output)
+        controls()
+        verifyInputs()
+        val input = mathOracleInput()
+        val diagnostics = mutableListOf("function\tid\ttrino\tduckdb\tproduction\tnative_match\tproduction_match")
+        val predicates = mutableListOf("predicate\ttrino_ids\tproduction_ids\tfilter_retained")
+        for ((expression, finiteValue) in listOf("atan(b)" to "atan(pi())", "atan2(b,e)" to "atan2(pi(),1.0E0)", "cosh(b)" to "cosh(1.0E0)")) {
+            localMathScalars(input, expression, diagnostics)
+            for ((index, predicate) in listOf("$expression>0", "NOT ($expression>0)", "$expression=0", "$expression=$finiteValue").withIndex()) {
+                val sql = "SELECT id FROM power_pushed.audit.cases WHERE $predicate ORDER BY id"
+                val expected = ids("$input SELECT id FROM input WHERE $predicate ORDER BY id")
+                val actual = ids(sql)
+                val plan = computeActual("EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
+                Files.writeString(output.resolve("local-${expression.substringBefore('(')}-$index.plan"), plan)
+                assertThat(plan).describedAs("%s must remain local", predicate).contains("filterPredicate")
+                assertThat(actual).describedAs(predicate).containsExactlyElementsOf(expected)
+                predicates.add(listOf(predicate, expected.toString(), actual.toString(), "true").joinToString("\t"))
+            }
+        }
+        Files.write(output.resolve("local-math-scalars.tsv"), diagnostics)
+        Files.write(output.resolve("local-math-predicates.tsv"), predicates)
+        controls()
+    }
+
+    private fun localMathScalars(input: String, expression: String, diagnostics: MutableList<String>) {
+        val host = computeActual("$input SELECT id,$expression FROM input ORDER BY id")
+        val production = computeActual("SELECT id,$expression FROM power_pushed.audit.cases ORDER BY id")
+        assertThat(host.types[1]).isEqualTo(DOUBLE)
+        assertThat(production.types).isEqualTo(host.types)
+        assertThat(production.rowCount).isEqualTo(host.rowCount)
+        duck.createStatement().use { statement ->
+            statement.executeQuery("SELECT id,$expression FROM audit.cases ORDER BY id").use { rows ->
+                for ((index, expected) in host.materializedRows.withIndex()) {
+                    check(rows.next())
+                    val actual = production.materializedRows[index]
+                    assertThat(actual.getField(0)).isEqualTo(expected.getField(0))
+                    assertThat(rows.getLong(1)).isEqualTo(expected.getField(0) as Long)
+                    val value = expected.getField(1) as Double?
+                    val local = actual.getField(1) as Double?
+                    val native = rows.getObject(2) as Double?
+                    assertThat(PowerEdgeCases.same(value, local)).describedAs("%s id=%s", expression, expected.getField(0)).isTrue()
+                    diagnostics.add(listOf(expression, expected.getField(0).toString(), PowerEdgeCases.describe(value),
+                        PowerEdgeCases.describe(native), PowerEdgeCases.describe(local),
+                        PowerEdgeCases.same(value, native).toString(), "true").joinToString("\t"))
+                }
+                assertThat(rows.next()).isFalse()
+            }
+        }
+    }
+
+    private fun mathOracleInput(): String = PowerEdgeCases.cases.joinToString(",", "WITH input(id,b,e) AS (VALUES ", ")") { row ->
+        fun literal(value: Double?): String = "CAST(${value?.let { "'$it'" } ?: "NULL"} AS DOUBLE)"
+        "(CAST(${row.id} AS BIGINT),${literal(row.base)},${literal(row.exponent)})"
     }
 
     private fun scalarAudit(): List<Long> {

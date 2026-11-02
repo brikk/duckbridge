@@ -6,10 +6,13 @@ Select a category or item ID before starting another workstream.
 
 ## Scope rule
 
-- DuckDB v2 compatibility intake and the matched Doris API-26 qualification have
+- DuckDB v2 compatibility intake and the matched Doris API-27 qualification have
   been completed for their documented lanes. Outstanding correctness defects
-  are not concealed by that statement; the latest full local run remains
-  **945 tests / 942 passing / three red audit checks**, with no errors/skips.
+  are not concealed by that statement. The latest full invocation has two
+  unresolved temporal/Trino-IN audit failures and one separate connection-startup
+  failure; the math audit now passes. The unchanged focused row-set rerun passes
+  but is not a replacement full green result. See the
+  [verification receipt](../trino-duckbridge/dev-docs/REPORT-local-math-fallback-2026-11-02.md).
 - **Confirmed defect**, **coverage gap** and **optional feature** are different
   categories. A missing test is not evidence of a bug. An unchecked box in the
   older preview/readiness tracker is not automatically a new release gate.
@@ -19,16 +22,17 @@ Select a category or item ID before starting another workstream.
 - Category membership is not approval to defer a known wrong-result defect,
   disable a test, change semantics or declare a red gate green. Those need an
   explicit disposition. Preserve existing guards and exact counterexamples.
-- User preference: timezone correctness is likely more valuable than adding
-  native parity for infrequently used ATAN/ATAN2/COSH. The parity extension is
-  available if a selected fix needs it. This preference is **not** an instruction
-  to implement new native functions, remove pushdowns or begin another audit.
+- User decision: ATAN/ATAN2/COSH stay local; no native math parity is requested.
+  Timezone correctness is likely more valuable. The parity extension is available
+  if a selected temporal fix needs it; the requested sizing assessment is **not**
+  approval to implement temporal changes or begin another audit.
 
-**No new implementation category is selected by this document.**
+**A-MATH was explicitly selected and completed. Temporal implementation remains
+unselected; the sizing assessment does not start it.**
 
-## A. Confirmed defects in currently admitted connector pushdowns
+## A. Confirmed connector defects and their dispositions
 
-These are reproduced findings, not speculative areas to explore. They are
+These are reproduced findings, not speculative areas to explore. Open items are
 still enabled under their existing gates; documentation is not a fallback.
 Evidence for A and B-TRINO is the
 [targeted qualification](../trino-duckbridge/dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md).
@@ -44,16 +48,22 @@ Evidence for A and B-TRINO is the
   intermediate/result-type/range and observed error-contract differences.
   Casting the result back to DATE alone is insufficient. Ordinary DATE text
   formatting and finite DATE writes have already been fixed; do not reopen them.
-- [ ] **A-MATH — ATAN, ATAN2, COSH.** Resolve exact finite-rounding differences
-  affecting equality predicates. Choice: retain Trino evaluation for these
-  functions, or justify the cost of genuine native parity. Local fallback is a
-  recommendation to consider, **not yet an applied policy or approval**.
+- [x] **A-MATH — ATAN, ATAN2, COSH stay local.** User-approved policy implemented:
+  remove native emissions, retain Trino values/types/row sets and keep raw native
+  counterexamples as diagnostics. No native extension change. See the
+  [fallback qualification](../trino-duckbridge/dev-docs/REPORT-local-math-fallback-2026-11-02.md).
 
-## B. Confirmed external defects / acceptance failures
+The requested [temporal parity size assessment](../trino-duckbridge/dev-docs/RESEARCH-temporal-parity-scope-2026-11-02.md)
+separates the small DATE-only implementation, medium known-zone zoned truncation
+and larger WITH_TIMEZONE composition work. It is code inspection, not a prototype
+or authorization to implement those tasks.
 
-These have concrete reproductions. They are not a mandate to edit upstream
-engines or invent local bypasses. Existing shared tracker entries below refer
-to the same work, not additional duplicate tasks.
+## B. Known external defects and unresolved acceptance failures
+
+These have concrete observed failures. Entries explicitly state when the origin
+is not assigned; a native exception is not by itself proof of an upstream bug.
+They are not a mandate to edit upstream engines or invent local bypasses.
+Existing shared tracker entries refer to the same work, not duplicate tasks.
 
 - [ ] **B-TRINO-IN — Trino 483 REAL membership and signed zero.** Independently
   reproduced without DuckBridge/DuckDB: constant folding and the tested compiled
@@ -62,6 +72,13 @@ to the same work, not additional duplicate tasks.
   A separately selected next task can produce a minimal upstream regression,
   check current upstream status and agree a disposition. No issue has been filed,
   no upstream correction qualified, and no connector workaround applied.
+- [ ] **B-DB-ATTACH — Observed native JDBC startup conflict; cause unassigned.**
+  A full run fails the first INSERT in `TestPushdownRowSetParity` setup with
+  `Unique file handle conflict ... already attached` from native JDBC startup.
+  One unchanged focused rerun passes all 31 checks. That does not establish a
+  fix or clear the full-run failure. Record/triage if selected; no connection
+  retry, fixture bypass, test skip or broader lifecycle campaign is started by
+  the math fallback. [Evidence and exact error](../trino-duckbridge/dev-docs/REPORT-local-math-fallback-2026-11-02.md).
 - [ ] **B-QUACK-LEASE — Autonomous orphan-session reaping.** Await a real server
   correction and rerun unchanged expiry assertions. Healthy heartbeat renewal
   and bounded close/cancel are already proved, not a substitute for expiry.

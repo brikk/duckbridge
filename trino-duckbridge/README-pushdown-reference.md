@@ -1,6 +1,6 @@
 # Pushdown reference
 
-**Source snapshot: 2026-11-02**, including fixes through `4046ce9`. Applies to
+**Source snapshot: 2026-11-02**, including the approved local ATAN/ATAN2/COSH policy. Applies to
 **Trino 483, DuckDB 2.0.0 / native JDBC 2.0.0.0, Quack JDBC 0.12.0 and
 trino_parity 0.5.1**. An older packaged plugin may not contain these fixes.
 This is the Trino connector's reference; [Doris has a separate allowlist](../doris-duckbridge/dev-docs/REPORT-doris-duckdb-function-divergence.md).
@@ -20,17 +20,18 @@ tracker.
 | **Known issue — still enabled** | A demonstrated mismatch remains in an admitted operation. **Do not read this as an implemented fallback or a guarantee of correct pushdown.** |
 | **Accepted error limitation** | The specific documented error-category difference is retained; successful values and NULLs are not allowed to change on that account. |
 
-**The complete audit is not green.** The latest local full run had 945 tests,
-942 passing and three failing new audit checks, with no errors/skips. The failing
-checks cover the unresolved math, temporal and native-Trino membership cases
-below; they are not three isolated input values. See the
-[current qualification and remaining issues](dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md).
+**Full semantic qualification is not complete.** ATAN/ATAN2/COSH now use verified
+local evaluation; the temporal and native-Trino membership counterexamples below
+remain open. The [local-math verification report](dev-docs/REPORT-local-math-fallback-2026-11-02.md)
+also records the latest wider test results and a separate connection-startup
+failure. The [earlier targeted qualification](dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md)
+preserves its original counterexamples. Neither catalog admission nor a passing
+bounded fixture is a universal parity guarantee.
 
 ## Known limitations that matter to queries
 
 | Operation | Current behavior | Limitation |
 |---|---|---|
-| `atan`, `atan2`, `cosh` | **Known issue — still enabled** | Finite results can differ in their final floating-point bits. Equality predicates have demonstrably returned different row sets. NaN-aware comparisons do not repair the underlying math result. No local fallback for these three functions has been applied. |
 | `date_trunc` with DATE input | **Known issue — still enabled**, subject to valid-unit gates | DuckDB's native overload returns TIMESTAMP where Trino returns DATE. The new unbounded DATE-text formatter repairs the sampled nested text consumers, but does not establish full result-type/range parity. Very wide DATE inputs can fail during truncation; the observed pushed and Trino error contracts differ. A cast back to DATE alone is not a full fix. |
 | `date_trunc` with zoned timestamps | **Known issue — still enabled** when the zoned-function gate permits it | DST overlap/offset handling can change the instant and selected rows. For example, in New York, native hour truncation of `2024-11-03 05:30 UTC` produced `06:00 UTC`, after its input. |
 | `with_timezone` | **Known issue — still enabled** for renderable naive TIMESTAMP inputs | New York overlap attachment chooses a different offset from Trino. A computed Trino value also carries a per-value zone that DuckDB's instant/session-zone model does not preserve for nested extraction. |
@@ -38,8 +39,8 @@ below; they are not three isolated input values. See the
 | Overflowing DECIMAL narrowing `CAST` | **Accepted error limitation; pushdown retained** | The four audited overflows to TINYINT/SMALLINT/INTEGER/BIGINT fail with pushed `JDBC_ERROR`, versus Trino's `NUMERIC_VALUE_OUT_OF_RANGE`. This does **not** permit returning a value or NULL instead of failing, or accepting arbitrary errors as equivalent. `TRY_CAST` has a separate NULL-on-failure contract. |
 | Bounded `VARCHAR(n)` casts | **Existing admission retained; not fully qualified** | The translator renders the native target as VARCHAR without its length bound. The new DATE formatter applies only to **unbounded** VARCHAR; it does not certify bounded DATE spelling or general bounded-cast length/error semantics. |
 
-These defects are **not** fixed by choosing a lower string-pushdown mode: math
-and other non-string expressions have independent admission. The
+These defects are **not** fixed by choosing a lower string-pushdown mode:
+non-string expressions have independent admission. The
 `pushdown_timestamp_with_timezone` property is also **not** a blanket timezone
 safety switch: it gates selected functions whose input is already zoned, not
 `with_timezone` on a naive timestamp. Do not assume a listed issue already has a
@@ -150,21 +151,21 @@ or read time instead of being readable with a local filter. See the
 
 ## Function catalog
 
-The current catalog has **79 `(name, arity)` entries**, not 79 distinct SQL
-function names or a guarantee that all 79 push in every query.
+The current catalog has **76 `(name, arity)` entries**, not 76 distinct SQL
+function names or a guarantee that all 76 push in every query.
 
 | Emission class | Entries | What is emitted |
 |---|---:|---|
-| BARE | 41 | Same native function name |
+| BARE | 38 | Same native function name |
 | RENAME | 9 | A different native name |
 | OPERATOR | 3 | SQL bitwise operator |
 | INLINE / CONTEXTUAL | 16 | SQL transformation, sometimes using types/session state |
 | ALIAS | 10 | Extension `trino_<name>` function |
 
-Only the ten ALIAS entries require the parity extension. The other **69** do
+Only the ten ALIAS entries require the parity extension. The other **66** do
 not reference it, but still need all applicable gates. Extension independence
 is **not** a claim that DuckDB matches Trino over every input: the known enabled
-math/temporal defects above are in that extension-free surface.
+temporal defects above are in that extension-free surface.
 
 The table lists every catalog entry; `name/arity` identifies the internal call
 shape. Trino may normalize user-visible aliases before calling the connector.
@@ -180,7 +181,6 @@ shape. Trino may normalize user-visible aliases before calling the connector.
 | Numeric native calls | `abs/1`, `ceil/1`, `floor/1`, `exp/1`, `sin/1`, `cos/1`, `tan/1`, `sinh/1`, `tanh/1`, `degrees/1`, `radians/1`, `truncate/1`, `pi/0` | Native emission; `truncate` is renamed to `trunc`. These catalog entries have no additional argument-type gate; that is not full-overload qualification. CEIL stayed local in the recent audit's actual planner shape despite having a catalog entry. |
 | Floating sign | `sign/1` | DOUBLE/REAL emission preserves NaN and signed zero and otherwise casts native sign to the floating type. Other argument types keep native `sign` emission. |
 | Modulo function | `mod/2` | Divisor must be a nonzero integer-family constant. Zero, NULL and dynamic divisors stay local. This does not enable the `%` operator. |
-| Known divergent native math | `atan/1`, `atan2/2`, `cosh/1` | **Still enabled; known finite-rounding/wrong-row issues.** No full-domain fix or fallback has been applied. |
 | Bitwise | `bitwise_and/2`, `bitwise_or/2`, `bitwise_not/1`, `bitwise_xor/2` | AND/OR/NOT use operators; XOR becomes native `xor`. Shift functions remain local. |
 | Regex matching / extraction / replacement | `regexp_like/2`, `regexp_extract/2`, `regexp_extract/3`, `regexp_replace/2`, `regexp_replace/3` | Constant pattern must pass Re2Safety. `regexp_like` becomes `regexp_matches`; extraction is match-guarded to return NULL on no match; replacement forces global mode. The three-argument replacement also requires a constant replacement with neither `$` nor backslash. See the regex restrictions below. |
 | Regex count | `regexp_count/2` | VARCHAR source and constant nonempty pattern in the smaller consuming-ASCII grammar below. Other patterns stay local. |
@@ -247,6 +247,7 @@ different, supported conjunct/domain can still push alongside a local call.
 | Operation / case | Why it is not emitted |
 |---|---|
 | `power` / SQL alias `pow` | Finite rounding and special-value counterexamples; local evaluation preserves Trino's result. |
+| `atan`, `atan2`, `cosh` | Explicit local policy: native finite results differ in their final bits and can change exact predicate row sets. Calls, including nested uses, are not emitted; no new native math functions are added to the extension. |
 | `sqrt`, `ln`, `log2`, `log10`, `asin`, `acos` | Existing policy withholds the functions: native domain/error behavior differs, and the earlier scalar rewrites failed end-to-end comparison tests. The new IEEE comparison renderer has **not** re-enabled or requalified them. |
 | `cbrt` | Demonstrated finite difference even on perfect cubes. |
 | `bitwise_left_shift`, `bitwise_right_shift` | Width/shift-count and logical-versus-arithmetic semantics differ. |
@@ -275,6 +276,7 @@ inputs as well as actual production plans and exact row/value/error comparisons.
 See:
 
 - [Targeted fixes, accepted limitations and remaining counterexamples](dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md).
+- [Approved ATAN/ATAN2/COSH local fallback](dev-docs/REPORT-local-math-fallback-2026-11-02.md).
 - [DATE write and type-aware temporal-unit fixes](dev-docs/QUALIFICATION-narrow-date-unit-fixes-2026-11-01.md).
 - [POWER fallback and original counterexamples](dev-docs/REPORT-power-edge-audit-2026-10-31.md).
 - [Restricted regex-count qualification](dev-docs/REPORT-regexp-count-qualification-2026-10-29.md).

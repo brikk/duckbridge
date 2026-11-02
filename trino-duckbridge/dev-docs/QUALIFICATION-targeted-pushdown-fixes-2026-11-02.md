@@ -1,5 +1,11 @@
 # Targeted floating and DATE text fixes — 2026-11-02
 
+**Subsequent disposition:** the user explicitly chose local evaluation for ATAN,
+ATAN2 and COSH. Their emissions are now withdrawn; see the
+[fallback qualification](REPORT-local-math-fallback-2026-11-02.md). The earlier
+counts and remaining-work discussion below retain the evidence at this report's
+original boundary. No date/time implementation change accompanies that policy.
+
 ## Disposition and scope
 
 After the narrow DATE write/unit fixes (`b8af0ad`), the user chose **targeted

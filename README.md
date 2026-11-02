@@ -12,7 +12,7 @@ executed inside DuckDB instead of in Trino.
 Pushdown uses a curated function catalog, argument/type gates and differential tests
 against Trino. Some calls use native DuckDB SQL; others use the `trino_parity` extension.
 See the [pushdown reference](trino-duckbridge/README-pushdown-reference.md) for supported
-cases, local fallbacks and **known unresolved math/timezone limitations**.
+cases, local fallbacks and **known unresolved limitations**.
 
 ## Install
 

@@ -117,10 +117,8 @@ internal object DuckBridgeEmissionCatalog {
             put(NameArity("sin", 1), Emission.Bare)
             put(NameArity("cos", 1), Emission.Bare)
             put(NameArity("tan", 1), Emission.Bare)
-            put(NameArity("atan", 1), Emission.Bare)
-            put(NameArity("atan2", 2), Emission.Bare)
+            // atan / atan2 / cosh stay local: finite native rounding changes exact predicates.
             put(NameArity("sinh", 1), Emission.Bare)
-            put(NameArity("cosh", 1), Emission.Bare)
             put(NameArity("tanh", 1), Emission.Bare)
             put(NameArity("degrees", 1), Emission.Bare)
             put(NameArity("radians", 1), Emission.Bare)
