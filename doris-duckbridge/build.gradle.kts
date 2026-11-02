@@ -145,11 +145,11 @@ tasks.withType<JavaCompile>().configureEach {
 
 // The FE's ApiVersionGate compares this provider JAR's manifest major with the kernel's
 // META-INF/doris/connector-plugin-api-version.properties. An absent or stale major is rejected.
-// API 26 matches doris-patches/BASELINE; new write/streaming/cache/partition capabilities remain
-// disabled. TestDorisApi26Contract pins the compile resource and the safe runtime defaults.
+// API 27 matches doris-patches/BASELINE; write-default/streaming/cache/partition capabilities remain
+// disabled. TestDorisApi27Contract pins the compile resource and the safe runtime defaults.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "26.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "27.0")
     }
 }
 

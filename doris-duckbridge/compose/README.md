@@ -23,8 +23,8 @@ layer and complete JNI plugin layout:
    ```bash
    BUILD_TYPE=ASAN tools/doris-baseline.sh --build-fe --build-be   # JDK 17; multi-hour BE build
    ```
-2. **Baked images** `doris-fe:duckbridge-8e10b235cf0-api26` +
-   `doris-be:duckbridge-8e10b235cf0-api26-asan` (see below).
+2. **Baked images** `doris-fe:duckbridge-4bc7f426828-api27` +
+   `doris-be:duckbridge-4bc7f426828-api27-asan` (see below).
 3. **Plugin zip** — built on demand by `smoke.sh` (`./gradlew :doris-duckbridge:pluginZip`).
 4. **`.env`** — `cp .env.example .env` and set `QUACK_TOKEN` (smoke.sh auto-copies if absent).
 5. Docker (or podman — set `DOCKER=podman`).
@@ -78,7 +78,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
   Podman-on-macOS host↔VM file sharing can't drop the jar tree).
 - **No local-shuffle shim.** FE/BE source and Thrift must match; never disable planning paths
   to conceal a stale engine image.
-- **Project-scoped volumes.** The Compose project is `doris-duckbridge-api26-8e10b235`.
+- **Project-scoped volumes.** The Compose project is `doris-duckbridge-api27-4bc7f426`.
   `--down` deletes that project's FE metadata/plugin/log and BE storage/log volumes;
   do not reuse state from a different Doris baseline.
 - **BE dist root** is `/opt/apache-doris/be`; keep the Dockerfile and storage/log mounts aligned.

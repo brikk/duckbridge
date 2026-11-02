@@ -1,11 +1,14 @@
 package dev.brikk.duckbridge.doris.plugin
 
 import org.apache.doris.connector.spi.ConnectorContext
+import org.apache.doris.connector.spi.ConnectorCapability
 import org.apache.doris.connector.spi.ConnectorValidationContext
 import org.apache.doris.connector.spi.scan.ConnectorScanRequest
 import org.apache.doris.connector.spi.scan.ConnectorScanContext
 import org.apache.doris.thrift.TPaimonFileDesc
 import org.apache.doris.thrift.TReportExecStatusParams
+import org.apache.doris.thrift.TReportRequest
+import org.apache.doris.thrift.TQueryOptions
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -13,18 +16,29 @@ import java.lang.reflect.Proxy
 import java.util.Properties
 import java.util.Optional
 
-class TestDorisApi26Contract {
+class TestDorisApi27Contract {
     private val properties = mapOf("jdbc_url" to "jdbc:quack://localhost:9494")
 
     @Test
-    fun compileClosureIsApi26WithMatchingWireFields() {
+    fun compileClosureIsApi27WithMatchingWireFields() {
         val resource = "META-INF/doris/connector-plugin-api-version.properties"
         val version = Properties().apply {
-            checkNotNull(TestDorisApi26Contract::class.java.classLoader.getResourceAsStream(resource)).use { load(it) }
+            checkNotNull(TestDorisApi27Contract::class.java.classLoader.getResourceAsStream(resource)).use { load(it) }
         }
-        assertThat(version.getProperty("api.version")).isEqualTo("26.0")
+        assertThat(version.getProperty("api.version")).isEqualTo("27.0")
         assertThat(TReportExecStatusParams._Fields.PAIMON_COMMIT_MESSAGES.thriftFieldId.toInt()).isEqualTo(34)
         assertThat(TPaimonFileDesc._Fields.ORIGINAL_FILE_PATH.thriftFieldId.toInt()).isEqualTo(20)
+        assertThat(TReportRequest._Fields.TOP_QUERY_TABLETS.thriftFieldId.toInt()).isEqualTo(18)
+        assertThat(TReportRequest._Fields.TOP_LOAD_TABLETS.thriftFieldId.toInt()).isEqualTo(19)
+        assertThat(TQueryOptions._Fields.ENABLE_FILE_SCANNER_V2.thriftFieldId.toInt()).isEqualTo(1002)
+        assertThat(TQueryOptions().isEnableFileScannerV2).isTrue()
+    }
+
+    @Test
+    fun writeOnlyDefaultsCapabilityIsNotAdvertisedByThisReadOnlyConnector() {
+        assertThat(ConnectorCapability.valueOf("SUPPORTS_WRITE_ONLY_DEFAULTS"))
+            .isEqualTo(ConnectorCapability.SUPPORTS_WRITE_ONLY_DEFAULTS)
+        assertThat(connector(properties).capabilities).doesNotContain(ConnectorCapability.SUPPORTS_WRITE_ONLY_DEFAULTS)
     }
 
     @Test

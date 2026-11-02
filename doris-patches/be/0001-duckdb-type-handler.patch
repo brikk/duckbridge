@@ -44,7 +44,7 @@ Upstream ask / exit criteria:
   Doris carrying the fe-connector SPI can run duckbridge unpatched. When it
   lands in a release, this patch is deleted and BASELINE points at the tag.
 
-Anchors at pin 8e10b235cf0 (#69514), connector API 26 / JNI API 6:
+Anchors at pin 4bc7f426828 (#69611), connector API 27 / JNI API 6:
   NEW  fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/DuckDbTypeHandler.java
   EDIT fe/be-java-extensions/jdbc-scanner/.../org/apache/doris/jdbc/JdbcTypeHandlerFactory.java
        (inserts `case "DUCKDB": return new DuckDbTypeHandler();` after the

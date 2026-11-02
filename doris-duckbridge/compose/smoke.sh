@@ -150,7 +150,7 @@ log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driv
 # Populate the named volume before the FE starts so its first plugin scan cannot observe an empty
 # directory and record a transient load failure. docker cp avoids unreliable macOS VM bind mounts.
 log "Installing plugin from $(basename "$zip_path") into the FE plugin volume…"
-PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api26-8e10b235}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api27-4bc7f426}"
 VOL_NAME="${PROJECT_NAME}_fe-plugin-duckbridge"
 "${DOCKER}" volume create \
     --label "com.docker.compose.project=${PROJECT_NAME}" \

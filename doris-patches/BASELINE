@@ -8,13 +8,13 @@
 # fe/fe-connector tree). The pre-merge brikk fork `branch-catalog-spi` is RETIRED — we now vendor
 # straight from apache/doris master. master keeps the SHA alive itself, so there is no fork-mirror
 # baseline branch to maintain.
-PIN_SHA=8e10b235cf030d486b6840cfd64b6218ab515e6d
+PIN_SHA=4bc7f426828e4cedfd2b7ce9b76fe95b14b5b146
 
 # Upstream commit subject at the pin (match by subject if the SHA is ever GC'd on origin).
-PIN_SUBJECT=[doc](regression) Translate the Iceberg write P0 coverage matrix into English (#69514)
+PIN_SUBJECT=[fix](be) Fix TIMESTAMPTZ schema change defaults (#69611)
 
 # Author/commit date of the pinned commit (informational).
-PIN_DATE=2026-10-31
+PIN_DATE=2026-11-02
 
 # Upstream remote. Clone/fetch this at PIN_SHA. (Was the brikk/doris fork mirror while the SPI lived
 # on the pre-merge branch-catalog-spi line; now it is apache/doris master.)

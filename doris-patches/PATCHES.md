@@ -4,16 +4,18 @@ The duckbridge Doris connector is an out-of-tree **plugin (SPI) connector** for 
 `fe-connector` catalog SPI, which is now **merged into apache/doris `master`** (#64304 + the whole
 `fe/fe-connector` tree; the pre-merge brikk `branch-catalog-spi` fork line is retired). The FE runs
 the plugin **patch-free**; only the **BE** type handler is not yet upstream. As of pin
-`8e10b235cf0` (2026-10-31, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
+`4bc7f426828` (2026-11-02, apache/doris master) **exactly one** small, reapplyable patch carries the delta:
 
 | # | Patch | Touches | What |
 |---|---|---|---|
 | BE | `be/0001-duckdb-type-handler.patch` | `be-java-extensions/jdbc-scanner` | new `DuckDbTypeHandler` + a `case "DUCKDB"` in `JdbcTypeHandlerFactory` |
 
-**API-26 qualified locally (2026-11-01):** matching SDK, complete patched Java/JNI
-packaging, upstream tests, 90 connector tests and the full JDBC/Quack live smoke
-pass. API-24 rollback assets remain intact. No production/performance claim is
-made. See [qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md).
+**API-27 qualified locally (2026-11-02):** the exact SDK, complete patched Java/JNI
+build/layout, 91 connector tests, selected upstream tests and full live JDBC/Quack
+smoke pass. Runtime hashes, Java17 and plugin-isolation/recovery are independently
+checked. API-26 rollback assets remain intact. No production/performance or all-JNI
+runtime claim is made. See the
+[qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api27-2026-11-02.md).
 
 > **The FE patch is RETIRED.** `fe/0001-spi-ready-types-duckbridge.patch` (which whitelisted
 > `"duckbridge"` in `CatalogFactory.SPI_READY_TYPES`) is **gone as of pin `a0c10f0672b`**: upstream
@@ -40,8 +42,8 @@ carry is likewise dead (#66135 made `ENGINE=` optional/connector-owned); duckbri
 > apache/doris `master` moves fast. **Never build from a blind branch tip** — always build from the
 > pin in [`BASELINE`](./BASELINE):
 >
-> - **`PIN_SHA`** = `8e10b235cf030d486b6840cfd64b6218ab515e6d`
-> - **subject** = `[doc](regression) Translate the Iceberg write P0 coverage matrix into English (#69514)`
+> - **`PIN_SHA`** = `4bc7f426828e4cedfd2b7ce9b76fe95b14b5b146`
+> - **subject** = `[fix](be) Fix TIMESTAMPTZ schema change defaults (#69611)`
 > - **upstream** = `apache/doris` `master` (`FORK_URL=git@github.com:apache/doris.git`)
 >
 > **Operating model: local-only, no fork push.** Apply the BE patch LOCALLY in a dedicated clean
@@ -179,6 +181,34 @@ aren't lost.
 ---
 
 ## Re-vendor log
+
+- **2026-11-02 — re-vendor to exact `4bc7f426828`; local qualification passed.**
+  User-authorized adoption of DuckLake's API27 build-reuse handoff, 37 commits
+  beyond the preceding qualified pin. Connector API **26→27**; filesystem **7**,
+  JNI **6**, BE execution maximum **19**, Thrift **0.24.0** unchanged.
+  - Independently verified all 29 files of the eight-module SDK and all 3,231
+    pristine FE/native/JNI artifacts. Project-local API26 SDK, packages, source
+    configuration and old image identities are preserved before staging.
+  - Canonical production patch body is unchanged; only its header records the
+    new pin. Four Java-only files apply cleanly. Reuse is of the **new exact-pin**
+    FE/native build, not an old native executable with a new label.
+  - Complete patched JNI compilation/packaging through upstream `build.sh`
+    passes; nine plugins pass all six layout checks. Native hash is unchanged
+    from the donor and its actual maximum undefined GLIBC requirement is 2.10.
+    Ten rebuilt JAR differences are inspected: canonical handler/factory delta,
+    eight embedded-POM-only differences and one build-time constant.
+  - Java17 module check/assembly: **91 tests**, no failures/errors/skips. Selected
+    upstream JNI/JDBC tests: **182 pass + 18 unchanged external-database skips**;
+    every selected class reports. Python orchestration/bootstrap: **23 pass**.
+    New write-default capability remains undeclared; existing read-only,
+    synchronous JDBC behavior, driver and type/pushdown boundaries are unchanged.
+  - Complete-image live JDBC/Quack smoke and independently checked runtime hashes/
+    Java17 pass: exact types/timezones, security, concurrency, persisted restart
+    and plugin-scoped failure/recovery. Captured logs have no sanitizer/crash
+    pattern. Only the owned stack was stopped; old and new volumes remain.
+    Shared staged source and 186 Trino/root files are unchanged.
+  - [Review](../doris-duckbridge/dev-docs/REVIEW-doris-api27-2026-11-02.md) and
+    [qualification, exact identities and rollback](../doris-duckbridge/dev-docs/QUALIFICATION-api27-2026-11-02.md).
 
 - **2026-11-01 — re-vendor to exact `8e10b235cf0`; local qualification passed.**
   User-authorized intake of DuckLake's October-31 build-reuse handoff. Connector API

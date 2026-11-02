@@ -3,8 +3,8 @@
 #
 # Stages a MINIMAL build context (copies output/fe + output/be out of the build tree)
 # and `docker build`s the two overlay images the compose consumes:
-#   • doris-fe:duckbridge-<pin>-api26       (stock image's init/JDK + exact-pin output/fe)
-#   • doris-be:duckbridge-<pin>-api26-asan  (stock image's init/JDK + exact-pin output/be)
+#   • doris-fe:duckbridge-<pin>-api27       (stock image's init/JDK + exact-pin output/fe)
+#   • doris-be:duckbridge-<pin>-api27-asan  (stock image's init/JDK + exact-pin output/be)
 #
 # The compose file NEVER references the build tree directly — this script is the only
 # bridge from that tree to the images. Run it AFTER the branch FE+BE build finishes
@@ -42,8 +42,8 @@ BAKE_STAGE_DIR="${BAKE_STAGE_DIR:-$(cd -- "${HERE}/../.." && pwd -P)/build/bake-
 
 REPO_ROOT="$(cd -- "${HERE}/../.." && pwd -P)"
 PIN_SHA="$(sed -n 's/^PIN_SHA=//p' "${REPO_ROOT}/doris-patches/BASELINE")"
-FE_IMAGE="doris-fe:duckbridge-${PIN_SHA:0:11}-api26"
-BE_IMAGE="doris-be:duckbridge-${PIN_SHA:0:11}-api26-asan"
+FE_IMAGE="doris-fe:duckbridge-${PIN_SHA:0:11}-api27"
+BE_IMAGE="doris-be:duckbridge-${PIN_SHA:0:11}-api27-asan"
 
 DO_FE=1
 DO_BE=1
@@ -79,7 +79,7 @@ if [ "${DO_FE}" -eq 1 ]; then
         LC_ALL=C grep -aF "${PIN_SHA}" >/dev/null || die "FE artifact embeds a different source revision"
     unzip -p "${DORIS_OUTPUT}/fe/lib/fe-connector-spi-1.2-SNAPSHOT.jar" \
         META-INF/doris/connector-plugin-api-version.properties |
-        grep -x 'api.version=26.0' >/dev/null || die "FE artifact is not connector API 26"
+        grep -x 'api.version=27.0' >/dev/null || die "FE artifact is not connector API 27"
     S="${BAKE_STAGE_DIR}/fe-$$"
     rm -rf "${S}"; mkdir -p "${S}/output"
     trap 'rm -rf "${S}"' EXIT
@@ -90,7 +90,7 @@ if [ "${DO_FE}" -eq 1 ]; then
         -f "${HERE}/docker/doris-fe/Dockerfile" \
         -t "${FE_IMAGE}" \
         --label "org.opencontainers.image.revision=${PIN_SHA}" \
-        --label dev.brikk.doris.connector-api=26.0 \
+        --label dev.brikk.doris.connector-api=27.0 \
         --label dev.brikk.doris.jni-api=6.0 \
         --build-arg "BASE_IMAGE=${FE_BASE_IMAGE}" \
         --build-arg "OUTPUT_PATH=./output" \
@@ -110,7 +110,7 @@ if [ "${DO_BE}" -eq 1 ]; then
 Confirm tools/doris-baseline.sh --build-be finished cleanly before baking."
     fi
     LC_ALL=C grep -aq '__asan_init' "${DORIS_OUTPUT}/be/lib/doris_be" ||
-        die "the api26-asan image requires an ASAN build (BUILD_TYPE=ASAN)"
+        die "the api27-asan image requires an ASAN build (BUILD_TYPE=ASAN)"
     LC_ALL=C grep -aF "${PIN_SHA}" "${DORIS_OUTPUT}/be/lib/doris_be" >/dev/null ||
         die "BE artifact embeds a different source revision"
     unzip -p "${DORIS_OUTPUT}/be/lib/jni/spi/doris-jni-spi.jar" \
@@ -129,7 +129,7 @@ Confirm tools/doris-baseline.sh --build-be finished cleanly before baking."
         -f "${HERE}/docker/doris-be/Dockerfile" \
         -t "${BE_IMAGE}" \
         --label "org.opencontainers.image.revision=${PIN_SHA}" \
-        --label dev.brikk.doris.connector-api=26.0 \
+        --label dev.brikk.doris.connector-api=27.0 \
         --label dev.brikk.doris.jni-api=6.0 \
         --label "dev.brikk.doris.patch-sha256=$(sha256sum "${REPO_ROOT}/doris-patches/be/0001-duckdb-type-handler.patch" | cut -d' ' -f1)" \
         --build-arg "BASE_IMAGE=${BE_BASE_IMAGE}" \
