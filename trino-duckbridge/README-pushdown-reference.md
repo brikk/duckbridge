@@ -279,7 +279,7 @@ See:
 - [POWER fallback and original counterexamples](dev-docs/REPORT-power-edge-audit-2026-10-31.md).
 - [Restricted regex-count qualification](dev-docs/REPORT-regexp-count-qualification-2026-10-29.md).
 - [Current-profile Unicode qualification](dev-docs/REPORT-unicode-version-recheck-2026-10-30.md).
-- [Active readiness tracker](../dev-docs/TODO-duckdb-2.0.md), for engineering follow-up rather than the user-facing support contract.
+- [Categorized project TODO](../dev-docs/TODO-backlog.md), separating confirmed defects, coverage gaps, optional features and bounded release close-out. Items are selected explicitly; this is not an instruction to expand release scope.
 
 Implementation authorities are the
 [function catalog and gates](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeEmissionCatalog.kt),
