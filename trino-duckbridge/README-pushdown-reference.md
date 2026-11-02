@@ -1,163 +1,291 @@
-# Pushdown Reference
+# Pushdown reference
 
-The complete set of predicates and functions the connector pushes down into
-DuckDB.
+**Source snapshot: 2026-11-02**, including fixes through `4046ce9`. Applies to
+**Trino 483, DuckDB 2.0.0 / native JDBC 2.0.0.0, Quack JDBC 0.12.0 and
+trino_parity 0.5.1**. An older packaged plugin may not contain these fixes.
+This is the Trino connector's reference; [Doris has a separate allowlist](../doris-duckbridge/dev-docs/REPORT-doris-duckdb-function-divergence.md).
 
-For open items and deferred functions see
-[archived pushdown program tracker](dev-docs/archive/TODO-pushdown-duckdb.md). This doc is the
-*current surface*; that one is the *tracker*.
+The connector has extensive predicate/function pushdown, but **being admitted by
+the translator is not the same as complete semantic qualification**. The known
+exceptions below are part of the current contract, not hidden in a development
+tracker.
 
-## Discipline (non-negotiable)
+## Read the status correctly
 
-- **Lossless only.** Anything we can't translate with confidence stays in Trino.
-- **Curated, not "anything that looks similar."** Every entry is explicit, with recorded NULL / Unicode / edge semantics.
-- **Cross-engine semantic test per entry.** The pushed result must match Trino's own evaluation byte-for-byte (`TestTrinoFunctionAliases`, `TestDuckBridgeExpressionTranslator`, `TestDuckBridgeExpressionEmission`, `TestDuckBridgeArithmeticPushdownParity`).
+| Status | Meaning |
+|---|---|
+| **Enabled** | The current implementation can emit the operation. Actual pushdown still depends on Trino's plan, operand rendering, types and settings. Tests cover specific cases, not every possible input. |
+| **Conditional** | Enabled only when the stated gate accepts the expression. Otherwise that expression stays in Trino. |
+| **Local** | This connector does not emit the operation through its predicate translator/domain mapping. Trino evaluates the remaining expression. |
+| **Known issue — still enabled** | A demonstrated mismatch remains in an admitted operation. **Do not read this as an implemented fallback or a guarantee of correct pushdown.** |
+| **Accepted error limitation** | The specific documented error-category difference is retained; successful values and NULLs are not allowed to change on that account. |
 
-## How it fires
+**The complete audit is not green.** The latest local full run had 945 tests,
+942 passing and three failing new audit checks, with no errors/skips. The failing
+checks cover the unresolved math, temporal and native-Trino membership cases
+below; they are not three isolated input values. See the
+[current qualification and remaining issues](dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md).
 
-Trino's `applyFilter` hands the connector each conjunct; the expression
-translator emits a DuckDB SQL fragment for the pushable ones, and unsupported
-conjuncts stay in Trino (per-conjunct partial pushdown). The fragments are
-rendered into the remote query's `WHERE` clause.
+## Known limitations that matter to queries
 
-**"Alias only what diverges."** Each pushable `(name, arity)` has an *emission
-class* (`DuckBridgeEmissionCatalog.EMISSION_STRATEGIES`, surfaced as `DuckBridgeExpressionTranslator.EMISSION_STRATEGIES`):
-
-| Class | Emits | Extension-backed? |
+| Operation | Current behavior | Limitation |
 |---|---|---|
-| **BARE** (42) | the same bare DuckDB built-in — `length(s)`, `abs(x)`, `year(x)` | no |
-| **RENAME** (9) | a different bare built-in — `to_hex→hex`, `regexp_like→regexp_matches`, `date_diff→date_sub` | no |
-| **OPERATOR** (3) | a parenthesized operator — `bitwise_and→(a & b)`, `bitwise_not→(~a)` | no |
-| **INLINE / CONTEXTUAL** (15) | a fixed SQL transform — `md5→unhex(md5(x))`, `if/2→if(c,t,NULL)`, `to_unixtime→epoch(timezone(<session zone>, ts))` | no |
-| **ALIAS** (10) | the extension's `trino_<name>(...)` | **yes** |
+| `atan`, `atan2`, `cosh` | **Known issue — still enabled** | Finite results can differ in their final floating-point bits. Equality predicates have demonstrably returned different row sets. NaN-aware comparisons do not repair the underlying math result. No local fallback for these three functions has been applied. |
+| `date_trunc` with DATE input | **Known issue — still enabled**, subject to valid-unit gates | DuckDB's native overload returns TIMESTAMP where Trino returns DATE. The new unbounded DATE-text formatter repairs the sampled nested text consumers, but does not establish full result-type/range parity. Very wide DATE inputs can fail during truncation; the observed pushed and Trino error contracts differ. A cast back to DATE alone is not a full fix. |
+| `date_trunc` with zoned timestamps | **Known issue — still enabled** when the zoned-function gate permits it | DST overlap/offset handling can change the instant and selected rows. For example, in New York, native hour truncation of `2024-11-03 05:30 UTC` produced `06:00 UTC`, after its input. |
+| `with_timezone` | **Known issue — still enabled** for renderable naive TIMESTAMP inputs | New York overlap attachment chooses a different offset from Trino. A computed Trino value also carries a per-value zone that DuckDB's instant/session-zone model does not preserve for nested extraction. |
+| `REAL IN (...)` with negative zero | **Native Trino inconsistency; no connector workaround** | In Trino 483, tested constant-folded and compiled `IN (0,1)` evaluations disagree on negative zero. Connector-free UNNEST reproduces the compiled behavior. Pushed domains and retained compiled filters can therefore disagree. The diagnostic remains open; zero signs/types are not normalized to conceal it. |
+| Overflowing DECIMAL narrowing `CAST` | **Accepted error limitation; pushdown retained** | The four audited overflows to TINYINT/SMALLINT/INTEGER/BIGINT fail with pushed `JDBC_ERROR`, versus Trino's `NUMERIC_VALUE_OUT_OF_RANGE`. This does **not** permit returning a value or NULL instead of failing, or accepting arbitrary errors as equivalent. `TRY_CAST` has a separate NULL-on-failure contract. |
+| Bounded `VARCHAR(n)` casts | **Existing admission retained; not fully qualified** | The translator renders the native target as VARCHAR without its length bound. The new DATE formatter applies only to **unbounded** VARCHAR; it does not certify bounded DATE spelling or general bounded-cast length/error semantics. |
 
-Counts updated 2026-10-31 after the [power audit](dev-docs/REPORT-power-edge-audit-2026-10-31.md).
-The original 2026-09-02 correctness evaluation
-([dev-docs/TODO-rectify-from-eval.md](dev-docs/TODO-rectify-from-eval.md)), which removed
-`url_encode`, `url_decode`, `bitwise_left_shift`, `bitwise_right_shift`, `from_hex`, `from_base64`,
-`levenshtein_distance`, `hamming_distance`, `cbrt` (and the never-reachable `bit_length`, which is not
-a Trino function) and added gates/rewrites noted per row below. Every remaining entry is pinned by
-`TestPushdownSemanticFixtures`, which evaluates the same expression on **Trino** and on **DuckDB**
-(via the production translator's SQL) and requires identical outcomes — expectations are never
-hand-written. Authoritative list: `DuckBridgeEmissionCatalog.EMISSION_STRATEGIES`.
+These defects are **not** fixed by choosing a lower string-pushdown mode: math
+and other non-string expressions have independent admission. The
+`pushdown_timestamp_with_timezone` property is also **not** a blanket timezone
+safety switch: it gates selected functions whose input is already zoned, not
+`with_timezone` on a naive timestamp. Do not assume a listed issue already has a
+configuration-based workaround.
 
-Only the **10 ALIAS** entries resolve to `trino_<name>(...)` macros / native
-scalar functions provided by the
-[`trino_parity` DuckDB extension](../duckdb-trino-parity-extension), loaded on
-connection. The other 69 emit plain DuckDB SQL that evaluates with
-Trino-identical semantics natively (proven by per-entry semantic fixtures against
-embedded DuckDB), so they **stay pushable even when parity is disabled** — only
-the 10 ALIAS entries drop out.
+The reports document bounded observations, not an exhaustive proof that every
+other admitted overload/input is equivalent. This page describes implementation
+and established evidence; it does not turn untested behavior into a guarantee.
 
----
+## How pushdown is chosen
 
-## 0. String-pushdown mode
+There are two separate filter paths:
 
-String comparison/ordering pushdown is dialed by `duckbridge.string-pushdown.mode`
-(catalog default) / `string_pushdown_mode` (per-query session override), default
-`PARITY`. It gates the string-touching rows of §1–§3 below on two trust axes
-(comparison-byte-alignment and extension-backed functions). **Non-string** predicates
-(`length(s)=5`, `id > 3`, `year(d)=2000`) are byte-exact cross-engine and push in every
-mode. Grounded in a live probe: `dev-docs/REPORT-string-comparison-probe-duckdb-2.0.0.md`
-(design + probe methodology borrowed from the sibling trino-doris connector).
+1. **Column domains** — Trino's planner extracts ranges, equality/IN and NULL
+   constraints. Base-jdbc uses each column mapping's pushdown controller and
+   prepared bindings. This can happen even when a function expression remains
+   local.
+2. **Expression predicates** — the connector translates supported calls into
+   DuckDB `WHERE` SQL. Top-level AND conjuncts can push independently. An
+   unsupported child prevents its enclosing expression from translating; the
+   connector does not push only one side of an OR.
 
-| mode | VARCHAR domains (`=`/range/IN) | retained filter | string `LIKE` | string TopN | ALIAS fns | extension |
-|---|---|---|---|---|---|---|
-| `NULL_ONLY` | `IS [NOT] NULL` only | — | no | no | no | no |
-| `GUARDED` | superset pre-filter, **kept locally**; `0x00`-bearing domains skipped | yes | no† | no | no | **no** |
-| `BINARY` | full (probe-verified byte semantics) | no | yes | yes | no | no |
-| `FULL` | full (caller-asserted, no probe) | no | yes | yes | no | no |
-| `PARITY` *(default)* | full (probe-verified) | no | yes | yes | **yes** | required |
+Only expressions the planner actually hands to these paths are candidates. SQL
+aliases, constant folding and other planner rewrites can change their shape.
+Listing a function below does **not** mean every SQL occurrence is pushed.
+Function calls here describe **filter expressions**, not arbitrary SELECT-list
+projection or aggregate pushdown. Column projection is separate. Explicit native
+SQL submitted through the passthrough query table function follows DuckDB's
+semantics; this catalog is not a Trino-parity promise for arbitrary passthrough SQL.
 
-† `LIKE 'foo%'` still pre-filters in `GUARDED`: Trino's `DomainTranslator` folds the
-wildcard prefix into a range domain (`'foo' <= name AND name < 'fop'`) that rides the
-domain path in §1 for free; only the residual `$like` stays retained. No custom
-LIKE-to-range converter exists — this is stock engine behavior, verified in the suite.
+## Column domains, projection, LIMIT and TopN
 
-- **Init probe (fail loud).** `BINARY`/`PARITY` verify per connection that DuckDB's
-  `default_collation` is binary and a comparison/ordering canary (case pairs, trailing
-  space, NFC≠NFD, astral order, zero-width, NUL, `ORDER BY` incl. NULLS) matches Trino.
-  All checks — plus `trino_meta()` in PARITY — are columns of **one consolidated SELECT**
-  per connection (EV-C1), so Quack pays one HTTP round trip, not ~14. On divergence they
-  throw with instructions to drop to `GUARDED`. `PARITY` additionally issues idempotent
-  `LOAD` when the connector owns loading. `GUARDED`/`NULL_ONLY`/`FULL` skip the probe.
-- **TopN guarantee.** `isTopNGuaranteed` is true only at `BINARY`/`FULL`/`PARITY` (byte
-  ordering probe-verified); string sort keys are only pushed at those modes. Non-string
-  sort keys push the bound in every mode but Trino re-applies TopN below `BINARY`.
-- **CHAR.** DuckDB has no CHAR padding (CHAR ≡ VARCHAR) and the read mappings never
-  produce `CharType`, so there is no CHAR trailing-space read hazard (unlike doris).
-
-## 1. Predicate / value pushdown
-
-These don't need the expression translator.
-
-| Surface | Notes |
+| Surface | Current admission / behavior |
 |---|---|
-| **TupleDomain on `WHERE`** | Range/equality/`IN`/`IS NULL` constraints on all supported column types. String columns are gated by the string-pushdown mode (§0); non-string columns always push. |
-| **LIMIT** | Pushed and final — Trino drops its own limit. |
-| **TopN (`ORDER BY ... LIMIT`)** | Pushed into the remote query (with explicit `NULLS FIRST/LAST`). Guaranteed (Trino drops its own TopN) only at string-pushdown mode ≥ `BINARY`; string sort keys require ≥ `BINARY` (§0). |
+| Column projection | Requested columns can be read without fetching every table column. This is not general computed-expression projection pushdown. |
+| Standard scalar domains | Boolean, integer, decimal, DATE and ordinary naive timestamp mappings use base-jdbc domain pushdown. Large domains may be compacted with an exact filter retained in Trino. This is not a claim that all supported types push domains. |
+| REAL / DOUBLE domains | Use a NaN-aware controller. Non-ALL/non-NONE pushed value ranges receive an explicit `<= +Infinity` bound to preserve Trino's NaN exclusion without dropping positive infinity. Ordinary finite ranges remain pushable; standard compaction/residual behavior is retained. See the REAL IN inconsistency above. |
+| VARCHAR domains | Controlled by the string mode below. |
+| UUID, TIME, TIME WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, mapped nanos temporal types and ARRAY domains | **Local**: these mappings disable domain pushdown. Supporting reads/writes of a type does not imply remote filtering. Expression translation is a separate path. |
+| `LIMIT` | Supported; a pushed limit is declared guaranteed, so Trino need not re-enforce it. This says nothing about deterministic row choice without ordering. The planner still controls whether it is legal to push below any remaining operations. |
+| TopN (`ORDER BY ... LIMIT`) | The implementation admits non-string sort keys without a further per-type ordering gate. VARCHAR/CHAR keys require `BINARY`, `FULL` or `PARITY`; every sort key must pass. SQL includes explicit NULL ordering. The connector declares TopN guaranteed only in those three modes; below them, Trino retains its TopN. This admission rule is not exhaustive ordering qualification of every non-string type/exceptional value. |
+| Aggregates (`COUNT`, `MIN`, `MAX`, `SUM`, etc.) | **Not implemented as connector aggregate pushdown.** |
 
-## 2. Operators & transforms
+## String-pushdown modes
 
-Translator-level rewrites — emitted directly as SQL, not via the macro catalog.
+Catalog property: `duckbridge.string-pushdown.mode`. Per-query override:
+`string_pushdown_mode`. Default: `PARITY`.
 
-| Group | Pushed |
+| Mode | VARCHAR value domains | Exact domain filter retained? | String-comparing expressions / LIKE / string TopN | Extension-backed functions |
+|---|---|---|---|---|
+| `NULL_ONLY` | NULL-ness only | Value predicates stay local | Local | Local |
+| `GUARDED` | Domain prefilter; domains with NUL-bearing values/bounds are withheld | Yes for value-domain prefilters | Local; an independently extracted LIKE-prefix domain can still prefilter | Local |
+| `BINARY` | Full domain pushdown, subject to ordinary compaction | Only when required by compaction | Eligible | Local |
+| `FULL` | Same rendering as BINARY, **caller-asserted**, no comparison probe | Only when required by compaction | Eligible | Local |
+| `PARITY` | Same comparison trust as BINARY | Only when required by compaction | Eligible | Eligible; extension required |
+
+- `BINARY` and `PARITY` verify binary collation/comparison canaries at connection
+  initialization. `FULL` does **not** run that probe and must not be called
+  probe-verified. A successful canary is not a proof of every function/input.
+- `PARITY` additionally verifies the extension metadata. It issues idempotent
+  LOAD when the connector owns loading; a preloaded remote extension need not be
+  loaded by the connector. The probe is one consolidated SELECT per connection,
+  separate from any LOAD. Missing required parity support fails explicitly.
+- Non-string-comparing expressions do not require string-comparison trust, but
+  still need their function/type/constant gates and renderable children. An
+  extension-backed child is available **only in PARITY**, even if its parent
+  compares a numeric result (for example, `length(upper(s)) = 3`).
+- A retained domain filter can remove excess rows from a prefilter; it cannot
+  recover rows incorrectly removed remotely. GUARDED is not a generic repair
+  for the known function defects.
+
+## Operators, casts and literal restrictions
+
+| Expression | Current behavior |
 |---|---|
-| Comparison | `=`, `<>`, `<`, `<=`, `>`, `>=`, `IS NULL`, `IS NOT DISTINCT FROM` |
-| Logical | `AND`, `OR`, `NOT` |
-| Arithmetic | `+`, `-`, `*` (infix), unary `-` (negate). `/` and `%` stay in Trino. |
-| Null-handling | `COALESCE` (variadic), `NULLIF` |
-| Cast | `CAST` / `TRY_CAST` for primitive targets (BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DOUBLE, VARCHAR, DATE), **except**: from a string source to a non-string target (DuckDB's parsers accept `'1.0'`→INTEGER, `'2020/01/01'`→DATE, `'yes'`→BOOLEAN where Trino rejects — EV-A9), and to VARCHAR from anything other than an exact integer, BOOLEAN or DATE (`DOUBLE` renders `1.0E7` in Trino vs `10000000.0` in DuckDB — EV-A10). Those stay in Trino. |
-| Pattern | `LIKE` / `NOT LIKE` with optional `ESCAPE` (constant patterns only; dynamic or NULL patterns stay unpushed) |
-| `BETWEEN` | Pushed implicitly — Trino's planner decomposes it to `>= AND <=` before `applyFilter`, so the comparison + `AND` translators handle it. |
-| `concat(a, b, …)` → `(a \|\| b \|\| …)` | Translator rewrite for VARCHAR returns, **not** a macro: DuckDB's `concat` skips NULL while Trino's NULL-propagates; the `\|\|` operator propagates in both, matching Trino. |
+| Comparisons | `=`, `<>`, `<`, `<=`, `>`, `>=`, `IS NULL`, `IS NOT DISTINCT FROM` can translate; NOT provides corresponding negated forms. String operands require string-comparison trust. Floating primitive comparisons explicitly preserve SQL NULL and IEEE NaN behavior; identity comparison retains its distinct semantics. |
+| Logical operators | AND, OR and NOT translate when their children translate. Top-level AND permits partial pushdown. |
+| Arithmetic | Binary `+`, `-`, `*` and unary `-` are emitted. Binary `/` and `%` remain **local**. Renderable types/children are still required; admission is not full qualification of every numeric overload or overflow/error category. |
+| NULL handling | Variadic `COALESCE` and two-argument `NULLIF`. Floating NULLIF uses the corrected IEEE equality rather than native NaN equality. |
+| `BETWEEN` | Can be handled after Trino decomposes it into comparisons. There is no separate BETWEEN emission. |
+| `concat(a,b,...)` | VARCHAR-returning calls with at least two arguments become the NULL-propagating `a \|\| b \|\| ...`, not DuckDB's NULL-skipping `concat`. ARRAY-returning overloads do not use this rewrite. |
+| `CAST` / `TRY_CAST` targets | The expression translator renders BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DOUBLE, VARCHAR and DATE targets. REAL, DECIMAL, temporal timestamp/time and composite **targets** are not rendered by this cast rule. Source types can still include REAL/DECIMAL columns. |
+| String-source casts | VARCHAR/CHAR to a non-string target remains **local**: DuckDB's parsers accept inputs Trino rejects. A VARCHAR target can be admitted; bounded lengths have the limitation above. |
+| Casts to VARCHAR | Admitted from integer-family values, BOOLEAN, DATE and string sources. DOUBLE/REAL, DECIMAL, timestamp/time and other non-string sources are not admitted to VARCHAR by this rule. |
+| DATE to unbounded VARCHAR | Uses an explicit Trino-style year/month/day formatter, including BCE/year zero and expanded years. Native BC display text is not used. This is an explicit user-requested cast, not a conversion of stored DATE columns to text. |
+| `LIKE` / `NOT LIKE` | Conditional on string mode and a constant non-NULL pattern readable from Trino's compiled LikePattern. Optional ESCAPE is supported when the translator can extract its single-character representation. Dynamic/NULL/unreadable patterns stay local unless the planner simplifies them. The audit's matching retained-filter cases are not evidence that those cases ran remotely. |
 
-## 3. Functions
+The **expression translator's** literal renderer accepts SQL NULL, booleans,
+integer-family values, finite DOUBLE values, VARCHAR strings without U+0000,
+and DATE constants with years **1 through 9999**. Other constants decline
+translation. In particular, REAL/DECIMAL/timestamp/UUID/binary constants are not
+general expression literals here; neither are non-finite DOUBLE literals.
 
-**79 pushable entries** (the translator's `PUSHABLE_FUNCTIONS` set /
-`EMISSION_STRATEGIES` map). Only **10 route through the extension** (the ALIAS
-class — native C++ in the extension); the other **69 emit plain DuckDB SQL
-natively** (BARE / RENAME / OPERATOR / INLINE) and push regardless of whether the
-extension is loaded. The **Ext?** column below marks which entries are
-extension-backed. `trino_meta()` catalogs exactly the 10 extension-backed
-entries, and the drift test pins that set with strict equality.
-Counts are `(name, arity)` entries, not distinct function names; the emission-class
-breakdown above is derived from the current catalog.
+These are not restrictions on all **domain bindings** or data reads/writes.
+For example, column domains can bind REAL/DECIMAL/ordinary timestamps, and the
+finite DATE writer supports a wider range than the expression DATE-literal
+renderer. The experimental Quack/Arrow parameter inliner is yet another path:
+it now preserves typed REAL/DOUBLE infinity literals, but still refuses NaN
+parameters and other unsupported literal types explicitly.
 
-| Category | Functions | Ext? | Notes |
-|---|---|---|---|
-| **String — native (ICU)** | `lower`, `upper`, `reverse`, `trim`, `ltrim`, `rtrim`, `normalize/1` | **yes** (ALIAS) | Native C++ (`string_functions.cpp`) for Trino parity: **simple** per-code-point case mapping exactly as Trino's airlift `SliceUtf8` does (`upper('ß')`→`'ß'` unchanged, where DuckDB's built-in gives `'ẞ'`; `lower('İ')`→`'i'`; no final-sigma rule; ligatures unchanged), **code-point** reverse, `Character.isWhitespace`-aligned trim, NFC via `icu::Normalizer2`. `normalize/2` (NFD/NFKC/NFKD selector) is **not** pushed — the vendored ICU snapshot ships only NFC data. |
-| **String — native emission** | `length`, `substring/{2,3}`, `replace`, `strpos`, `starts_with`, `lpad`, `rpad`, `concat_ws/{2..5}`, `translate`, `chr` | no (BARE) | Code-point (not byte / grapheme) semantics; pinned in fixtures against unicode, NULL, and edge inputs. **`lpad`/`rpad` push only with a constant, non-empty pad and a constant size ≥ 0** (Trino raises on empty pad / negative size; DuckDB returns `''`). **`substring` pushes only with a constant start ≥ 1, and for `/3` a constant length ≥ 0** (DuckDB treats start 0 as 1 and returns a slice for a negative length where Trino returns `''`). **`replace` pushes only with a constant, non-empty search string** (Trino's `replace('abc','','x')` = `'xaxbxcx'`; DuckDB no-op). **`concat_ws` pushes only when every argument is VARCHAR** (Trino's ARRAY overload joins elements; DuckDB would stringify the list — EV-A11). |
-| **Numeric** | `abs`, `ceil`, `floor`, `mod`, `exp`, `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `degrees`, `radians`, `truncate`, `sign`, `pi/0`, `bitwise_and`, `bitwise_or`, `bitwise_not`, `bitwise_xor` | no | BARE, except RENAME `truncate→trunc`, `bitwise_xor→xor`; OPERATOR `bitwise_and/or/not`. **`power` / `pow` stay in Trino**: finite rounding, special-value results and NaN WHERE comparisons differ; see the [audit](dev-docs/REPORT-power-edge-audit-2026-10-31.md). **`sqrt`, `ln`, `log2`, `log10`, `asin`, `acos` are not pushed**: Trino returns IEEE NaN/-Infinity outside their domains where DuckDB throws, and a scalar `CASE` rewrite still changes WHERE row selection because DuckDB and Trino's runtime filter path order NaN differently (found by EV-B2). **`cbrt` is not pushed**: DuckDB's is inexact on perfect cubes (`cbrt(-27)` = `-3.0000000000000004`). **`mod` pushes only with a non-zero constant divisor** (Trino throws on zero, DuckDB returns NULL — EV-A12). **`bitwise_left_shift` / `bitwise_right_shift` are not pushed**: Trino's right shift is logical (zero-fill), DuckDB's `>>` is arithmetic; left shift wraps to width in Trino, throws for shift ≥ width in DuckDB (EV-A3). |
-| **Regex** | `regexp_like/2`, `regexp_extract/{2,3}`, `regexp_replace/{2,3}` | no | **Not** "RE2 on both sides": Trino compiles with Joni (Java syntax), DuckDB with RE2. All three push **only with a constant pattern that passes the RE2-safe allowlist** (`Re2Safety`: no `$`, no `(?…)` other than `(?:`, no lookaround/backrefs/possessive quantifiers, no `\Z \G \v \h \R \u \0`, no nested/POSIX/`&&` classes; only general-category `\p{L}`-style properties — EV-A8). RENAME `regexp_like→regexp_matches`; INLINE `regexp_extract` guarded with `CASE WHEN regexp_matches(...)` so a non-match yields NULL as in Trino (DuckDB returns `''` — EV-A6); INLINE `regexp_replace` forces the `'g'` flag (2-arg uses `''`), and **`regexp_replace/3` also requires a constant replacement containing no `$` or `\`** (Trino group refs are `$1`, RE2's are `\1` — EV-A7). |
-| **Encoding** | `to_hex`, `to_base64` | no | RENAME `to_hex→hex`; BARE `to_base64`. **`from_hex` / `from_base64` are not pushed**: DuckDB left-pads odd-length hex (`'abc'`→`0ABC`) where Trino errors, and errors on unpadded base64 (`'YWI'`) where Trino decodes. **`url_encode` / `url_decode` are not pushed**: Trino uses `application/x-www-form-urlencoded` rules (space→`+`, `*` kept, `~` encoded), DuckDB RFC 3986 (`a b*~` → `a+b*%7E` vs `a%20b%2A~`; `url_decode('a+b')` → `a b` vs `a+b` — EV-A5). |
-| **Regex count** | `regexp_count/2` | no | Only a constant pattern in the independently qualified consuming-ASCII grammar; Unicode source data is allowed. Other patterns stay in Trino. See the [qualification](dev-docs/REPORT-regexp-count-qualification-2026-10-29.md). |
-| **Distance** | — | — | **`levenshtein_distance` / `hamming_distance` are not pushed**: DuckDB's operate on bytes (`levenshtein('äö','ab')` = 4; Trino 2). |
-| **Hash** | `md5`, `sha1`, `sha256`, `sha512`, `xxhash64`, `hmac_sha256/2` | `sha512`, `xxhash64`, `hmac_sha256` (ALIAS) | BLOB→VARBINARY mapping (EV-C5) makes table-column hashes genuinely reachable; end-to-end embedded + Quack plans prove `to_hex`, `to_base64`, MD5/SHA1/SHA256/SHA512/xxHash/HMAC predicates fully push. `md5`/`sha1`/`sha256` are INLINE `unhex(<hash>(x))`; `sha512`/`xxhash64`/`hmac_sha256` are native C++. Extension 0.4.0 makes empty-key HMAC fail with `Empty key` like Trino (EV-E2); empty data, binary-NUL keys, >64-byte keys and NULL propagation are pinned. |
-| **Date / time** | `year`, `month`, `day`, `quarter`, `hour`, `minute`, `second`, `millisecond`, `day_of_week` (ISO), `day_of_year`, `last_day_of_month`, `week` / `week_of_year` (ISO), `year_of_week` / `yow`, `date_trunc/2`, `date_diff/3`, `to_unixtime`, `from_unixtime`, `with_timezone/2` | no | BARE (`year`…`second`, `date_trunc`, `week`), RENAME (`day_of_year→dayofyear`, `last_day_of_month→last_day`, `week_of_year→week`, `from_unixtime→to_timestamp`, **`date_diff→date_sub`** — Trino counts complete units, DuckDB's `date_diff` counts boundaries crossed; unit gated to `millisecond…year` — EV-A2), INLINE (`day_of_week→isodow`, `year_of_week`/`yow→isoyear`, **`millisecond→extract('millisecond') % 1000`** — DuckDB's part is sub-minute ms, EV-A1; `with_timezone` arg-flip), CONTEXTUAL **`to_unixtime`**: on a naive `TIMESTAMP` Trino interprets the value in the *session* zone while DuckDB's `epoch()` assumes UTC, so it emits `epoch(timezone('<session zone>', ts))` — **only when the session zone is a fixed offset** (UTC, `+05:00`); under a DST zone Trino and ICU resolve the ambiguous autumn hour to different offsets, so it stays in Trino (EV-A4/A13). On `TIMESTAMP WITH TIME ZONE` bare `epoch()`. Type-gated. Over `TIMESTAMP WITH TIME ZONE` they push only when `pushdown_timestamp_with_timezone` is on (**default on**). `date_trunc` on DATE input: DuckDB returns TIMESTAMP but auto-casts in comparisons, so pushed **results** stay DATE-aligned (fixture-pinned). |
-| **Conditional** | `if/{2,3}` | no | INLINE `if/2→if(c, t, NULL)`; BARE `if/3`. |
+High-precision temporal variables (precision greater than 6) are not rendered by
+the expression translator. Their qualified nanos read/write support is **not**
+permission to push nanos predicates/functions. Unknown calls and non-renderable
+subexpressions stay local; some unsupported column types are refused at metadata
+or read time instead of being readable with a local filter. See the
+[type/carrier coverage](dev-docs/TODO-datetime-timezones.md) and
+[boundary policy](dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
 
-## Not pushable (by design)
+## Function catalog
 
-- `power/2` and its SQL alias `pow/2` — evaluated by Trino to preserve exact values and predicate truth sets.
-- `at_timezone(WTZ, varchar)` — DuckDB's TIMESTAMPTZ has no per-value zone metadata, so "rezone display" isn't expressible.
-- `hmac_md5` / `hmac_sha1` / `hmac_sha512` — only `hmac_sha256` is ported natively; add the WjCryptLib primitives if a workload needs the others.
-- `murmur3` — reconstructable from `murmurhash3_x64_128` but deferred (niche; needs a live Trino byte-layout confirmation). See TODO.
-- `url_extract_*` (netquack) — rejected: DuckDB returns empty strings where Trino returns NULL, plus a `BIGINT`-vs-`VARCHAR` port mismatch.
-- `normalize/2`, `position` (operator-form), `lower`/`upper` over collations.
+The current catalog has **79 `(name, arity)` entries**, not 79 distinct SQL
+function names or a guarantee that all 79 push in every query.
 
-## Adding an entry
+| Emission class | Entries | What is emitted |
+|---|---:|---|
+| BARE | 41 | Same native function name |
+| RENAME | 9 | A different native name |
+| OPERATOR | 3 | SQL bitwise operator |
+| INLINE / CONTEXTUAL | 16 | SQL transformation, sometimes using types/session state |
+| ALIAS | 10 | Extension `trino_<name>` function |
 
-Add a `(name, arity) → Emission` row to `EMISSION_STRATEGIES` in
-`DuckBridgeEmissionCatalog` (and a `TYPE_GATES` row if the push must be restricted to certain
-argument shapes), plus a per-entry fixture:
+Only the ten ALIAS entries require the parity extension. The other **69** do
+not reference it, but still need all applicable gates. Extension independence
+is **not** a claim that DuckDB matches Trino over every input: the known enabled
+math/temporal defects above are in that extension-free surface.
 
-- **BARE / RENAME / OPERATOR / INLINE** (DuckDB matches Trino natively): choose the
-  class, and add a semantic fixture to `SemanticFixtures` (evaluated against
-  embedded DuckDB by `TestTrinoFunctionAliases.nonAliasSemanticFixtures`). No
-  extension change needed — `testEveryNonAliasEntryHasAFixture` enforces coverage.
-- **ALIAS** (DuckDB diverges, needs native C++): add the macro/function +
-  `trino_meta()` row in the `trino_parity` extension repo, mark it `Emission.Alias`
-  here, and it's covered by the `trino_meta() == ALIAS_FUNCTIONS` lockstep in
-  `TestTrinoFunctionAliases.testAliasSetEqualsMeta` (strict equality since the
-  extension shrank to exactly the 10 natives).
+The table lists every catalog entry; `name/arity` identifies the internal call
+shape. Trino may normalize user-visible aliases before calling the connector.
+
+| Category | Catalog entries | Conditions / implementation |
+|---|---|---|
+| Case, reverse, trim, normalization | `lower/1`, `upper/1`, `reverse/1`, `trim/1`, `ltrim/1`, `rtrim/1`, `normalize/1` | **PARITY only**, extension-backed. Simple per-code-point case mapping (`upper('ß')` stays `ß`), code-point reversal, Java-whitespace-aligned trim, NFC normalization. The validated Unicode profile is Trino 483 / JDK 25 / parity 0.5.1, not every future JDK. |
+| String inspection / translation | `length/1`, `strpos/2`, `starts_with/2`, `translate/3`, `chr/1` | Native emission, subject to renderable arguments and string-comparison trust where the enclosing expression compares strings. |
+| Substring | `substring/2`, `substring/3` | Start must be an integer-family constant ≥ 1; the three-argument form also needs an integer-family constant length ≥ 0. Other cases stay local. |
+| Replace | `replace/3` | Search argument must be a constant, non-empty VARCHAR. |
+| Padding | `lpad/3`, `rpad/3` | Constant integer-family size ≥ 0 and constant non-empty VARCHAR pad. |
+| Separator concatenation | `concat_ws/2`, `concat_ws/3`, `concat_ws/4`, `concat_ws/5` | Every argument must be VARCHAR. The ARRAY overload is not admitted. |
+| Numeric native calls | `abs/1`, `ceil/1`, `floor/1`, `exp/1`, `sin/1`, `cos/1`, `tan/1`, `sinh/1`, `tanh/1`, `degrees/1`, `radians/1`, `truncate/1`, `pi/0` | Native emission; `truncate` is renamed to `trunc`. These catalog entries have no additional argument-type gate; that is not full-overload qualification. CEIL stayed local in the recent audit's actual planner shape despite having a catalog entry. |
+| Floating sign | `sign/1` | DOUBLE/REAL emission preserves NaN and signed zero and otherwise casts native sign to the floating type. Other argument types keep native `sign` emission. |
+| Modulo function | `mod/2` | Divisor must be a nonzero integer-family constant. Zero, NULL and dynamic divisors stay local. This does not enable the `%` operator. |
+| Known divergent native math | `atan/1`, `atan2/2`, `cosh/1` | **Still enabled; known finite-rounding/wrong-row issues.** No full-domain fix or fallback has been applied. |
+| Bitwise | `bitwise_and/2`, `bitwise_or/2`, `bitwise_not/1`, `bitwise_xor/2` | AND/OR/NOT use operators; XOR becomes native `xor`. Shift functions remain local. |
+| Regex matching / extraction / replacement | `regexp_like/2`, `regexp_extract/2`, `regexp_extract/3`, `regexp_replace/2`, `regexp_replace/3` | Constant pattern must pass Re2Safety. `regexp_like` becomes `regexp_matches`; extraction is match-guarded to return NULL on no match; replacement forces global mode. The three-argument replacement also requires a constant replacement with neither `$` nor backslash. See the regex restrictions below. |
+| Regex count | `regexp_count/2` | VARCHAR source and constant nonempty pattern in the smaller consuming-ASCII grammar below. Other patterns stay local. |
+| Encoding | `to_hex/1`, `to_base64/1` | Native `hex` rename and `to_base64` respectively. Binary column mappings allow these in actual filter expressions; literal rendering still limits which calls translate. |
+| Native hashes | `md5/1`, `sha1/1`, `sha256/1` | Native hex result converted with `unhex` to the binary shape expected by Trino. |
+| Extension hashes | `sha512/1`, `xxhash64/1`, `hmac_sha256/2` | **PARITY only**, extension-backed. Empty-key HMAC throws like Trino; empty data is distinct from an empty key. |
+| General temporal extraction | `year/1`, `month/1`, `day/1`, `quarter/1`, `hour/1`, `minute/1`, `second/1`, `millisecond/1` | Gate admits DATE/naive TIMESTAMP, or zoned TIMESTAMP when the zoned-function property is on. That shared gate is not a promise that each function has every listed overload in Trino. Millisecond emission reduces DuckDB's sub-minute part modulo 1000. High-precision variables still decline translation. |
+| DATE-only calendar calls | `day_of_week/1`, `day_of_year/1`, `last_day_of_month/1`, `week/1`, `week_of_year/1`, `year_of_week/1`, `yow/1` | DATE arguments only. ISO weekday/week/week-year semantics; native renames/extractions as needed. Timestamp overloads are not admitted by these gates. |
+| Truncation | `date_trunc/2` | Constant valid unit, temporal-type/session gates. DATE and zoned cases retain the **known issues** above. |
+| Difference | `date_diff/3` | Emits native `date_sub` for complete-unit differences, not native `date_diff` boundary counting. Constant valid unit; both temporal inputs must pass their type/session gates. |
+| To epoch | `to_unixtime/1` | Naive TIMESTAMP is anchored with the **fixed-offset session zone**; a missing/non-fixed/unrenderable session zone declines emission. Zoned TIMESTAMP uses native epoch with a DOUBLE result and requires the zoned-function property. |
+| From epoch | `from_unixtime/1` | Renamed to `to_timestamp`. No additional per-function type/session gate; generic rendering still applies. It is not a proof of all overload, precision or per-value-zone behavior. |
+| Attach timezone | `with_timezone/2` | Naive TIMESTAMP input gate; emits `timezone(zone, timestamp)` with arguments reversed. **Still enabled with known DST/per-value-zone issues**; the zoned-function switch does not gate this naive input. |
+| Conditional | `if/2`, `if/3` | Two-argument form inserts a NULL false branch; three-argument form uses native `if`. Children must translate. |
+
+### Temporal unit and session gates
+
+- DATE units: `day`, `week`, `month`, `quarter`, `year`.
+- Timestamp units: those DATE units plus `millisecond`, `second`, `minute`, `hour`.
+- DATE_TRUNC checks its value argument's type. DATE_DIFF uses the DATE unit set
+  if either input is DATE, and checks both temporal arguments separately.
+- Units must be constant VARCHAR strings; case is normalized. Dynamic, NULL,
+  plural, unknown or type-invalid units stay in Trino. For example,
+  `date_trunc('hour', date_col)` and `date_trunc('century', ts_col)` are not
+  emitted; Trino preserves its own validation/NULL behavior.
+- `pushdown_timestamp_with_timezone` defaults to **true**. Turning it off keeps
+  the gated extraction/truncation/difference/to-epoch calls over zoned inputs
+  local. It neither enables zoned **domains** nor gates every timezone-related
+  call. It does not fix the known admitted cases.
+- Connections align DuckDB's session zone with Trino's. If setting it fails
+  while zoned-function pushdown is enabled, connection setup fails explicitly.
+  With that property off, the failure is warned about rather than presented as
+  a successful zone change. Named zones and integer-hour offsets have native
+  spellings; not every fractional bare offset does.
+
+### Regex restrictions
+
+Trino uses Joni/Java-style patterns; DuckDB uses RE2. Availability in both engines
+is not dialect equivalence.
+
+- `regexp_like`, `regexp_extract` and `regexp_replace` use the constant-pattern
+  [Re2Safety allowlist](src/dev/brikk/duckbridge/trino/plugin/Re2Safety.kt).
+  Its shared subset includes ordinary literals/classes/groups, permitted
+  quantifiers and selected escapes. `$`, lookaround, backreferences, inline
+  flags, possessive quantifiers, nested/POSIX/intersection classes and many
+  Java-specific escapes are withheld. This is an allowlist, not all RE2 syntax;
+  passing it does not validate every other argument or malformed pattern.
+- `regexp_count` uses the stricter
+  [RegexpCountSafety grammar](src/dev/brikk/duckbridge/trino/plugin/RegexpCountSafety.kt):
+  one or more ASCII atoms, each optionally followed by `+`. Literal atoms are
+  ASCII letters/digits, space and `_ - / : , =`. Class atoms are exactly
+  `[0-9]`, `[a-z]`, `[A-Z]`, `[A-Za-z]`, `[a-zA-Z]`, `[A-Za-z0-9]`,
+  `[a-zA-Z0-9]`, `[a-z0-9]`, `[A-Z0-9]`. No empty pattern, zero-width match,
+  anchors, escapes, groups, alternation or other quantifiers. Source strings
+  may contain Unicode; the pattern restriction is not an ASCII-only data rule.
+
+## Deliberately evaluated in Trino
+
+These are absent from the function catalog or refused by the relevant rule;
+they are **not** the same category as the known defects still enabled above.
+Planner simplification can remove a call before the connector sees it, and a
+different, supported conjunct/domain can still push alongside a local call.
+
+| Operation / case | Why it is not emitted |
+|---|---|
+| `power` / SQL alias `pow` | Finite rounding and special-value counterexamples; local evaluation preserves Trino's result. |
+| `sqrt`, `ln`, `log2`, `log10`, `asin`, `acos` | Existing policy withholds the functions: native domain/error behavior differs, and the earlier scalar rewrites failed end-to-end comparison tests. The new IEEE comparison renderer has **not** re-enabled or requalified them. |
+| `cbrt` | Demonstrated finite difference even on perfect cubes. |
+| `bitwise_left_shift`, `bitwise_right_shift` | Width/shift-count and logical-versus-arithmetic semantics differ. |
+| `url_encode`, `url_decode` | Form encoding versus native URL encoding, including space/plus handling. |
+| `from_hex`, `from_base64` | Odd-length/unpadded inputs have different acceptance/error behavior. |
+| `levenshtein_distance`, `hamming_distance` | Audited native Unicode/byte behavior differs. |
+| `at_timezone` | No emitter preserving Trino's per-value zone metadata. |
+| `normalize/2` | Only the one-argument NFC call is registered. This is the connector's API scope, not a claim that ICU cannot normalize other forms. |
+| `hmac_md5`, `hmac_sha1`, `hmac_sha512`, `murmur3`, `url_extract_*` | No admitted emitter in this catalog. Implementations are missing/deferred or have identified result/type differences. |
+| Restricted argument shapes | Nonconstant/empty padding or replace-search strings, unsupported substring bounds, dynamic/unsafe regex, invalid/dynamic temporal units, unsupported casts and non-renderable literals follow the gates above. |
+| Nanos expressions and disabled domains | Follow the precision/type rules above; do not infer pushdown from successful typed reads. |
+| Any other unknown function/call shape | No generic name-based forwarding. Trino may rewrite SQL syntax to a known internal call, but unrecognized calls themselves are not emitted. |
+
+## Verifying a particular query
+
+Use `EXPLAIN (TYPE DISTRIBUTED)` and examine both the connector scan constraints
+and any retained `filterPredicate` / ScanFilterProject. Look for the expression
+in the remote scan SQL/constraints: **absence of a filter alone is not proof**
+if the planner simplified or eliminated it. A retained filter can coexist with
+pushed column domains. Successful results alone do not establish where
+evaluation ran. LIMIT/TopN nodes have their own placement and guarantee rules.
+
+An expression-disabled physical catalog is **not** a fully local oracle because
+its domain controller can still push. The audits use independent native-Trino
+inputs as well as actual production plans and exact row/value/error comparisons.
+See:
+
+- [Targeted fixes, accepted limitations and remaining counterexamples](dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md).
+- [DATE write and type-aware temporal-unit fixes](dev-docs/QUALIFICATION-narrow-date-unit-fixes-2026-11-01.md).
+- [POWER fallback and original counterexamples](dev-docs/REPORT-power-edge-audit-2026-10-31.md).
+- [Restricted regex-count qualification](dev-docs/REPORT-regexp-count-qualification-2026-10-29.md).
+- [Current-profile Unicode qualification](dev-docs/REPORT-unicode-version-recheck-2026-10-30.md).
+- [Active readiness tracker](../dev-docs/TODO-duckdb-2.0.md), for engineering follow-up rather than the user-facing support contract.
+
+Implementation authorities are the
+[function catalog and gates](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeEmissionCatalog.kt),
+[expression translator](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeExpressionTranslator.kt),
+[column mappings and LIMIT/TopN rules](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeClient.kt)
+and their type-specific mapping/controller helpers. Catalog/fixture coverage is
+necessary regression protection, not a proof of universal parity. New admissions
+require appropriate scalar **and** planned row-set/error tests; extension aliases
+must also remain in metadata lockstep with the ten registered native functions.
