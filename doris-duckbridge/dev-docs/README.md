@@ -28,6 +28,11 @@ volumes before changing the pin. The [current pin qualification](QUALIFICATION-a
 records identities and rollback scope; this documentation cleanup does not rerun
 or extend that native qualification.
 
+The current Quack driver is 0.12.1. Its separate Java-17 module/package and existing
+API-27/JNI-6 live JDBC/Quack runtime checks are recorded in the
+[release close-out receipt](../../trino-duckbridge/dev-docs/REPORT-release-closeout-2026-11-03.md#quack-jdbc-0121-intake).
+No new Doris native build or source pin is implied by the driver intake.
+
 ## Contracts and open work
 
 - [JDBC scan/deployment contract](DESIGN-jdbc-scan-contract.md)

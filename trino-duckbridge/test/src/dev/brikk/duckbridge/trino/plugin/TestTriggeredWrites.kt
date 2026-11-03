@@ -106,6 +106,28 @@ class TestTriggeredWrites : AbstractTestQueryFramework() {
     }
 
     @Test
+    fun testEarlyResultCloseAndSupersessionPreserveManualTransaction() = withTargets("early_close", true) { catalog, connection, name ->
+        connection.autoCommit = false
+        assertThat(execute(connection, "INSERT INTO $name VALUES(1,10)")).isEqualTo(1)
+        connection.createStatement().use { statement ->
+            statement.executeQuery("SELECT * FROM range(10000)").use { rows -> assertThat(rows.next()).isTrue() }
+            assertThat(statement.executeUpdate("INSERT INTO $name VALUES(2,20)")).isEqualTo(1)
+            statement.executeQuery("SELECT * FROM range(10000)").use { rows ->
+                assertThat(rows.next()).isTrue()
+                // A different statement must finish the preceding producer before PREPARE.
+                assertThat(execute(connection, "INSERT INTO $name VALUES(3,30)")).isEqualTo(1)
+            }
+            statement.executeQuery("SELECT * FROM range(10000)").use { rows ->
+                assertThat(rows.next()).isTrue()
+                connection.commit()
+            }
+        }
+        connection.autoCommit = true
+        assertQuery("SELECT id,v FROM $catalog.$name ORDER BY id", "VALUES(1,10),(2,20),(3,30)")
+        assertQuery("SELECT id,new_v FROM $catalog.${name}_audit ORDER BY id", "VALUES(1,10),(2,20),(3,30)")
+    }
+
+    @Test
     fun testExplicitTransactionRollbackIncludesTriggerEffectsAndErrorInvalidation() = withTargets("rollback", true) { _, connection, name ->
         connection.autoCommit = false
         assertThat(execute(connection, "INSERT INTO $name VALUES(1,10)")).isEqualTo(1)

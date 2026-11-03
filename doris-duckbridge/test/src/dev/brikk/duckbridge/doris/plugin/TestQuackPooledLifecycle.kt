@@ -20,6 +20,7 @@ class TestQuackPooledLifecycle {
     fun setUp() {
         server = TestingQuackServer()
         server.exec("CREATE TABLE lifecycle_rollback(id INTEGER)")
+        server.exec("CREATE TABLE lifecycle_early_close(id INTEGER)")
     }
 
     @AfterAll
@@ -73,6 +74,39 @@ class TestQuackPooledLifecycle {
                 assertThat(connection.autoCommit).isTrue()
                 assertThat(scalar(connection, "SELECT count(*) FROM lifecycle_rollback")).isZero()
                 assertThat(scalar(connection, "SELECT 42")).isEqualTo(42)
+            }
+        }
+    }
+
+    @Test
+    fun earlyCloseSupersessionAndCommitPreserveManualTransaction() {
+        pool().use { pool ->
+            pool.connection.use { connection ->
+                exerciseManualEarlyClose(connection)
+            }
+            pool.connection.use { connection ->
+                assertThat(connection.autoCommit).isTrue()
+                assertThat(scalar(connection, "SELECT count(*) FROM lifecycle_early_close")).isEqualTo(3)
+                assertThat(scalar(connection, "SELECT sum(id) FROM lifecycle_early_close")).isEqualTo(6)
+            }
+        }
+    }
+
+    private fun exerciseManualEarlyClose(connection: Connection) {
+        connection.autoCommit = false
+        connection.createStatement().use { statement ->
+            assertThat(statement.executeUpdate("INSERT INTO lifecycle_early_close VALUES(1)")).isEqualTo(1)
+            statement.executeQuery("SELECT * FROM range(10000)").use { rows -> assertThat(rows.next()).isTrue() }
+            assertThat(statement.executeUpdate("INSERT INTO lifecycle_early_close VALUES(2)")).isEqualTo(1)
+            statement.executeQuery("SELECT * FROM range(10000)").use { rows ->
+                assertThat(rows.next()).isTrue()
+                connection.createStatement().use { next ->
+                    assertThat(next.executeUpdate("INSERT INTO lifecycle_early_close VALUES(3)")).isEqualTo(1)
+                }
+            }
+            statement.executeQuery("SELECT * FROM range(10000)").use { rows ->
+                assertThat(rows.next()).isTrue()
+                connection.commit()
             }
         }
     }

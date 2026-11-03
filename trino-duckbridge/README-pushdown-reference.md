@@ -1,7 +1,7 @@
 # Pushdown reference
 
 Applies to the **Trino 483 and 484** connector builds with **DuckDB 2.0.0 / native
-JDBC 2.0.0.0, Quack JDBC 0.12.0 and trino_parity 0.5.1**. Use the package labelled
+JDBC 2.0.0.0, Quack JDBC 0.12.1 and trino_parity 0.5.1**. Use the package labelled
 for your Trino engine. [Doris has a separate allowlist](../doris-duckbridge/README-pushdown-reference.md).
 The two builds intentionally have different temporal pushdown gates.
 

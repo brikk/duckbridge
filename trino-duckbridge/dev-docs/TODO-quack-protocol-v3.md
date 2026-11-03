@@ -2,10 +2,16 @@
 
 ## Maintained contract
 
-The connectors use Quack JDBC 0.12.0 with DuckDB 2.0.0 and assert actual v3
+The connectors use Quack JDBC 0.12.1 with DuckDB 2.0.0 and assert actual v3
 negotiation. Ordinary cancellation/SQLState 57014, recovery, bounded partition
 CANCEL/DISCONNECT and healthy heartbeat/close cases have consumer regressions.
 They do not prove every blocked I/O operation can be forcibly interrupted.
+
+Unfinished result close/supersession drains through terminal FETCH synchronously;
+it can wait for the remaining execution/transfer and has no aggregate drain deadline.
+Closing FETCH failures propagate without retries or SQL replay. Explicit cancel
+remains distinct; Connection.close retains bounded best-effort DISCONNECT. This
+does not correct server orphan reaping or the published-port transport issue.
 
 Do not replay SQL, ping an abandoned session to trigger expiry, weaken fault
 assertions, increase global timeouts or change a tested route to close a gate.
