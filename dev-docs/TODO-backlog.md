@@ -1,6 +1,6 @@
 # DuckBridge backlog — choose work by category
 
-Updated **2026-11-02**. This is the selection index for outstanding work, not
+Updated **2026-11-03**. This is the selection index for outstanding work, not
 an instruction to implement every item or enlarge the DuckDB v2 release cycle.
 Select a category or item ID before starting another workstream.
 
@@ -29,8 +29,9 @@ Select a category or item ID before starting another workstream.
   is needed. This does not select DATE/calendar work or general WITH_TIMEZONE.
 
 **A-MATH and A-TZ-TRUNC's bounded sub-day slice plus astronomical zoned YEAR are
-complete. Residual DATE/WITH_TIMEZONE and full-suite failures stay open; other
-items require their own selection.**
+complete. The user has now selected bounded A-TZ-ATTACH literal-zone attachment
+and nested consumers. DATE/calendar, dynamic per-row zones and unrelated
+full-suite failures remain separate; other items require their own selection.**
 
 ## A. Confirmed connector defects and their dispositions
 
@@ -49,6 +50,18 @@ Evidence for A and B-TRINO is the
 - [ ] **A-TZ-ATTACH — WITH_TIMEZONE.** Correct overlap attachment and nested
   consumers of per-value zone metadata versus DuckDB's session-zone model.
   The existing zoned-function property does not gate every naive-input call.
+  User selected a bounded literal-zone slice after the timestamp push; native
+  offset candidate matches 8,896 exact ordinary-range observations. A reproduced
+  finite boundary allows Trino YEAR/HOUR over an attached intermediate outside
+  native TIMESTAMPTZ's microsecond range; the native candidate overflows. A guard
+  would add an error to a valid Trino query. User chose to size the exact fix,
+  not accept a guard. [Assessment](../trino-duckbridge/dev-docs/RESEARCH-with-timezone-exact-scope-2026-11-03.md):
+  current-pin fixed-offset typed lowering is medium work with named-zone calls
+  local; full named-zone pushdown needs a wide native API and matched runtime
+  release, not just an extension TIMESTAMPTZ scalar. Await the implementation/
+  local-performance disposition; production unchanged.
+  Dynamic per-row zones and wider calendar work are not selected.
+  [Current work](../trino-duckbridge/dev-docs/REPORT-with-timezone-2026-11-02.md).
 - [ ] **A-DATE-TRUNC — Wide DATE truncation.** Resolve the native TIMESTAMP
   intermediate/result-type/range and observed error-contract differences.
   Casting the result back to DATE alone is insufficient. Ordinary DATE text
