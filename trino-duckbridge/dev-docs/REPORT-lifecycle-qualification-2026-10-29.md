@@ -135,7 +135,7 @@ uses the long query/request timeout; QuackSession.cancel blocks in that send
 before its fail-closed catch can run. No timeout reduction, asynchronous adapter,
 test skip or local driver substitution hides the failed contract.
 
-[Driver handoff and reproduction](HANDOFF-quack-cancel-partition-2026-10-29.md).
+[Driver handoff and reproduction](archive/HANDOFF-quack-cancel-partition-2026-10-29.md).
 Initial evidence: `build/quack-cancel-network-fault.log`. The default regression
 suite and this explicit dependency-acceptance gate are reported separately; a
 green module check is not a claim that this gate passed.
@@ -187,7 +187,7 @@ rebuild or release is assumed by this deferral.
 Trino `check` and `verifyPluginAssembly` pass with **701 tests, zero
 failures/errors/skips** (`build/lifecycle-final-checks.log`). This includes the
 healthy-network, Arrow race/cleanup and real heartbeat checks, plus the later
-[prepared-schema/catalog-conflict tests](REPORT-prepared-catalog-lifecycle-2026-10-30.md).
+[prepared-schema/catalog-conflict tests](archive/REPORT-prepared-catalog-lifecycle-2026-10-30.md).
 
 The two explicit peer acceptance tasks remain **blocked/red**, not counted as
 passing or silently relaxed. Their revisit TODO records the expected corrected

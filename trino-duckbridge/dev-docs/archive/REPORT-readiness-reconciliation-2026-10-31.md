@@ -9,9 +9,9 @@ The producer handoff is external work, not a local dependency or release watch.
 
 Reconciled trackers:
 
-- [DuckDB 2.0 readiness](../../dev-docs/TODO-duckdb-2.0.md).
-- [Quack protocol v3](TODO-quack-protocol-v3.md).
-- [Temporal types and timezones](TODO-datetime-timezones.md).
+- [DuckDB 2.0 readiness](../../../dev-docs/archive/TODO-duckdb-2.0.md).
+- [Quack protocol v3](../TODO-quack-protocol-v3.md).
+- [Temporal types and timezones](../TODO-datetime-timezones.md).
 - [Historical evaluation findings](TODO-rectify-from-eval.md).
 
 ## Corrections grounded in existing evidence

@@ -4,7 +4,7 @@
 Route A = DuckDB 1.5.3 `lance` extension build `533e0ee` (in-process JDBC, the engine the
 connector ships); Route B = `org.lance:lance-core:6.0.0` JNI (darwin-aarch64 native, the engine
 the vendored lance-trino plugin wraps). **Harness:**
-[BenchLanceRouteAVsB](../test/src/dev/brikk/ducklake/trino/plugin/BenchLanceRouteAVsB.kt) — run
+The sibling DuckLake harness `BenchLanceRouteAVsB` (outside this repository) — run
 manually with `./gradlew :trino-ducklake:test --tests "*.BenchLanceRouteAVsB" -Dducklake.bench=true`.
 
 ## Question

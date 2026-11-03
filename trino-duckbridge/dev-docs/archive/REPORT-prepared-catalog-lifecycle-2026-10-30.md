@@ -81,7 +81,7 @@ directed by the user; they are not counted as passed by that module result.
 
 Remaining work is explicitly tracked rather than hidden: deferred peer fixes
 and their exact gates are described in
-[`REPORT-lifecycle-qualification-2026-10-29.md`](REPORT-lifecycle-qualification-2026-10-29.md).
+[`REPORT-lifecycle-qualification-2026-10-29.md`](../REPORT-lifecycle-qualification-2026-10-29.md).
 General schema-cache races inside a long-running Trino plan, every possible DDL
 shape, cross-process metadata caches and all transactional write conflicts are
 not claimed solved by these prepared-driver fixtures.

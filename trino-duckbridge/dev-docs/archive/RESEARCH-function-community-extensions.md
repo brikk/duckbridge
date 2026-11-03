@@ -7,7 +7,7 @@ wiring pushdown rules.
 
 For the **per-extension catalog detail** — every function and aggregate
 each extension publishes, with descriptions and gap callouts — see
-[`archive/RESEARCH-function-community-extensions-detail.md`](archive/RESEARCH-function-community-extensions-detail.md).
+[`RESEARCH-function-community-extensions-detail.md`](RESEARCH-function-community-extensions-detail.md).
 That file is preserved verbatim from the original survey and should be
 refreshed if a community extension publishes new functions.
 

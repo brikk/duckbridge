@@ -19,7 +19,7 @@ audits and unrelated working changes are outside this task.
 ## Frozen source and build inputs
 
 - Previous source: `8e10b235cf030d486b6840cfd64b6218ab515e6d`; new pin is 37
-  commits later. See the [bounded source review](REVIEW-doris-api27-2026-11-02.md).
+  commits later. See the [bounded source review](archive/REVIEW-doris-api27-2026-11-02.md).
 - Connector API **27.0**, filesystem API **7.0**, JNI API **6.0**, BE execution
   maximum **19**, Thrift **0.24.0**, Maven revision `1.2-SNAPSHOT`.
 - User handoff:

@@ -5,7 +5,7 @@ driver, `com.gizmodata:quack-jdbc`). Entries link a filed issue when one exists
 and name the duckbridge canary that flips when the work is complete.
 
 DuckDB 2.0 readiness is tracked centrally in
-[`dev-docs/TODO-duckdb-2.0.md`](../../dev-docs/TODO-duckdb-2.0.md).
+[`dev-docs/archive/TODO-duckdb-2.0.md`](../../../dev-docs/archive/TODO-duckdb-2.0.md).
 
 ---
 

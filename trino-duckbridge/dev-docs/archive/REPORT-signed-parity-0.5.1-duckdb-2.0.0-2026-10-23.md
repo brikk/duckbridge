@@ -57,4 +57,4 @@ builds retain a separate, explicit opt-in path.
   - tar.gz: `d5b0d45db0969d5ef57064aacf32698fa941372274eb52f1911feb44570a4d90`
 
 Historical qualification of the temporary unsigned CI binary is archived in
-[`archive/REPORT-duckdb-2.0.0-quack-0.9.0-2026-10-21.md`](archive/REPORT-duckdb-2.0.0-quack-0.9.0-2026-10-21.md).
+[`archive/REPORT-duckdb-2.0.0-quack-0.9.0-2026-10-21.md`](REPORT-duckdb-2.0.0-quack-0.9.0-2026-10-21.md).

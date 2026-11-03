@@ -98,6 +98,6 @@ small DATE-only implementation if its boundary/error disposition is agreed.
 Treat full WITH_TIMEZONE composition as a separate choice, not an unnoticed
 extension of the first task. No implementation is started by this memo.
 
-Existing selections remain in [the categorized backlog](../../dev-docs/TODO-backlog.md):
+Existing selections remain in [the categorized backlog](../../../dev-docs/TODO-backlog.md):
 `A-TZ-TRUNC`, `A-TZ-ATTACH`, `A-DATE-TRUNC`. ATAN/ATAN2/COSH were separately
 approved to remain local and do not require a native parity release.

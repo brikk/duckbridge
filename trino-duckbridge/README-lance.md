@@ -2,7 +2,7 @@
 
 Path-based table functions that scan [Lance](https://lancedb.github.io/lance/) datasets
 and run vector / full-text / hybrid search, executed by the DuckDB `lance` extension.
-**EXPERIMENTAL** — the surface may evolve with the upstream extension.
+**EXPERIMENTAL** — opt-in and disabled by default.
 
 The functions take the dataset **path** directly: name a path, the connector scans it.
 

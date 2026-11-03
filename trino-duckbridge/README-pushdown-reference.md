@@ -1,10 +1,9 @@
 # Pushdown reference
 
-**Source snapshot: 2026-11-03**, including exact fixed-offset WITH_TIMEZONE consumers,
-local ATAN/ATAN2/COSH, known-zone sub-day truncation and astronomical zoned YEAR. Applies to
-**Trino 483, DuckDB 2.0.0 / native JDBC 2.0.0.0, Quack JDBC 0.12.0 and
-trino_parity 0.5.1**. An older packaged plugin may not contain these fixes.
-This is the Trino connector's reference; [Doris has a separate allowlist](../doris-duckbridge/dev-docs/REPORT-doris-duckdb-function-divergence.md).
+Applies to the **Trino 483 and 484** connector builds with **DuckDB 2.0.0 / native
+JDBC 2.0.0.0, Quack JDBC 0.12.0 and trino_parity 0.5.1**. Use the package labelled
+for your Trino engine. [Doris has a separate allowlist](../doris-duckbridge/README-pushdown-reference.md).
+The two builds intentionally have different temporal pushdown gates.
 
 The connector has extensive predicate/function pushdown, but **being admitted by
 the translator is not the same as complete semantic qualification**. The known
@@ -18,36 +17,29 @@ tracker.
 | **Enabled** | The current implementation can emit the operation. Actual pushdown still depends on Trino's plan, operand rendering, types and settings. Tests cover specific cases, not every possible input. |
 | **Conditional** | Enabled only when the stated gate accepts the expression. Otherwise that expression stays in Trino. |
 | **Local** | This connector does not emit the operation through its predicate translator/domain mapping. Trino evaluates the remaining expression. |
-| **Known issue — still enabled** | A demonstrated mismatch remains in an admitted operation. **Do not read this as an implemented fallback or a guarantee of correct pushdown.** |
 | **Accepted error limitation** | The specific documented error-category difference is retained; successful values and NULLs are not allowed to change on that account. |
 
-**Full semantic qualification is not complete.** DATE/calendar truncation and
-native-Trino membership limitations remain below; named-zone WITH_TIMEZONE is local.
-The bounded timestamp fix does not certify all calendar units, timezone data
-or per-value-zone expressions. Neither catalog admission nor a passing bounded
-fixture is a universal parity guarantee.
+Catalog admission does not promise every overload or input is supported. DATE-input
+truncation and named-zone WITH_TIMEZONE are local. Timestamp calendar units have
+the limits below, and Trino 483 has the documented REAL membership engine issue.
 
 ## Known limitations that matter to queries
 
 | Operation | Current behavior | Limitation |
 |---|---|---|
-| `date_trunc` with DATE input | **Known issue — still enabled**, subject to valid-unit gates | DuckDB's native overload returns TIMESTAMP where Trino returns DATE. The new unbounded DATE-text formatter repairs the sampled nested text consumers, but does not establish full result-type/range parity. Very wide DATE inputs can fail during truncation; the observed pushed and Trino error contracts differ. A cast back to DATE alone is not a full fix. |
-| Zoned sub-day `date_trunc` | **Conditional**, exact input-offset integer adapter | Millisecond/second/minute/hour use the offset at the input instant, including overlaps/non-hour transitions. Mapped columns and supported known-zone compositions qualify; unknown zone constructors and nested truncations stay local. See the provenance and value bounds below. |
-| Zoned calendar `date_trunc` | **Existing native emission retained; not fully qualified** | Day/week/month/quarter/year use a different calendar rule. The sub-day fix does not certify their full range, transition or error semantics. |
-| `with_timezone` consumers | **Conditional** for UTC/literal fixed offsets; named-zone calls are **local** | Exact typed lowering supports selected comparisons/extractions over mapped naive timestamps of precision 4..6. It keeps wide intermediates and attached-zone provenance without pretending an integer is TIMESTAMPTZ. Named/dynamic zones, short/nanos precision and unsupported compositions stay in Trino. |
-| `REAL IN (...)` with negative zero | **Native Trino inconsistency; no connector workaround** | In Trino 483, tested constant-folded and compiled `IN (0,1)` evaluations disagree on negative zero. Connector-free UNNEST reproduces the compiled behavior. Pushed domains and retained compiled filters can therefore disagree. The diagnostic remains open; zero signs/types are not normalized to conceal it. |
+| `date_trunc` with DATE input | **Local** for all units | Trino preserves the DATE result type, full range, NULLs and its own error contract. This deliberately gives up common DATE truncation pushdown; native TIMESTAMP intermediates and casts back to DATE are not a full-range fix. Timestamp-input admission is separate. |
+| Zoned sub-day `date_trunc` | **483: conditional for four sub-day units. 484: milliseconds only** | Admitted calls preserve the input offset across overlaps/non-hour transitions. On 484, second/minute/hour truncation stays local because rounded intermediates can fail the engine's stricter constructor bounds. |
+| Zoned calendar `date_trunc` | **483: enabled, not fully qualified. 484: local** | Day/week/month/quarter/year use calendar rules distinct from sub-day rounding. Their full range, transition and error semantics are not certified by the sub-day adapter. |
+| `with_timezone` consumers | **483: conditional for fixed offsets. 484: local** | The 483 build supports the listed consumers over mapped naive timestamps of precision 4..6. All 484 constructors remain in Trino to preserve its early range checks; named/dynamic/unsupported shapes are local in both builds. |
+| `REAL IN (...)` with negative zero | **Trino 483 engine limitation; fixed in 484** | REAL is SQL's 32-bit floating-point type; IN tests membership. In 483, constant-folded/equality/domain and compiled membership paths can disagree on negative zero, so pushed domains and retained filters can differ. The specific IN/NOT IN counterexample is fixed in stock 484. Stored zero signs and types are not normalized by the connector. |
 | Overflowing DECIMAL narrowing `CAST` | **Accepted error limitation; pushdown retained** | The four audited overflows to TINYINT/SMALLINT/INTEGER/BIGINT fail with pushed `JDBC_ERROR`, versus Trino's `NUMERIC_VALUE_OUT_OF_RANGE`. This does **not** permit returning a value or NULL instead of failing, or accepting arbitrary errors as equivalent. `TRY_CAST` has a separate NULL-on-failure contract. |
-| Bounded `VARCHAR(n)` casts | **Existing admission retained; not fully qualified** | The translator renders the native target as VARCHAR without its length bound. The new DATE formatter applies only to **unbounded** VARCHAR; it does not certify bounded DATE spelling or general bounded-cast length/error semantics. |
+| Bounded `VARCHAR(n)` casts | **Admitted; length-bound semantics not fully qualified** | The translator renders the native target as VARCHAR without its length bound. DATE formatting applies only to **unbounded** VARCHAR; bounded DATE spelling and general bounded-cast length/error semantics are not certified. |
 
-These defects are **not** fixed by choosing a lower string-pushdown mode:
+These limits are **not** removed by choosing a lower string-pushdown mode:
 non-string expressions have independent admission. The
 `pushdown_timestamp_with_timezone` property gates selected zoned functions and
 the qualified fixed-offset WITH_TIMEZONE consumers. It is not a blanket calendar
 parity switch or a replacement for the admission rules below.
-
-The reports document bounded observations, not an exhaustive proof that every
-other admitted overload/input is equivalent. This page describes implementation
-and established evidence; it does not turn untested behavior into a guarantee.
 
 ## How pushdown is chosen
 
@@ -118,14 +110,14 @@ Catalog property: `duckbridge.string-pushdown.mode`. Per-query override:
 | Comparisons | `=`, `<>`, `<`, `<=`, `>`, `>=`, `IS NULL`, `IS NOT DISTINCT FROM` can translate; NOT provides corresponding negated forms. String operands require string-comparison trust. Floating primitive comparisons explicitly preserve SQL NULL and IEEE NaN behavior; identity comparison retains its distinct semantics. |
 | Logical operators | AND, OR and NOT translate when their children translate. Top-level AND permits partial pushdown. |
 | Arithmetic | Binary `+`, `-`, `*` and unary `-` are emitted. Binary `/` and `%` remain **local**. Renderable types/children are still required; admission is not full qualification of every numeric overload or overflow/error category. |
-| NULL handling | Variadic `COALESCE` and two-argument `NULLIF`. Floating NULLIF uses the corrected IEEE equality rather than native NaN equality. |
+| NULL handling | Variadic `COALESCE` and two-argument `NULLIF`. Floating NULLIF uses IEEE equality rather than native NaN equality. |
 | `BETWEEN` | Can be handled after Trino decomposes it into comparisons. There is no separate BETWEEN emission. |
 | `concat(a,b,...)` | VARCHAR-returning calls with at least two arguments become the NULL-propagating `a \|\| b \|\| ...`, not DuckDB's NULL-skipping `concat`. ARRAY-returning overloads do not use this rewrite. |
 | `CAST` / `TRY_CAST` targets | The expression translator renders BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DOUBLE, VARCHAR and DATE targets. REAL, DECIMAL, temporal timestamp/time and composite **targets** are not rendered by this cast rule. Source types can still include REAL/DECIMAL columns. |
 | String-source casts | VARCHAR/CHAR to a non-string target remains **local**: DuckDB's parsers accept inputs Trino rejects. A VARCHAR target can be admitted; bounded lengths have the limitation above. |
 | Casts to VARCHAR | Admitted from integer-family values, BOOLEAN, DATE and string sources. DOUBLE/REAL, DECIMAL, timestamp/time and other non-string sources are not admitted to VARCHAR by this rule. |
 | DATE to unbounded VARCHAR | Uses an explicit Trino-style year/month/day formatter, including BCE/year zero and expanded years. Native BC display text is not used. This is an explicit user-requested cast, not a conversion of stored DATE columns to text. |
-| `LIKE` / `NOT LIKE` | Conditional on string mode and a constant non-NULL pattern readable from Trino's compiled LikePattern. Optional ESCAPE is supported when the translator can extract its single-character representation. Dynamic/NULL/unreadable patterns stay local unless the planner simplifies them. The audit's matching retained-filter cases are not evidence that those cases ran remotely. |
+| `LIKE` / `NOT LIKE` | Conditional on string mode and a constant non-NULL pattern readable from Trino's compiled LikePattern. Optional ESCAPE is supported when the translator can extract its single-character representation. Dynamic/NULL/unreadable patterns stay local unless the planner simplifies them. |
 
 The **expression translator's** literal renderer accepts SQL NULL, booleans,
 integer-family values, finite DOUBLE values, VARCHAR strings without U+0000,
@@ -136,49 +128,33 @@ general expression literals here; neither are non-finite DOUBLE literals.
 These are not restrictions on all **domain bindings** or data reads/writes.
 For example, column domains can bind REAL/DECIMAL/ordinary timestamps, and the
 finite DATE writer supports a wider range than the expression DATE-literal
-renderer. The experimental Quack/Arrow parameter inliner is yet another path:
-it now preserves typed REAL/DOUBLE infinity literals, but still refuses NaN
+renderer. The experimental Quack/Arrow parameter inliner is a separate path:
+it preserves typed REAL/DOUBLE infinity literals, but refuses NaN
 parameters and other unsupported literal types explicitly.
 
 High-precision temporal variables (precision greater than 6) are not rendered by
 the expression translator. Their qualified nanos read/write support is **not**
 permission to push nanos predicates/functions. Unknown calls and non-renderable
 subexpressions stay local; some unsupported column types are refused at metadata
-or read time instead of being readable with a local filter. See the
-[type/carrier coverage](dev-docs/TODO-datetime-timezones.md) and
-[boundary policy](dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
+or read time instead of being readable with a local filter. The
+[type mapping](../README.md#type-mapping) lists the transport-specific restrictions.
 
 ## Function catalog
 
-The current catalog has **75 `(name, arity)` entries**, not 75 distinct SQL
-function names or a guarantee that all 75 push in every query. The typed
-WITH_TIMEZONE constructor rule below is separate from context-free catalog emission.
-
-| Emission class | Entries | What is emitted |
-|---|---:|---|
-| BARE | 36 | Same native function name |
-| RENAME | 9 | A different native name |
-| OPERATOR | 3 | SQL bitwise operator |
-| INLINE / CONTEXTUAL | 17 | SQL transformation, sometimes using types/session state |
-| ALIAS | 10 | Extension `trino_<name>` function |
-
-Only the ten ALIAS entries require the parity extension. The other **65** do
-not reference it, but still need all applicable gates. Extension independence
-is **not** a claim that DuckDB matches Trino over every input: the known enabled
-temporal defects above are in that extension-free surface.
-
-The table lists every catalog entry; `name/arity` identifies the internal call
-shape. Trino may normalize user-visible aliases before calling the connector.
+The table lists admitted names and arities. Trino can normalize SQL aliases before
+translation; a listed name still needs its argument/type/session gates. The
+extension is required only for the case/trim/normalization and extension-hash
+groups below. Fixed-offset WITH_TIMEZONE consumers follow their separate rule.
 
 | Category | Catalog entries | Conditions / implementation |
 |---|---|---|
-| Case, reverse, trim, normalization | `lower/1`, `upper/1`, `reverse/1`, `trim/1`, `ltrim/1`, `rtrim/1`, `normalize/1` | **PARITY only**, extension-backed. Simple per-code-point case mapping (`upper('ß')` stays `ß`), code-point reversal, Java-whitespace-aligned trim, NFC normalization. The validated Unicode profile is Trino 483 / JDK 25 / parity 0.5.1, not every future JDK. |
+| Case, reverse, trim, normalization | `lower/1`, `upper/1`, `reverse/1`, `trim/1`, `ltrim/1`, `rtrim/1`, `normalize/1` | **PARITY only**, extension-backed. Simple per-code-point case mapping (`upper('ß')` stays `ß`), code-point reversal, Java-whitespace-aligned trim, NFC normalization. Requires the supported Trino/JDK 25/parity profile. |
 | String inspection / translation | `length/1`, `strpos/2`, `starts_with/2`, `translate/3`, `chr/1` | Native emission, subject to renderable arguments and string-comparison trust where the enclosing expression compares strings. |
 | Substring | `substring/2`, `substring/3` | Start must be an integer-family constant ≥ 1; the three-argument form also needs an integer-family constant length ≥ 0. Other cases stay local. |
 | Replace | `replace/3` | Search argument must be a constant, non-empty VARCHAR. |
 | Padding | `lpad/3`, `rpad/3` | Constant integer-family size ≥ 0 and constant non-empty VARCHAR pad. |
 | Separator concatenation | `concat_ws/2`, `concat_ws/3`, `concat_ws/4`, `concat_ws/5` | Every argument must be VARCHAR. The ARRAY overload is not admitted. |
-| Numeric native calls | `abs/1`, `ceil/1`, `floor/1`, `exp/1`, `sin/1`, `cos/1`, `tan/1`, `sinh/1`, `tanh/1`, `degrees/1`, `radians/1`, `truncate/1`, `pi/0` | Native emission; `truncate` is renamed to `trunc`. These catalog entries have no additional argument-type gate; that is not full-overload qualification. CEIL stayed local in the recent audit's actual planner shape despite having a catalog entry. |
+| Numeric native calls | `abs/1`, `ceil/1`, `floor/1`, `exp/1`, `sin/1`, `cos/1`, `tan/1`, `sinh/1`, `tanh/1`, `degrees/1`, `radians/1`, `truncate/1`, `pi/0` | Native emission; `truncate` is renamed to `trunc`. These entries have no additional argument-type gate. Planner shape and renderable children still determine whether a call is emitted. |
 | Floating sign | `sign/1` | DOUBLE/REAL emission preserves NaN and signed zero and otherwise casts native sign to the floating type. Other argument types keep native `sign` emission. |
 | Modulo function | `mod/2` | Divisor must be a nonzero integer-family constant. Zero, NULL and dynamic divisors stay local. This does not enable the `%` operator. |
 | Bitwise | `bitwise_and/2`, `bitwise_or/2`, `bitwise_not/1`, `bitwise_xor/2` | AND/OR/NOT use operators; XOR becomes native `xor`. Shift functions remain local. |
@@ -189,18 +165,22 @@ shape. Trino may normalize user-visible aliases before calling the connector.
 | Extension hashes | `sha512/1`, `xxhash64/1`, `hmac_sha256/2` | **PARITY only**, extension-backed. Empty-key HMAC throws like Trino; empty data is distinct from an empty key. |
 | General temporal extraction | `year/1`, `month/1`, `day/1`, `quarter/1`, `hour/1`, `minute/1`, `second/1`, `millisecond/1` | Gate admits DATE/naive TIMESTAMP, or zoned TIMESTAMP when the zoned-function property is on. That shared gate is not a promise that each function has every listed overload in Trino. Ordinary mapped-zoned YEAR corrects year-of-era to astronomical year and requires known session-zone provenance; fixed-offset attachment consumers use the separate typed rule below. DATE/naive YEAR is unchanged. Millisecond emission reduces DuckDB's sub-minute part modulo 1000. High-precision variables still decline translation. |
 | DATE-only calendar calls | `day_of_week/1`, `day_of_year/1`, `last_day_of_month/1`, `week/1`, `week_of_year/1`, `year_of_week/1`, `yow/1` | DATE arguments only. ISO weekday/week/week-year semantics; native renames/extractions as needed. Timestamp overloads are not admitted by these gates. |
-| Truncation | `date_trunc/2` | Constant valid unit, temporal-type/session gates. Zoned sub-day fields use the integer input-offset adapter below; DATE/calendar-unit limitations remain. |
+| Truncation | `date_trunc/2` | DATE inputs stay local. Timestamp inputs require a constant valid unit and temporal/session gates. Zoned sub-day fields use the integer input-offset adapter below; broader calendar-unit timestamp parity is not certified. |
 | Difference | `date_diff/3` | Emits native `date_sub` for complete-unit differences, not native `date_diff` boundary counting. Constant valid unit; both temporal inputs must pass their type/session gates. |
-| To epoch | `to_unixtime/1` | Naive TIMESTAMP is anchored with the **fixed-offset session zone**; a missing/non-fixed/unrenderable session zone declines emission. Zoned TIMESTAMP uses native epoch with a DOUBLE result and requires the zoned-function property. |
+| To epoch | `to_unixtime/1` | **483 only:** naive TIMESTAMP requires a renderable fixed-offset session zone; zoned TIMESTAMP requires the zoned-function property. **484:** local, preserving its compensated DOUBLE rounding. |
 | From epoch | `from_unixtime/1` | Renamed to `to_timestamp`. No additional per-function type/session gate; generic rendering still applies. It is not a proof of all overload, precision or per-value-zone behavior. |
 | Conditional | `if/2`, `if/3` | Two-argument form inserts a NULL false branch; three-argument form uses native `if`. Children must translate. |
 
 ### Temporal unit and session gates
 
-- DATE units: `day`, `week`, `month`, `quarter`, `year`.
+- DATE unit names for validation/DATE_DIFF: `day`, `week`, `month`, `quarter`, `year`.
+  DATE-input DATE_TRUNC stays local even for those valid units.
 - Timestamp units: those DATE units plus `millisecond`, `second`, `minute`, `hour`.
 - DATE_TRUNC checks its value argument's type. DATE_DIFF uses the DATE unit set
   if either input is DATE, and checks both temporal arguments separately.
+- On 484, zoned DATE_TRUNC is eligible only for milliseconds; other zoned units,
+  all WITH_TIMEZONE consumers and TO_UNIXTIME remain local. Naive timestamp
+  truncation and ordinary mapped-column extraction have their own unchanged gates.
 - Units must be constant VARCHAR strings; case is normalized. Dynamic, NULL,
   plural, unknown or type-invalid units stay in Trino. For example,
   `date_trunc('hour', date_col)` and `date_trunc('century', ts_col)` are not
@@ -215,10 +195,9 @@ shape. Trino may normalize user-visible aliases before calling the connector.
   a successful zone change. Named zones and integer-hour offsets have native
   spellings; not every fractional bare offset does.
 
-Zoned sub-day truncation uses `epoch_us`, the native input offset and
-`make_timestamptz`, with integer floor-modulo arithmetic, not floating epochs or
-text conversions. The result remains TIMESTAMP WITH TIME ZONE. It needs no
-parity alias or extension rebuild.
+Zoned sub-day truncation preserves the input offset through overlaps and non-hour
+transitions. Its result remains TIMESTAMP WITH TIME ZONE; it does not require the
+parity extension.
 
 The mapped-column adapter and ordinary zoned YEAR admit mapped columns and renderable
 zone-preserving COALESCE/NULLIF/IF calls. Trino 483 does not hand general SQL
@@ -231,12 +210,16 @@ local; YEAR can consume an admitted mapped-column truncation result.
 Ordinary zoned inputs are checked against microseconds
 `[-2251799813685248000, 2251799813685247999]`, Trino's packed storage range.
 NULL stays NULL; infinity/out-of-range inputs throw rather than silently lose
-rows. YEAR can consume a finite truncation intermediate just outside storage
-bounds without trying to materialize it as a packed column value. This is not
+rows. On 483, YEAR can consume a finite truncation intermediate just outside
+storage bounds. On 484 those constructors are local and retain their native
+Trino overflow error contract. This is not
 permission to scan unsupported source values or a certification of calendar
 truncation. Unrelated temporal emissions retain their existing admission.
 
-### Typed WITH_TIMEZONE consumers
+### Fixed-offset WITH_TIMEZONE consumers on 483
+
+The 484 build evaluates all WITH_TIMEZONE calls in Trino. It validates zoned
+constructor bounds before nested consumers, unlike the 483 contract described here.
 
 There is no context-free native WITH_TIMEZONE emitter. For mapped naive
 TIMESTAMP variables (or typed NULL), precision **4..6**, and a constant zone
@@ -246,13 +229,11 @@ that Trino canonicalizes to UTC or a fixed offset, the connector can lower:
 - YEAR/MONTH/DAY/QUARTER/HOUR/MINUTE/SECOND/MILLISECOND.
 - TO_UNIXTIME, preserving Trino's DOUBLE evaluation order.
 
-The intermediate uses exact wide integer arithmetic and known-zone metadata
-internally. Only the supported parent emits a real BOOLEAN/BIGINT/DOUBLE result;
-an integer is never passed off as a native TIMESTAMPTZ. Source columns retain
-their actual types. Valid finite naive inputs are not narrowed to the packed
-zoned range: consumers can handle an attached intermediate beyond native
-TIMESTAMPTZ's signed microseconds. Infinity/invalid source carriers throw rather
-than silently filter rows. NULL remains NULL.
+These consumers preserve the full finite range of the admitted source type,
+including attached results beyond DuckDB's TIMESTAMPTZ microsecond range. Source
+columns retain their actual types; they are not converted to text or substitute
+timestamp types. Infinity/invalid source values fail rather than silently
+filtering rows. NULL remains NULL.
 
 UTC aliases and fixed-offset spellings are validated/canonicalized with Trino's
 TimeZoneKey. This does not require the parity extension or string comparison
@@ -267,8 +248,8 @@ bare constructor values and unhandled consumers (including DATE_TRUNC,
 DATE_DIFF and casts over the attachment) remain local. Named-zone local
 evaluation is deliberate: ordinary native overlap handling differs, and a
 TIMESTAMPTZ-only adapter also cannot represent all valid Trino intermediates.
-Native named-zone pushdown is separate future work, not a new runtime guard or
-silent timezone normalization. Computed SELECT-list projection remains local.
+No named-zone normalization or substitute representation is emitted. Computed
+SELECT-list projection remains local.
 
 ### Regex restrictions
 
@@ -293,25 +274,26 @@ is not dialect equivalence.
 
 ## Deliberately evaluated in Trino
 
-These are absent from the function catalog or refused by the relevant rule;
-they are **not** the same category as the known defects still enabled above.
+These are absent from the function catalog or refused by the relevant rule.
 Planner simplification can remove a call before the connector sees it, and a
 different, supported conjunct/domain can still push alongside a local call.
 
 | Operation / case | Why it is not emitted |
 |---|---|
 | `power` / SQL alias `pow` | Finite rounding and special-value counterexamples; local evaluation preserves Trino's result. |
-| `atan`, `atan2`, `cosh` | Explicit local policy: native finite results differ in their final bits and can change exact predicate row sets. Calls, including nested uses, are not emitted; no new native math functions are added to the extension. |
-| `sqrt`, `ln`, `log2`, `log10`, `asin`, `acos` | Existing policy withholds the functions: native domain/error behavior differs, and the earlier scalar rewrites failed end-to-end comparison tests. The new IEEE comparison renderer has **not** re-enabled or requalified them. |
+| `atan`, `atan2`, `cosh` | Native finite results differ in their final bits and can change exact predicate row sets. These calls, including nested uses, are evaluated in Trino. |
+| `sqrt`, `ln`, `log2`, `log10`, `asin`, `acos` | Native domain/error and predicate semantics differ; these functions are not emitted. |
 | `cbrt` | Demonstrated finite difference even on perfect cubes. |
 | `bitwise_left_shift`, `bitwise_right_shift` | Width/shift-count and logical-versus-arithmetic semantics differ. |
 | `url_encode`, `url_decode` | Form encoding versus native URL encoding, including space/plus handling. |
 | `from_hex`, `from_base64` | Odd-length/unpadded inputs have different acceptance/error behavior. |
 | `levenshtein_distance`, `hamming_distance` | Audited native Unicode/byte behavior differs. |
 | `at_timezone` | No emitter preserving Trino's per-value zone metadata. |
+| 484 WITH_TIMEZONE, TO_UNIXTIME and non-millisecond zoned DATE_TRUNC | Local evaluation preserves 484's constructor overflow checks and compensated epoch rounding. The corresponding 483 rules are separate. |
+| `date_trunc(..., DATE)` | User-approved local evaluation for all units preserves the DATE type, full range/error behavior and NULLs, including common ordinary inputs. |
 | Unqualified `with_timezone` shapes | Named/dynamic zones, short/nanos precision, bare native constructor values and unsupported consumers stay in Trino; only the typed fixed-offset slice above is admitted. |
 | `normalize/2` | Only the one-argument NFC call is registered. This is the connector's API scope, not a claim that ICU cannot normalize other forms. |
-| `hmac_md5`, `hmac_sha1`, `hmac_sha512`, `murmur3`, `url_extract_*` | No admitted emitter in this catalog. Implementations are missing/deferred or have identified result/type differences. |
+| `hmac_md5`, `hmac_sha1`, `hmac_sha512`, `murmur3`, `url_extract_*` | No admitted emitter in this catalog. |
 | Restricted argument shapes | Nonconstant/empty padding or replace-search strings, unsupported substring bounds, dynamic/unsafe regex, invalid/dynamic temporal units, unsupported casts and non-renderable literals follow the gates above. |
 | Nanos expressions and disabled domains | Follow the precision/type rules above; do not infer pushdown from successful typed reads. |
 | Any other unknown function/call shape | No generic name-based forwarding. Trino may rewrite SQL syntax to a known internal call, but unrecognized calls themselves are not emitted. |
@@ -325,26 +307,5 @@ if the planner simplified or eliminated it. A retained filter can coexist with
 pushed column domains. Successful results alone do not establish where
 evaluation ran. LIMIT/TopN nodes have their own placement and guarantee rules.
 
-An expression-disabled physical catalog is **not** a fully local oracle because
-its domain controller can still push. The audits use independent native-Trino
-inputs as well as actual production plans and exact row/value/error comparisons.
-See:
-
-- [Targeted fixes, accepted limitations and remaining counterexamples](dev-docs/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md).
-- [Approved ATAN/ATAN2/COSH local fallback](dev-docs/REPORT-local-math-fallback-2026-11-02.md).
-- [Known-zone sub-day truncation and astronomical zoned YEAR](dev-docs/REPORT-timestamp-truncation-2026-11-02.md).
-- [Exact fixed-offset WITH_TIMEZONE consumers and named-zone local disposition](dev-docs/REPORT-with-timezone-fixed-offset-2026-11-03.md).
-- [DATE write and type-aware temporal-unit fixes](dev-docs/QUALIFICATION-narrow-date-unit-fixes-2026-11-01.md).
-- [POWER fallback and original counterexamples](dev-docs/REPORT-power-edge-audit-2026-10-31.md).
-- [Restricted regex-count qualification](dev-docs/REPORT-regexp-count-qualification-2026-10-29.md).
-- [Current-profile Unicode qualification](dev-docs/REPORT-unicode-version-recheck-2026-10-30.md).
-- [Categorized project TODO](../dev-docs/TODO-backlog.md), separating confirmed defects, coverage gaps, optional features and bounded release close-out. Items are selected explicitly; this is not an instruction to expand release scope.
-
-Implementation authorities are the
-[function catalog and gates](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeEmissionCatalog.kt),
-[expression translator](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeExpressionTranslator.kt),
-[column mappings and LIMIT/TopN rules](src/dev/brikk/duckbridge/trino/plugin/DuckBridgeClient.kt)
-and their type-specific mapping/controller helpers. Catalog/fixture coverage is
-necessary regression protection, not a proof of universal parity. New admissions
-require appropriate scalar **and** planned row-set/error tests; extension aliases
-must also remain in metadata lockstep with the ten registered native functions.
+Disabling expression rewriting does not disable column-domain filtering. Check
+both the scan constraints and the retained Trino filter when comparing plans.

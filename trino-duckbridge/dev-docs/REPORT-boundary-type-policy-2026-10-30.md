@@ -116,4 +116,4 @@ observes the same TUPLE-list SIGSEGV/string-cast signature. Quack JDBC 0.12.0 fi
 trigger-count classification, not that native driver getter. TODO **5bdd9ba4**
 remains open and the guard is retained pending a real fix and typed-path proof;
 the explicit-source-CAST option remains a visible user choice, not an inserted
-workaround. See [the benchmark report](REPORT-scan-benchmarks-2026-10-31.md).
+workaround. See [the benchmark report](archive/REPORT-scan-benchmarks-2026-10-31.md).

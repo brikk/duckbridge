@@ -12,7 +12,8 @@ executed inside DuckDB instead of in Trino.
 Pushdown uses a curated function catalog, argument/type gates and differential tests
 against Trino. Some calls use native DuckDB SQL; others use the `trino_parity` extension.
 See the [pushdown reference](trino-duckbridge/README-pushdown-reference.md) for supported
-cases, local fallbacks and **known unresolved limitations**.
+cases, local fallbacks and **known unresolved limitations**, and the
+[Trino release notes](trino-duckbridge/RELEASE-NOTES.md) for the current release cut.
 
 ## Install
 
@@ -29,14 +30,9 @@ tar -xzf /path/to/downloaded-plugin.tar.gz -C "$TRINO_HOME/plugin/"
 Both `.tar.gz` and `.zip` are published, each with a `.sha256` sidecar. The version scheme is
 `<trino-major>-<semver>`; use an archive targeting your Trino major version.
 
-**From source.** Requires JDK 25 (the Gradle toolchain resolves it on demand):
-
-```sh
-./gradlew :trino-duckbridge:pluginAssemble
-cp -r trino-duckbridge/build/trino-plugin/trino-duckbridge-* "$TRINO_HOME/plugin/"
-```
-
-**Compatibility.** Trino **483**; embedded DuckDB engine **2.0.0** (bundled JDBC driver). A remote
+**Compatibility.** Trino **483 and 484**, using the archive labelled for your engine
+(`483-0.3.0` or `484-0.3.0`); do not mix their bundled Trino libraries. Embedded DuckDB is
+**2.0.0** (bundled JDBC driver). A remote
 Quack server should run the **same** DuckDB version (the `trino_parity` extension is version-pinned —
 see below).
 
@@ -133,8 +129,8 @@ Transport-specific limits remain explicit:
   read/write support does not imply pushdown.
 
 Writes also support `VARBINARY`, `UUID` and the supported microsecond temporal types.
-See the [type/carrier coverage](trino-duckbridge/dev-docs/TODO-datetime-timezones.md)
-for the exact path matrix and remaining refusals.
+The transport-specific restrictions above apply even when the underlying DuckDB
+type exists; an unsupported carrier is not silently converted to text.
 
 ### Dynamic catalogs
 
@@ -179,7 +175,8 @@ The plugin must already be installed on every node; `CREATE CATALOG` only suppli
 `duckbridge.string-pushdown.mode` (per-query override:
 `string_pushdown_mode`) dials how much string pushdown you trust; the default is
 `PARITY`. Non-string comparisons are independent of this dial but still need their
-own function/type gates; lowering the mode does not fix known math/timezone defects.
+own function/type gates; lowering it does not change temporal admission or fix
+Trino's documented REAL membership / signed-zero engine limitation.
 
 | mode | string `=`/range/IN/TopN | retained filter | string LIKE | ALIAS fns (ICU/hash) | extension |
 |---|---|---|---|---|---|
@@ -276,51 +273,21 @@ Details, function signatures, and examples:
 The [`doris-duckbridge`](doris-duckbridge/README.md) sibling connects Doris to remote DuckDB/Quack
 through Doris's connector SPI and matching JNI plugin runtime.
 
-## Build & test
+## Important limits
 
-Requires JDK 25 (the Gradle toolchain resolves it on demand). Docker is needed for the
-Quack integration tests; the lance/vortex extensions download from the network on first
-use.
+- DATE-input `date_trunc` and named-zone `with_timezone` calls run in Trino.
+  The 483 build can push qualified fixed-offset consumers and zoned sub-day
+  truncation. The 484 build keeps WITH_TIMEZONE, TO_UNIXTIME and zoned truncation
+  other than milliseconds local to preserve its stricter bounds and rounding.
+  [The reference](trino-duckbridge/README-pushdown-reference.md) gives the per-engine gates.
+- Trino 483 has a plan-dependent signed-zero issue in `REAL` membership predicates
+  such as `x IN (0,1)`. The specific engine bug is fixed in Trino 484. REAL is the
+  32-bit floating-point type; stored positive/negative zeros are not normalized.
+- On affected Docker published-port routes, large Quack streams can stall or
+  truncate. Direct-bridge results do not establish a fix for those routes.
+- The Quack server can retain abandoned sessions beyond their lease; normal
+  heartbeats and bounded client close/cancel do not imply autonomous orphan expiry.
 
-```sh
-./gradlew :trino-duckbridge:test
-./gradlew :trino-duckbridge:detekt
-```
-
-Dependency versions provided by Trino come from the Trino BOM;
-`gradle/libs.versions.toml` only pins dependencies this project owns independently. An offline build
-is supported after the exact task graph has been resolved online at least once:
-
-```sh
-./gradlew :trino-duckbridge:compileTestKotlin :trino-duckbridge:detekt
-./gradlew --offline :trino-duckbridge:compileTestKotlin :trino-duckbridge:detekt
-```
-
-`--offline` never downloads missing artifacts or JDK toolchains; on a fresh/partial Gradle cache it
-fails and names what must first be resolved online. Network-backed Lance/Vortex tests have their own
-availability assumptions and are not made hermetic by Gradle's offline flag.
-
-Development follow-ups are listed in the [categorized project TODO](dev-docs/TODO-backlog.md).
-Detailed qualification evidence and change history live in the modules' `dev-docs/` directories.
-
-### Building the parity extension
-
-For a local plugin package, fetch the signed community binary matching the pinned
-DuckDB version and current host first:
-
-```sh
-./.github/scripts/fetch-parity-extension.sh
-```
-
-For **extension development**, the source is pinned as a submodule at
-`duckdb-trino-parity-extension/`. Its vendored DuckDB must match the root pin before using a local
-build in place of the fetched binary:
-
-```sh
-cd duckdb-trino-parity-extension && make        # host platform
-# optional cross-builds: make linux-amd64 / make linux-arm64
-```
-
-The build produces `build/release/extension/trino_parity/trino_parity.duckdb_extension`, which the
-module's `bundleParityExtension` task copies into the plugin jar. Missing binaries are non-fatal at
-build time — the jar just ships without that platform's variant.
+Developer build/test instructions, implementation contracts and outstanding work
+are in [`dev-docs/`](dev-docs/README.md). Completed investigations and release history
+are retained in the corresponding `dev-docs/archive/` directories.

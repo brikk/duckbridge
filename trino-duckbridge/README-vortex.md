@@ -1,8 +1,7 @@
 # Vortex Scan
 
 A path-based table function that scans [Vortex](https://vortex.dev/) files, executed by
-the DuckDB `vortex` extension. **EXPERIMENTAL** — the surface may evolve with the
-upstream extension.
+the DuckDB `vortex` extension. **EXPERIMENTAL** — opt-in and disabled by default.
 
 The function takes the file **path** directly: name a path, the connector scans it.
 

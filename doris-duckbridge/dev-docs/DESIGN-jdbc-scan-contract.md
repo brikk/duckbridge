@@ -31,8 +31,8 @@ cannot recover a row that an incorrect remote predicate removed. Consequently:
   `isSingleUse()` stays false.
 
 Function pushdown uses the small audited Doris allowlist documented in
-[`REPORT-doris-duckdb-function-divergence.md`](REPORT-doris-duckdb-function-divergence.md).
-Temporal rendering follows [`REPORT-doris-timezone-probe.md`](REPORT-doris-timezone-probe.md):
+[`REPORT-doris-duckdb-function-divergence.md`](archive/REPORT-doris-duckdb-function-divergence.md).
+Temporal rendering follows [`REPORT-doris-timezone-probe.md`](archive/REPORT-doris-timezone-probe.md):
 naive timestamps use naive literals; TIMESTAMPTZ uses explicit UTC literals.
 
 ## Type transport
@@ -40,7 +40,7 @@ naive timestamps use naive literals; TIMESTAMPTZ uses explicit UTC literals.
 Metadata trusts DuckDB `TYPE_NAME`, not lossy JDBC type codes. Current native paths include
 LARGEINT, ARRAY, VARBINARY, UUID and opt-in TIMESTAMPTZ. Unsupported types fail loudly rather than
 silently changing semantics. The mapping evidence is in
-[`REPORT-quack-jdbc-metadata-probe.md`](REPORT-quack-jdbc-metadata-probe.md).
+[`REPORT-quack-jdbc-metadata-probe.md`](archive/REPORT-quack-jdbc-metadata-probe.md).
 
 The handler preserves arbitrary binary bytes and converts zoned timestamps to the JNI UTC-field
 carrier, independent of DuckDB session and embedded-JVM default zones.

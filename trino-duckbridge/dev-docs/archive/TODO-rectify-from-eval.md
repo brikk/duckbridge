@@ -7,7 +7,7 @@ when done. Order within a section is roughly severity.
 
 **Current-profile note (2026-10-31):** the detailed findings below preserve their
 original 1.5.5-era evidence. Current pins and open qualification gates are tracked
-in [DuckDB 2.0 readiness](../../dev-docs/TODO-duckdb-2.0.md). In particular EV-C6's
+in [DuckDB 2.0 readiness](../../../dev-docs/archive/TODO-duckdb-2.0.md). In particular EV-C6's
 original blanket nanos refusal was superseded by
 [typed nanos qualification](REPORT-quack-0.11-nanos-2026-10-29.md), and EV-E3 is
 closed for Trino 483 / JDK 25 / parity 0.5.1 by the

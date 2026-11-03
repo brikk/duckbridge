@@ -1,10 +1,24 @@
 # TODO: DuckDB 2.0 readiness
 
-**Status:** DuckDB 2.0.0 is qualified for Trino (2026-10-21) and the matching Doris-master
-API-26/JNI-6 lane (2026-11-01). Both now select released Quack JDBC 0.12.0 with negotiated-v3
-regression checks; see the [October-31 adoption](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md).
+**Status:** DuckDB 2.0.0 intake is qualified for Trino and the matching Doris-master
+API-27/JNI-6 lane (2026-11-02). Both select released Quack JDBC 0.12.0 with negotiated-v3
+regression checks; see the [October-31 adoption](../../trino-duckbridge/dev-docs/archive/REPORT-quack-0.12-release-2026-10-31.md).
 This tracks remaining stable-ABI, storage, dedicated protocol-conformance and advanced-feature work.
-See [the November-1 qualification](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md).
+See [the November-2 qualification](../../doris-duckbridge/dev-docs/QUALIFICATION-api27-2026-11-02.md).
+The categorized [selection backlog](../TODO-backlog.md), not every unchecked preview
+item below, controls new release work.
+
+**Current Trino close-out (2026-11-03):** selected floating/DATE/unit repairs,
+local ATAN/ATAN2/COSH, known-zone sub-day truncation/YEAR and exact fixed-offset
+WITH_TIMEZONE consumers are implemented. Named-zone attachment stays local.
+The user also approved local DATE-input DATE_TRUNC (including common values),
+release with the explicitly reproduced Trino REAL membership / signed-zero
+limitation, and no further attach-conflict investigation for this cut. Source
+types/guards remain intact. The owned audit bundle is being finalized, followed
+by a clean Trino build and verified plugin packaging; see the
+[release preparation receipt](../../trino-duckbridge/dev-docs/REPORT-release-closeout-2026-11-03.md).
+No upstream/native API change, broad new audit or Doris release is selected.
+Earlier counts and pending dispositions below are dated history, not current gates.
 
 Duckbridge is exposed to this release in more places than the embedded JDBC
 version alone:
@@ -21,7 +35,7 @@ version alone:
 
 The maintained lanes pin DuckDB/JDBC `2.0.0.0`, `quack-jdbc` `0.12.0`, parity source
 `b216dc13a9`, and signed `trino_parity` 0.5.1 community binaries for Linux amd64/arm64, macOS arm64
-and Windows amd64. Doris is separately qualified on master `8e10b235cf0`, API 26 / filesystem 7 / JNI 6,
+and Windows amd64. Doris is separately qualified on master `4bc7f426828`, API 27 / filesystem 7 / JNI 6,
 DuckDB 2.0.0 / Quack JDBC 0.12.0. Its API-24 and old API-13 / 1.5.6 / 0.8 artifacts remain rollback;
 this is master-development ASAN correctness evidence, not a published Doris-5.x release rollout.
 
@@ -30,39 +44,58 @@ this is master-development ASAN correctness evidence, not a published Doris-5.x 
 The four requested rounds are complete: exact flat-namespace routing (`e5075bd`),
 temporary boundary guards (`cc899bc`), released Quack 0.12.0 plus storage/trigger
 safety (`10a69d4`), and test-only scan benchmarks (`b224686`). The subsequent
-[tracker reconciliation and arithmetic regression](../trino-duckbridge/dev-docs/REPORT-readiness-reconciliation-2026-10-31.md)
+[tracker reconciliation and arithmetic regression](../../trino-duckbridge/dev-docs/archive/REPORT-readiness-reconciliation-2026-10-31.md)
 passes **920 Trino tests**, zero failures/errors/skips, and assembly verification.
 Doris checks remain green against the unchanged 89-test baseline (test task
 up-to-date). This pass does not widen runtime capabilities or rerun external gates.
 
-The later [POWER audit/fix](../trino-duckbridge/dev-docs/REPORT-power-edge-audit-2026-10-31.md)
+The later [POWER audit/fix](../../trino-duckbridge/dev-docs/archive/REPORT-power-edge-audit-2026-10-31.md)
 finds real finite/NaN wrong-result pushdown and applies the user-approved local
 Trino fallback. **926 Trino tests** and assembly verification pass; all 713 scalar
 pairs and 14 production predicate row sets match Trino after that fix. Doris is
 unchanged and not rerun by this Trino-only task.
 
-November-1 [Doris API-26 re-vendor](../doris-duckbridge/dev-docs/QUALIFICATION-api26-2026-11-01.md)
+November-1 [Doris API-26 re-vendor](../../doris-duckbridge/dev-docs/archive/QUALIFICATION-api26-2026-11-01.md)
 subsequently passes **90 Doris tests**, exact complete JNI packaging, 182 selected
 upstream tests (18 unchanged external-database skips) and full live JDBC/Quack
 smoke. Trino code/dependency pins are unchanged by that re-vendor; the 926-test
 Trino result above remains its own prior qualification, not a new run.
 
+November-1 [four-area pushdown audits](../../trino-duckbridge/dev-docs/archive/REPORT-pushdown-edge-audits-2026-11-01.md)
+subsequently find uncorrected floating domain/expression wrong rows, temporal
+type/unit/zone errors, finite DATE binding/text differences and narrowing CAST
+error-code differences. LIKE matches its bounded corpus. Subsequent user-approved
+[narrow DATE/unit fixes](../../trino-duckbridge/dev-docs/archive/QUALIFICATION-narrow-date-unit-fixes-2026-11-01.md)
+repair finite DATE writes and invalid-unit admission (623 scoped LA-JVM tests
+pass); the remaining common-case pushdown disposition is pending. New audit tests
+still expose the other defects. Earlier green
+module qualifications do not erase these newly demonstrated supported-surface bugs.
+
+November-2 [targeted semantic fixes](../../trino-duckbridge/dev-docs/archive/QUALIFICATION-targeted-pushdown-fixes-2026-11-02.md)
+preserve common floating ranges and DATE text pushdown while repairing NaN domains,
+IEEE comparisons/NULLIF and floating SIGN. User explicitly accepts only the
+documented decimal narrowing-overflow JDBC_ERROR limitation. Full Trino run:
+945 tests, 942 pass, three new audit failures, no errors/skips; assembly succeeds.
+Finite ATAN/ATAN2/COSH, DATE/zoned truncation and WITH_TIMEZONE remain open; a new
+connector-free Trino REAL IN signed-zero inconsistency is preserved as a red
+diagnostic. No broader local fallback is silently applied.
+
 **Open external/environment acceptance issues, separate from those module checks:**
 
 - Published-port HTTP streaming remains intermittently red; the actual host
   networking correction is unidentified/unapplied. See the
-  [HTTP investigation](../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md).
+  [HTTP investigation](../../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md).
 - Autonomous orphan-session reaping remains red against signed core `f96420ed46`.
   Healthy heartbeat renewal and bounded client teardown are qualified, not a
   substitute for server expiry. See the
-  [lifecycle report](../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md).
+  [lifecycle report](../../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md).
 - Native JDBC's TUPLE-list string getter still crashes in the isolated negative
   control. The requested post-round revisit is **done**; the guard and underlying
   type/getter TODO remain open. See the
-  [boundary policy](../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
+  [boundary policy](../../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
 - Doris JNI's ordinary-UTF-8/modified-UTF-8 mismatch still blocks OVERLAY
   qualification. Await the native correction; no local rebuild/bypass is planned.
-  See the [OVERLAY report](../doris-duckbridge/dev-docs/REPORT-overlay-qualification-2026-10-29.md).
+  See the [OVERLAY report](../../doris-duckbridge/dev-docs/REPORT-overlay-qualification-2026-10-29.md).
 
 **Local capability/qualification backlog:** faithful new-type mappings, full nested
 schema addressability, remaining temporal/optimizer/storage-fault coverage and
@@ -204,7 +237,7 @@ below is complete; stable-ABI migration remains separate from that mechanical po
 
 - [x] Qualify the exact-version 2.0 extension implementation; signed 0.5.1 is bundled
   and exercised by connector tests. See the
-  [signed release report](../trino-duckbridge/dev-docs/REPORT-signed-parity-0.5.1-duckdb-2.0.0-2026-10-23.md).
+  [signed release report](../../trino-duckbridge/dev-docs/archive/REPORT-signed-parity-0.5.1-duckdb-2.0.0-2026-10-23.md).
 - [x] Install/load/smoke all ten functions and metadata on the four shipped native
   platforms in that release's required matrix. Wasm is not a JVM connector target;
   this does not claim every extension target or oldest-CPU qualification.
@@ -228,7 +261,7 @@ build.
 
 ## DB20-03: ICU removal and parity semantics
 
-October-30 [Unicode recheck](../trino-duckbridge/dev-docs/REPORT-unicode-version-recheck-2026-10-30.md):
+October-30 [Unicode recheck](../../trino-duckbridge/dev-docs/archive/REPORT-unicode-version-recheck-2026-10-30.md):
 the shipped parity 0.5.1 already includes ICU 76.1 / Unicode 16. EV-E3's old data-version
 gap is closed for Trino 483 / JDK 25: all 1,112,064 scalars pass nine independent JDK
 checks each, with additional native-Trino and embedded/Quack predicate regressions.
@@ -284,7 +317,7 @@ direct `quack-jdbc` and Doris still need their own protocol qualification.
 - [x] Confirm DuckDB 2.0's retained protocol-v1 compatibility through the direct Quack suite.
 - [x] Qualify actual server cancellation/57014, CANCEL-under-partition deadline
   and bounded DISCONNECT with released Quack 0.12.0; see the
-  [release report](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md).
+  [release report](../../trino-duckbridge/dev-docs/archive/REPORT-quack-0.12-release-2026-10-31.md).
 - [ ] Complete TLS and long-running/retained-result qualification. Published-port
   streaming and autonomous lease expiry remain separate red acceptance gates.
 - [x] Verify 65-second healthy idle renewal and twenty physical-session/heartbeat
@@ -346,7 +379,7 @@ result under the old and new parser.
 
 ## DB20-06: storage format v2
 
-October-31 round 3: [storage/write-safety proof and runbook](../trino-duckbridge/dev-docs/REPORT-storage-trigger-safety-2026-10-31.md)
+October-31 round 3: [storage/write-safety proof and runbook](../../trino-duckbridge/dev-docs/archive/REPORT-storage-trigger-safety-2026-10-31.md)
 uses isolated 1.5.6/2.0.0 child JVMs and disposable files. Old-format read-only opens
 are byte-identical; supported writes/checkpoints preserve old readability. New default
 2.0 files reject old readers; explicit compatibility and copy-upgrade/backup rollback
@@ -376,7 +409,7 @@ a production file, and the test suite pins that claim.
 
 ## DB20-07: chunked Java query results
 
-October-31 round 4: [embedded scalar benchmarks](../trino-duckbridge/dev-docs/REPORT-scan-benchmarks-2026-10-31.md)
+October-31 round 4: [embedded scalar benchmarks](../../trino-duckbridge/dev-docs/archive/REPORT-scan-benchmarks-2026-10-31.md)
 compare five public-API modes on six workloads, with two fresh forks/cell and full
 value/NULL/bind/Page checks. Chunked has modest numeric gains; Arrow wins on text;
 streaming is not uniformly faster. **Defaults remain unchanged.** This is a test-only,
@@ -426,7 +459,7 @@ type contract; otherwise retain it as a measured non-choice.
 
 ## DB20-08: `VARIANT`, JSON, and nested transport
 
-October-30 round 2: [temporary boundary policy](../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md)
+October-30 round 2: [temporary boundary policy](../../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md)
 guards unqualified VARIANT/TUPLE/SQLNULL and unsafe composite auto-VARCHAR conversion.
 Native JDBC TUPLE-list getString crashes are retained as isolated child-JVM negative
 controls. Explicit source CASTs are a visible text choice, not typed support. Qualified
@@ -462,7 +495,7 @@ Relevant code: Trino `DuckBridgeClient.toColumnMapping`,
 
 ## DB20-09: nested schemas
 
-October-30 round 1: [namespace qualification](../trino-duckbridge/dev-docs/REPORT-namespace-routing-2026-10-30.md)
+October-30 round 1: [namespace qualification](../../trino-duckbridge/dev-docs/archive/REPORT-namespace-routing-2026-10-30.md)
 proves metadata ancestry loss in both pinned drivers, adds explicit nested-catalog refusal,
 and fixes exact metadata pattern escaping/current-catalog scope. Flat dotted/quoted/keyword
 names are exercised on all four Trino paths and Doris. Full nested addressability remains
@@ -525,7 +558,7 @@ queries/resources under cancellation.
 
 ## DB20-11: triggers and connector writes
 
-October-31 round 3: [triggered-write qualification](../trino-duckbridge/dev-docs/REPORT-storage-trigger-safety-2026-10-31.md)
+October-31 round 3: [triggered-write qualification](../../trino-duckbridge/dev-docs/archive/REPORT-storage-trigger-safety-2026-10-31.md)
 checks exact Trino INSERT/UPDATE/DELETE counts and target/audit rows, native row/statement
 triggers, BEFORE/AFTER timing, transition tables, atomic failures and explicit JDBC rollback.
 Released Quack 0.12.0 fixes the count classification in the driver itself; no consumer
@@ -579,9 +612,9 @@ This is an opportunity, not an upgrade requirement.
 
 ## DB20-13: new SQL and function intake
 
-October-29 follow-up: [JSON INSERT/REMOVE](../doris-duckbridge/dev-docs/REPORT-json-mutations-2026-10-29.md)
+October-29 follow-up: [JSON INSERT/REMOVE](../../doris-duckbridge/dev-docs/archive/REPORT-json-mutations-2026-10-29.md)
 has 735 typed native observations and remains unpushed due to concrete value/NULL/path/error
-differences. [Trino REGEXP_COUNT](../trino-duckbridge/dev-docs/REPORT-regexp-count-qualification-2026-10-29.md)
+differences. [Trino REGEXP_COUNT](../../trino-duckbridge/dev-docs/archive/REPORT-regexp-count-qualification-2026-10-29.md)
 now admits only the proved nonempty consuming-ASCII grammar; 728 typed native comparisons plus
 embedded/Quack plan and row-set checks pass. OVERLAY is a test-only prototype, blocked by the
 reported Doris JNI UTF-8 bug; it is not in the production allowlist.
@@ -590,18 +623,18 @@ reported Doris JNI UTF-8 bug; it is not in the production allowlist.
 of Trino/Doris parity.
 
 October-28 first-pass inventory and 56 typed JSON comparisons are retained in
-[the intake report](../doris-duckbridge/dev-docs/REPORT-duckdb2-function-intake-2026-10-28.md).
+[the intake report](../../doris-duckbridge/dev-docs/archive/REPORT-duckdb2-function-intake-2026-10-28.md).
 It found duplicate-key and invalid-JSON expression differences; no new pushdown was enabled
 by that first pass. Its stale sibling catalog was superseded by the published intake below;
 the broader semantic matrix remains separate from completed catalog refresh work.
 
-Update: [published brikk-sql 0.21.0 intake](../doris-duckbridge/dev-docs/REPORT-published-function-intake-2026-10-28.md)
+Update: [published brikk-sql 0.21.0 intake](../../doris-duckbridge/dev-docs/archive/REPORT-published-function-intake-2026-10-28.md)
 now compares same-policy 1.5.6/2.0 function/type contracts against a live JDBC capture,
 and tests actual generated SQL on exact-pin Doris and Trino 483. Java-17 tooling is isolated
 from plugin runtimes. The refreshed inventory work is complete; generic JSON, OVERLAY and
 regex lowerings still have concrete value/error/type blockers, so no new pushdown is enabled.
 
-October-31 REGEXP_COUNT closure: [producer handoff](../trino-duckbridge/dev-docs/HANDOFF-brikk-sql-regexp-count-2026-10-31.md)
+October-31 REGEXP_COUNT closure: [producer handoff](../../trino-duckbridge/dev-docs/archive/HANDOFF-brikk-sql-regexp-count-2026-10-31.md)
 assigns reusable translation qualification to brikk-sql; DuckBridge's independent
 grammar guard and final pushdown/fallback enforcement are complete for the requested
 scope. Broader grammar and any future producer intake require a separate request;
@@ -644,14 +677,14 @@ changes.
 
 ## DB20-15: boundary type and precision changes
 
-Quack-0.11 update: [qualified nanos paths](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md)
+Quack-0.11 update: [qualified nanos paths](../../trino-duckbridge/dev-docs/archive/REPORT-quack-0.11-nanos-2026-10-29.md)
 now include Trino scalar TIMESTAMP_NS/TIME_NS on all four scan paths, time-nanos lists on all
 four, timestamp-nanos lists on Arrow/Quack, and zoned nanos on Arrow/Quack. Native JDBC's
 legacy timestamp-list getter and lossy historical zoned-nanos text remain refused. Nanos
 predicates remain local; this is not generic date-function pushdown qualification. Doris's
 native six-digit ceiling and packed-TIMETZ refusal are unchanged.
 
-October-29 [boundary capture](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md)
+October-29 [boundary capture](../../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md)
 records actual JDBC/Quack NULL/CTAS/nested/temporal metadata and getters. Its then-pending
 Trino nanos mappings were subsequently qualified by the report above; the blanket
 driver-truncation/host-unsupported claim is obsolete. Doris untyped NULL errors are
@@ -701,17 +734,17 @@ with a named contract, or rejected before scan execution.
 
 ## DB20-16: transactions, retries, and prepared statements
 
-October-30 update: [prepared-schema/catalog retry proof](../trino-duckbridge/dev-docs/REPORT-prepared-catalog-lifecycle-2026-10-30.md)
+October-30 update: [prepared-schema/catalog retry proof](../../trino-duckbridge/dev-docs/archive/REPORT-prepared-catalog-lifecycle-2026-10-30.md)
 passes external DDL/metadata refresh and parameter-error recovery on native/Quack JDBC,
 plus actual held catalog-write conflicts on embedded/direct-Quack/native-wrapper paths.
-[Arrow lifecycle and idle cleanup](../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md)
+[Arrow lifecycle and idle cleanup](../../trino-duckbridge/dev-docs/REPORT-lifecycle-qualification-2026-10-29.md)
 also pass their independent checks, including the fixed lazy-execute cancellation race.
 The earlier CANCEL-deadline deferral was resolved by released Quack JDBC **0.11.1**;
-current [0.12.0 qualification](../trino-duckbridge/dev-docs/REPORT-quack-0.12-release-2026-10-31.md)
+current [0.12.0 qualification](../../trino-duckbridge/dev-docs/archive/REPORT-quack-0.12-release-2026-10-31.md)
 retains strict healthy-CANCEL/57014, partition-CANCEL and bounded DISCONNECT gates,
 plus live Java-17 scanner verification. Autonomous orphan-session reaping remains an
 explicit **red acceptance task** against core f96420ed46. The
-[HTTP investigation](../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md)
+[HTTP investigation](../../trino-duckbridge/dev-docs/REPORT-http-response-truncation-2026-10-30.md)
 reproduces pre-cut truncations and traces receive-window stalls on Docker's published-port
 loopback leg, independently reproduced with raw HTTP and no SQL engine/driver/proxy.
 The mapped-port streaming gate remains intermittently red; direct-bridge controls are
@@ -720,9 +753,9 @@ diagnosis only. No network mitigation, timeout relaxation or underlying fix is c
 Quack JDBC 0.11 passes real server query cancellation (SQLState57014), network-cut streaming
 failure and independently bounded DISCONNECT acceptance tasks. The exact test contracts,
 the corrected compressed-sequence probe diagnosis and the remaining race scope are in
-[the 0.11 report](../trino-duckbridge/dev-docs/REPORT-quack-0.11-nanos-2026-10-29.md).
+[the 0.11 report](../../trino-duckbridge/dev-docs/archive/REPORT-quack-0.11-nanos-2026-10-29.md).
 
-October-29 [pool subgate](../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md):
+October-29 [pool subgate](../../doris-duckbridge/dev-docs/REPORT-boundaries-lifecycle-2026-10-29.md):
 real Quack 0.10/Hikari 6.0 single-slot reuse passes parser/binder/execution-error recovery,
 aborted-transaction rollback on pool return, prepared rebinding and early result close.
 Later reports above qualify specific catalog-conflict, schema-change, Arrow and
@@ -790,7 +823,7 @@ new setting probe while that conservative gate remains in force.
 ### Other arithmetic changes
 
 - [x] Audit bare `power/2` after DuckDB #22753: the
-  [power edge report](../trino-duckbridge/dev-docs/REPORT-power-edge-audit-2026-10-31.md)
+  [power edge report](../../trino-duckbridge/dev-docs/archive/REPORT-power-edge-audit-2026-10-31.md)
   records 713 input pairs and 14 actual production/local predicate plans/row sets.
   It finds eight scalar and eight predicate-shape differences, including finite
   rounding and NaN comparisons. Existing bare emission is **unsafe**, not qualified.
@@ -798,12 +831,21 @@ new setting probe while that conservative gate remains in force.
   and retain native Trino evaluation, including SQL alias `pow`. The raw native
   counterexamples remain diagnostic evidence; production fallback must match exact
   Trino values and predicate row sets. Full native parity/comparison design is separate.
-- [ ] Re-probe decimal literal binding and casts after unbound DECIMAL literals,
-  automatic promotion past BIGINT, float-to-decimal precision fixes, and stricter
-  rejection of non-integral `DECIMAL(p,s)` parameters.
-- [ ] Re-probe pushed `LIKE` with embedded NUL/escape and non-ASCII prefix
-  boundaries. Main fixed NUL escape handling and switched prefix pruning to a
-  UTF-8 successor; a pruning optimization must not change the truth set.
+- [x] Run bounded decimal binding/cast probes: 22 DECIMAL(38,18) values, eight
+  target shapes and 40 predicates. Value/NULL/CTAS round trips match; four plain
+  narrowing CAST overflows change NUMERIC_VALUE_OUT_OF_RANGE to JDBC_ERROR.
+- [x] Decide and apply the selected math/domain, temporal, DATE bind/text and
+  CAST error-contract dispositions. DATE-input truncation and named-zone attachment
+  are local; native Trino REAL membership and the four specific decimal-overflow
+  categories have explicit accepted release limitations. See the current receipt.
+- [x] Apply approved rare-case fixes for finite DATE write spelling/range and
+  temporal argument-type/unit validation. Broader common-case restrictions held
+  for user review, not silently applied; see the narrow-fix qualification.
+- [ ] Extend decimal qualification beyond this corpus to every enabled precision,
+  scale, literal-promotion and remaining rounding/overflow shape.
+- [x] Audit 50 LIKE predicates over 32 strings, including NUL, escapes, Unicode
+  prefixes and the maximum scalar. All returned IDs match native Trino; eight
+  filters actually disappear and 42 remain. No wider grammar is admitted.
 - [ ] Keep regex operator `~` out of any future name-based mapping: its default
   changed from full match to PostgreSQL partial match in DuckDB #23432. Our
   current function-based regex mappings need their own fixtures and are not

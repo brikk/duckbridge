@@ -56,7 +56,7 @@ The complete patched Java/JNI reactor and packaging must still be rebuilt throug
 upstream `build.sh`, with all layout gates and the independent JDBC/Quack live
 smoke. Unchanged SPI/bootstrap/source bytes do not qualify transitive plugins.
 No scanner-only splice, test skip, type downgrade or producer/native bypass is
-permitted. The completed [qualification](QUALIFICATION-api27-2026-11-02.md)
+permitted. The completed [qualification](../QUALIFICATION-api27-2026-11-02.md)
 records module/upstream checks, actual JDBC/Quack runtime identity, full live
 acceptance and volume-preserving teardown. No broader surface is enabled.
 

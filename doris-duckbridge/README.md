@@ -19,68 +19,41 @@ true nested schemas rather than flattening them.
 ## Limitations
 
 - Read-only: no connector write support.
-- Function pushdown uses a [curated allowlist](dev-docs/REPORT-doris-duckdb-function-divergence.md),
+- Function pushdown uses a [curated allowlist](README-pushdown-reference.md),
   not the Trino connector's catalog. JSON mutation and OVERLAY functions are not enabled.
 - Untyped NULL requires a declared source type. Packed TIMETZ is rejected rather than
   exposed as misleading time text; native temporal precision is limited to six digits.
 - Autonomous server orphan-session expiry and published-port streaming have open
-  acceptance issues; see the [categorized backlog](../dev-docs/TODO-backlog.md).
+  acceptance issues. Large results on affected Docker published-port routes may
+  stall/truncate; abandoned server sessions may persist beyond their lease.
 
-## Doris baseline & patches
+## Runtime requirements
 
-This connector requires the exact apache/doris source baseline below and runs on a
-pristine FE plus one patched BE component. Do not substitute an unqualified Doris
-release or mix FE/BE pins. Everything is pinned and scripted:
+Use the exact source pin in [`doris-patches/BASELINE`](../doris-patches/BASELINE):
+a pristine matching FE, the patched matching BE TypeHandler and the complete
+matching Java/JNI/plugin runtime. Do not mix FE/BE pins or scanner jars. This is
+not a plugin for an arbitrary stock Doris release. It is separate from the Trino
+483/484 distribution.
 
-- **Pin**: [`../doris-patches/BASELINE`](../doris-patches/BASELINE) — the exact commit on
-  apache/doris master.
-- **Patches**: [`../doris-patches/`](../doris-patches/) — only the BE `DuckDbTypeHandler`
-  (LARGEINT/ARRAY/VARBINARY-faithful JDBC value coercion). Rationale, apply procedure,
-  and the re-vendor log: [`../doris-patches/PATCHES.md`](../doris-patches/PATCHES.md).
-- **Script**: [`../tools/doris-baseline.sh`](../tools/doris-baseline.sh)
-  - `--check-only` (default) — blobless-clone master at the pin into
-    `~/.cache/duckbridge/doris` (`DORIS_SRC` overrides) and verify all patches apply
-    cleanly (`git apply --3way --check`, fail loud on drift).
-    An existing checkout/worktree must be clean; staged/untracked work is never reset or removed.
-  - `--install-spi-jars` — build `fe-connector-spi` / `fe-thrift`
-    from the **patched pin** into the project-local repo `doris-duckbridge/doris-m2/`.
-    This is the **required bootstrap** before first build.
-  - `--build-fe` / `--build-be` — full patched FE/BE builds (opt-in, long; BE is a
-    multi-hour C++ build; capped at 8 parallel jobs).
+Install the prepared plugin under `plugins/connector/duckbridge/` on the FE. The
+Quack driver must also be available at the allowed local `driver_url` path on
+every relevant BE. The server is operated separately and must run DuckDB 2.0.0.
 
-## Building this module
+## Create a catalog
 
-```sh
-# one-time bootstrap (JDK 17 + thrift version from pinned fe/pom.xml; both probed, fail loud)
-tools/doris-baseline.sh --install-spi-jars
-
-# then, from the repo root
-./gradlew :doris-duckbridge:test :doris-duckbridge:detekt
+```sql
+CREATE CATALOG analytics PROPERTIES (
+    'type' = 'duckbridge',
+    'jdbc_url' = 'jdbc:quack://duckdb-host:9494',
+    'driver_class' = 'com.gizmodata.quack.jdbc.sql.QuackDriver',
+    'driver_url' = 'file:///opt/duckbridge-drivers/quack-jdbc.jar',
+    'password' = '<quack-token>'
+);
 ```
 
-The module resolves `org.apache.doris:*` **only** from `doris-m2/` (never
-`mavenLocal()`), so it can't collide with other projects' Doris snapshot installs. If
-you build before bootstrapping, gradle stops with the exact command to run.
+The driver path must satisfy the configured local-path policy; remote driver URLs
+are not accepted. TIMESTAMPTZ mapping exposes UTC fields in DATETIMEV2(6), not an
+arbitrary per-value-zone type. Use the documented explicit-UTC predicate rules.
 
-Prerequisites: JDK 17 for the Doris/maven side (the gradle toolchain resolves it for
-the module itself), matching `thrift` for `fe-thrift` codegen (`DORIS_THRIFT` env or
-`PATH`; 0.24.0 at the current pin), Docker for the integration environment.
-
-## Test environment
-
-Integration testing uses the compose environment in [`compose/`](compose/):
-
-- `compose/docker-compose.yml` — `doris-fe` (pristine pinned master FE + our plugin), `doris-be`
-   (patched exact-pin BE), and `duckdb-quack` (a DuckDB CLI serving the Quack RPC protocol).
-- `compose/bake-images.sh` — bakes the FE/BE overlay images from the `--build-fe`/`--build-be`
-    output (`~/.cache/duckbridge/doris/output`); uses source-qualified image names, requires an
-    ASAN BE, and refuses to run while the build is still going.
-- `compose/smoke.sh` — install plugin → up → persisted-FE restart → health → catalog/metadata →
-  lazy-JVM transition → exact scan/pushdown/concurrency assertions → `down -v`.
-
-See [`compose/README.md`](compose/README.md) for the three commands and prerequisites. The
-plugin zip (`plugins/connector/duckbridge/` layout) is produced by the `pluginZip` Gradle task.
-
-Internal scan/runtime design: [JDBC scan contract](dev-docs/DESIGN-jdbc-scan-contract.md).
-Qualification evidence and baseline history are kept in [`dev-docs/`](dev-docs/)
-and [`doris-patches/PATCHES.md`](../doris-patches/PATCHES.md), rather than this setup guide.
+Build/bootstrap, patch maintenance and live-cluster fixtures are described in
+[the developer guide](dev-docs/README.md).

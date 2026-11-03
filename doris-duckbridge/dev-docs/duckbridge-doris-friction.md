@@ -12,14 +12,11 @@ Each entry is a pickable upstream ask, ordered by what most reduces the out-of-t
 | **P2** | `COUNT(*)` pushdown on the BE JDBC scanner | `COUNT(*)` is O(rows) not O(1); helps every JDBC connector | No (interim: `SELECT 1`) |
 | **P3** | Per-scan `connectionInitSql` on the BE JDBC pool | Unblocks tz-sensitive predicate pushdown | No (feature gated off; we render zone-explicit) |
 
-Status **dd456ab7a89 (2026-10-10, connector API 13 / JNI API 5):** all three remain open. The FE runs
-patch-free (#66135 removed `SPI_READY_TYPES`); the only carried source patch is BE
-`DuckDbTypeHandler` (P1). Row/JDBC connectors correctly keep storage/nested-pruning capabilities
-off. `branch-4.2` still lacks the connector SPI; master/5.x remains the target.
-The old "Route-J ceiling / no Arrow transport" ask is **resolved** — master ships an ADBC/Arrow
-connector (`fe-connector-adbc` + BE `adbc_driver_registry`); a duckbridge JDBC→ADBC migration is a
-roadmap choice rather than a current blocker (the original probe found JDBC transport was not the
-bottleneck).
+At the current API-27/JNI-6 pin in `doris-patches/BASELINE`, these three seams
+remain the relevant asks. The FE is pristine; the only carried source patch is
+the BE DuckDbTypeHandler. Row/JDBC connectors keep storage/nested-pruning
+capabilities off. A JDBC-to-ADBC migration is an optional architecture choice,
+not a missing prerequisite for the current connector.
 
 Sister docs: [`scan contract`](./DESIGN-jdbc-scan-contract.md) ·
 [`PATCHES.md`](../../doris-patches/PATCHES.md).
