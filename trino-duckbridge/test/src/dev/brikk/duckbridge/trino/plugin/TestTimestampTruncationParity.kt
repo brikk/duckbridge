@@ -2,17 +2,14 @@ package dev.brikk.duckbridge.trino.plugin
 
 import io.trino.Session
 import io.trino.plugin.jdbc.JdbcPlugin
-import io.trino.spi.expression.Constant
 import io.trino.spi.expression.Variable
 import io.trino.spi.type.SqlTimestampWithTimeZone
 import io.trino.spi.type.TimeZoneKey
 import io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MICROS
-import io.trino.spi.type.VarcharType.VARCHAR
 import io.trino.testing.AbstractTestQueryFramework
 import io.trino.testing.DistributedQueryRunner
 import io.trino.testing.QueryRunner
 import io.trino.testing.TestingSession.testSessionBuilder
-import io.airlift.slice.Slices.utf8Slice
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterAll
@@ -136,8 +133,12 @@ class TestTimestampTruncationParity : AbstractTestQueryFramework() {
             Files.writeString(output.resolve("${key(profile, zone, unit)}-$index.plan"), plan)
             assertThat(actual.materializedRows).describedAs("%s %s %s", profile, zone, predicate).isEqualTo(expected.materializedRows)
             assertThat(local.materializedRows).isEqualTo(expected.materializedRows)
-            assertThat(plan).describedAs("Must be a real native predicate: %s", predicate).doesNotContain("filterPredicate")
-            assertThat(plan).contains("make_timestamptz")
+            if (DuckBridgeTrinoTarget.VERSION >= 484 && unit != "millisecond") {
+                assertThat(plan).contains("filterPredicate").doesNotContain("make_timestamptz")
+            } else {
+                assertThat(plan).describedAs("Must be a real native predicate: %s", predicate).doesNotContain("filterPredicate")
+                assertThat(plan).contains("make_timestamptz")
+            }
         }
     }
 
@@ -180,11 +181,22 @@ class TestTimestampTruncationParity : AbstractTestQueryFramework() {
                     val input = "WITH input(id,z) AS (VALUES (BIGINT '1',${TimestampTruncationCases.trinoZoned(minimum, zone)})," +
                         "(BIGINT '2',${TimestampTruncationCases.trinoZoned(maximum, zone)}))"
                     val predicate = "year(date_trunc('hour',z))<1970"
-                    val expected = computeActual(session, "$input SELECT id FROM input WHERE $predicate ORDER BY id")
                     val sql = "SELECT id FROM ts_$profile.audit.packed_edge WHERE $predicate ORDER BY id"
-                    assertThat(computeActual(session, sql).materializedRows).isEqualTo(expected.materializedRows)
+                    if (DuckBridgeTrinoTarget.VERSION >= 484) {
+                        val one = "SELECT z FROM UNNEST(ARRAY[${TimestampTruncationCases.trinoZoned(minimum, zone)}]) input(z)"
+                        TrinoFailureContract.same(queryRunner, session, "SELECT year(date_trunc('hour',z)) FROM ($one)",
+                            "SELECT id FROM ts_$profile.audit.packed_edge WHERE id=1 AND $predicate", millisOverflow = true)
+                        val maxInput = "SELECT z FROM UNNEST(ARRAY[${TimestampTruncationCases.trinoZoned(maximum, zone)}]) input(z)"
+                        val expected = computeActual(session, "SELECT year(date_trunc('hour',z)) FROM ($maxInput)")
+                        val actual = computeActual(session, "SELECT year(date_trunc('hour',z)) FROM ts_$profile.audit.packed_edge WHERE id=2")
+                        assertThat(actual.materializedRows).isEqualTo(expected.materializedRows)
+                    } else {
+                        val expected = computeActual(session, "$input SELECT id FROM input WHERE $predicate ORDER BY id")
+                        assertThat(computeActual(session, sql).materializedRows).isEqualTo(expected.materializedRows)
+                    }
                     val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
-                    assertThat(plan).contains("isfinite(", "make_timestamptz").doesNotContain("filterPredicate")
+                    if (DuckBridgeTrinoTarget.VERSION >= 484) assertThat(plan).contains("filterPredicate").doesNotContain("make_timestamptz")
+                    else assertThat(plan).contains("isfinite(", "make_timestamptz").doesNotContain("filterPredicate")
                 }
                 connection.createStatement().use { statement ->
                     statement.execute("SET TimeZone='UTC'")
@@ -208,12 +220,9 @@ class TestTimestampTruncationParity : AbstractTestQueryFramework() {
                     "(4,make_timestamptz(-2251799813685248001)),(5,make_timestamptz(2251799813685248000)),(6,NULL)")
             }
             try {
-                for (expression in listOf("date_trunc('hour',z)<=z", "year(z)<1970")) {
+                for (expression in listOf("date_trunc('hour',z)<=z", "date_trunc('millisecond',z)<=z", "year(z)<1970")) {
                     for (id in 2..5) {
-                        val sql = "SELECT id FROM ts_$profile.audit.bad WHERE id=$id AND $expression"
-                        val plan = computeActual("EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
-                        assertThat(plan).doesNotContain("filterPredicate").contains("error(")
-                        assertThatThrownBy { computeActual(sql) }.hasMessageContaining("finite Trino-representable input")
+                        assertZonedSourceFailure(profile, id, expression)
                     }
                     assertThat(computeActual("SELECT id FROM ts_$profile.audit.bad WHERE id=1 AND $expression").rowCount).isEqualTo(1)
                     assertThat(computeActual("SELECT id FROM ts_$profile.audit.bad WHERE id=6 AND $expression").rowCount).isEqualTo(0)
@@ -255,7 +264,7 @@ class TestTimestampTruncationParity : AbstractTestQueryFramework() {
                 assertThat(computeActual(session, sql).materializedRows).isEqualTo(expected.materializedRows)
                 val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
                 Files.writeString(output.resolve("$profile-composition-$index.plan"), plan)
-                if (index == 2) {
+                if (index == 2 || DuckBridgeTrinoTarget.VERSION >= 484) {
                     // Trino 483 ConnectorExpressionTranslator.visitCase only translates NULLIF, not generic IF/CASE.
                     assertThat(plan).contains("filterPredicate").doesNotContain("make_timestamptz")
                 } else {
@@ -291,8 +300,19 @@ class TestTimestampTruncationParity : AbstractTestQueryFramework() {
     }
 
     private fun candidate(unit: String): String {
-        val args = listOf(Constant(utf8Slice(unit), VARCHAR), Variable("z", TIMESTAMP_TZ_MICROS))
-        return checkNotNull(DuckBridgeTimestampTruncation.render(listOf("'$unit'", "z"), args))
+        return DuckBridgeTimestampTruncation.diagnosticCandidate("z", unit)
+    }
+
+    private fun assertZonedSourceFailure(profile: String, id: Int, expression: String) {
+        val sql = "SELECT id FROM ts_$profile.audit.bad WHERE id=$id AND $expression"
+        val plan = computeActual("EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
+        if (DuckBridgeTrinoTarget.VERSION >= 484 && expression.startsWith("date_trunc('hour'")) {
+            assertThat(plan).contains("filterPredicate")
+            TrinoFailureContract.same(queryRunner, session(profile, "UTC"), "SELECT z FROM ts_${profile}_local.audit.bad WHERE id=$id", sql)
+        } else {
+            assertThat(plan).doesNotContain("filterPredicate").contains("error(")
+            assertThatThrownBy { computeActual(sql) }.hasMessageContaining("finite Trino-representable input")
+        }
     }
 
     private fun nativeEpochs(connection: Connection, expression: String): List<Pair<Long, Long?>> = nativeLongs(connection, "epoch_us($expression)")

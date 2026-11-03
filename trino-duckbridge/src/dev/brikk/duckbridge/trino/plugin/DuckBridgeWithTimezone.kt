@@ -36,6 +36,7 @@ internal object DuckBridgeWithTimezone {
         (isAttachment(expression) || expression.arguments.any(::contains))
 
     fun render(call: Call, session: ConnectorSession?, variable: (Variable) -> String?): String? {
+        if (DuckBridgeTrinoTarget.VERSION >= 484) return null // 484 validates constructor bounds before consumers.
         if (!DuckBridgeSessionProperties.isPushdownTimestampWithTimeZone(session)) return null
         if (call.type is TimestampWithTimeZoneType) return null // Only a typed consumer may expose the lowered value.
         val arguments = call.arguments.map { lower(it, session, variable) ?: return null }

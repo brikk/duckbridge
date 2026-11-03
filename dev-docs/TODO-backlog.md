@@ -4,14 +4,6 @@ Select an item before starting another workstream. A coverage gap is not a
 confirmed bug, and an optional feature is not a release gate. Do not skip tests,
 weaken types, normalize values or claim arbitrary matching failures as parity.
 
-## Current release preparation
-
-- [ ] **E-CLOSEOUT:** finish independent 483/484 build and artifact verification,
-  reconcile docs, commit the owned work and push. Prepared versions are
-  `483-0.3.0` and `484-0.3.0`. CI and release gates require both supported targets.
-  Publishing tags/releases is not authorized by the commit/push request.
-  [Receipt](../trino-duckbridge/dev-docs/REPORT-release-closeout-2026-11-03.md).
-
 ## Confirmed defects / producer limitations
 
 - [ ] **B-QUACK-LEASE:** autonomous orphan-session expiry is not qualified.
@@ -48,8 +40,10 @@ weaken types, normalize values or claim arbitrary matching failures as parity.
   conflict without the connector, on 2.0.0.0 and 2.0.0.1. The user authorized
   reporting, not an upstream fix. A Java reproducer was added to existing
   [upstream #22277](https://github.com/duckdb/duckdb/issues/22277#issuecomment-6602525930).
-  It is not fixed; do not add retries or exclude ordinary tests. Dual-version
-  release qualification remains blocked. [Evidence](../trino-duckbridge/dev-docs/REPORT-native-jdbc-attach-conflict-2026-11-03.md).
+  The user accepts it as a release limitation while awaiting an upstream fix.
+  No production retry or mitigation is selected. Predicate-parity tests may own
+  a stable native database lifetime; their complete cases/assertions remain.
+  [Evidence](../trino-duckbridge/dev-docs/REPORT-native-jdbc-attach-conflict-2026-11-03.md).
 
 ## Coverage gaps — not demonstrated defects
 

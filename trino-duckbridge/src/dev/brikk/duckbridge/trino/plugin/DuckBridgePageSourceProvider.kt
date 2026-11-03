@@ -45,7 +45,7 @@ import java.util.Optional
  * rendered to a literal SQL string ([DuckBridgeClient.renderSplitQuery] + [QuackParameterInliner])
  * and shipped server-side through `quack_query_by_name` by the [QuackDuckBridgeExecutor]. The
  * inherited pool-exhaustion and "multiple streaming scans" cautions are UNVERIFIED under this
- * connector's single-split-per-query, pushdown model — measure, don't assume. See dev-docs/P3-NOTES.md.
+ * connector's single-split-per-query, pushdown model — measure, don't assume. See dev-docs/archive/P3-NOTES.md.
  */
 class DuckBridgePageSourceProvider
     @Inject

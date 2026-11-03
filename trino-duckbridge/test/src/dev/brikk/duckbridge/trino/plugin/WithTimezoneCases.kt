@@ -46,8 +46,8 @@ internal object WithTimezoneCases {
     private val wideMicros = listOf(Long.MIN_VALUE, Long.MIN_VALUE + 2, -9_223_372_036_854_775_000L,
         9_223_372_036_854_775_000L, Long.MAX_VALUE - 1)
 
-    fun wideInput(): String = wideMicros.joinToString(",", "SELECT id,wall,fraction FROM UNNEST(ARRAY[",
-        "]) WITH ORDINALITY input(wall,fraction,id)") { value ->
+    fun wideInput(onlyId: Int? = null): String = (onlyId?.let { listOf(wideMicros[it - 1]) } ?: wideMicros).joinToString(",",
+        "SELECT id,wall,fraction FROM UNNEST(ARRAY[", "]) WITH ORDINALITY input(wall,fraction,id)") { value ->
         // Trino's literal parser overflows floorSeconds*1e6 at the very bottom, even when the final value fits.
         val wall = if (value < Long.MIN_VALUE + 1_000_000) "(TIMESTAMP '${text(value + 1_000_000)}' - INTERVAL '1' SECOND)"
             else "TIMESTAMP '${text(value)}'"

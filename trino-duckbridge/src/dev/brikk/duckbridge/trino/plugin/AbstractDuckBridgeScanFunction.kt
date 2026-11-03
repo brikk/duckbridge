@@ -59,7 +59,7 @@ import java.util.Optional
  * SQL (the DuckLake `LanceSearchTableHandle` / `applyFilter` / `applyTopN` machinery that did that
  * needs a custom ConnectorMetadata, which the JdbcPlugin frame doesn't expose for PTFs). A `WHERE` /
  * `ORDER BY ... LIMIT` over the PTF is applied by Trino ABOVE the function. `DuckDbWhereClauseTranslator`
- * was therefore NOT ported (see dev-docs/P5-NOTES.md).
+ * was therefore NOT ported (see dev-docs/archive/P5-NOTES.md).
  */
 abstract class AbstractDuckBridgeScanFunction(
     private val transactionManager: JdbcTransactionManager,

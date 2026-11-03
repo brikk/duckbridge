@@ -21,12 +21,17 @@ internal object DuckBridgeTimestampTruncation {
         val value = args[1]
         val unit = ((args[0] as? Constant)?.value as? Slice)?.toStringUtf8()?.lowercase(Locale.ROOT)
         val width = SUBDAY_MICROS[unit]
+        // 484 validates each zoned constructor, including rounded intermediates. Only this unit stays in bounds.
+        if (DuckBridgeTrinoTarget.VERSION >= 484 && value.type is TimestampWithTimeZoneType && unit != "millisecond") return null
         if (value.type !is TimestampWithTimeZoneType || width == null) {
             return "date_trunc(${rendered[0]}, ${rendered[1]})"
         }
         if ((value.type as TimestampWithTimeZoneType).precision > 6 || !hasSessionZone(value, allowTruncation = false)) return null
-        return guarded(rendered[1], subday(rendered[1], width), packedInput = true)
+        return diagnosticCandidate(rendered[1], unit!!)
     }
+
+    /** Arithmetic evidence, not admission: a candidate result may exceed the engine's constructor bounds. */
+    internal fun diagnosticCandidate(value: String, unit: String): String = guarded(value, subday(value, SUBDAY_MICROS.getValue(unit)), packedInput = true)
 
     fun year(value: String, argument: ConnectorExpression): String? {
         if (argument.type !is TimestampWithTimeZoneType) return "year($value)"

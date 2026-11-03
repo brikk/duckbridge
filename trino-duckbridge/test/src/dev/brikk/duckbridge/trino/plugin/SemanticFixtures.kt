@@ -50,7 +50,7 @@ import java.util.Optional
  *     connector would push, which is executed on embedded DuckDB (extension LOADed for ALIAS).
  * The two outcomes must agree: same value, or both errors. No expectation is hand-written, so a
  * wrong belief about Trino cannot make a fixture green (the failure mode behind EV-A1..A5 and EV-E1
- * in dev-docs/TODO-rectify-from-eval.md).
+ * in dev-docs/archive/TODO-rectify-from-eval.md).
  *
  * [NotPushed] fixtures pin the gates: the translator must decline them (they'd be wrong if pushed).
  *
@@ -284,28 +284,9 @@ object SemanticFixtures {
             add(fx("day", 1, "on TIMESTAMP WITH TIME ZONE (session zone)", call("day", BIGINT, tstzVar()), fromClause = fromTstz("2024-03-01 02:00:00")))
             add(fx("quarter", 1, "on DATE", call("quarter", BIGINT, date("2024-02-29"))))
             add(fx("quarter", 1, "Q4", call("quarter", BIGINT, date("2024-12-01"))))
-            add(
-                fx(
-                    "date_trunc", 2, "month on DATE (result-safe)",
-                    call("date_trunc", DATE, str("month"), date("2000-01-15")),
-                    wrapBoth = { "($it = DATE '2000-01-01')" },
-                ),
-            )
-            add(
-                fx(
-                    "date_trunc", 2, "week on DATE (Monday)",
-                    call("date_trunc", DATE, str("week"), date("2024-01-07")),
-                    wrapBoth = { "($it = DATE '2024-01-01')" },
-                ),
-            )
-            add(
-                fx(
-                    "date_trunc", 2, "quarter on DATE",
-                    call("date_trunc", DATE, str("quarter"), date("2024-05-17")),
-                    wrapBoth = { "($it = DATE '2024-04-01')" },
-                ),
-            )
-            add(fx("date_trunc", 2, "year on DATE", call("date_trunc", DATE, str("year"), date("2024-05-17")), wrapBoth = { "($it = DATE '2024-01-01')" }))
+            for (unit in listOf("day", "week", "month", "quarter", "year")) {
+                add(np("date_trunc", 2, "$unit on DATE stays local", call("date_trunc", DATE, str(unit), date("2024-05-17"))))
+            }
             add(
                 fx(
                     "date_trunc", 2, "hour on TIMESTAMP",
@@ -379,7 +360,11 @@ object SemanticFixtures {
             // Naive TIMESTAMP under a DST zone is declined (Trino and ICU disagree on the ambiguous
             // autumn hour); fixed-offset sessions push — pinned in TestDuckBridgeExpressionTranslator.
             add(np("to_unixtime", 1, "naive TIMESTAMP under DST session zone not pushed", call("to_unixtime", DOUBLE, tsVar())))
-            add(fx("to_unixtime", 1, "TIMESTAMP WITH TIME ZONE", call("to_unixtime", DOUBLE, tstzVar()), fromClause = fromTstz("2024-06-01 12:00:00")))
+            if (DuckBridgeTrinoTarget.VERSION >= 484) {
+                add(np("to_unixtime", 1, "484 compensated rounding stays local", call("to_unixtime", DOUBLE, tstzVar())))
+            } else {
+                add(fx("to_unixtime", 1, "TIMESTAMP WITH TIME ZONE", call("to_unixtime", DOUBLE, tstzVar()), fromClause = fromTstz("2024-06-01 12:00:00")))
+            }
             add(
                 fx(
                     "from_unixtime", 1, "→to_timestamp epoch",

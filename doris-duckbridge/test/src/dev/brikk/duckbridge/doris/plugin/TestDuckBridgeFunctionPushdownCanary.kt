@@ -31,7 +31,7 @@ import org.junit.jupiter.api.TestInstance
  *   1. builds the DuckDB SQL the connector WOULD emit for `WHERE f(col) <op> <lit>` (via
  *      [DuckBridgeQueryBuilder]) — proving the rendering,
  *   2. runs it over a real quack/DuckDB server and asserts the **exact rows Doris produced in the
- *      P1 audit** (`dev-docs/REPORT-doris-duckdb-function-divergence.md`) come back.
+ *      P1 audit** (`dev-docs/archive/REPORT-doris-duckdb-function-divergence.md`) come back.
  *
  * The audited expected values are hard-coded here, so a **DuckDB pin bump that changes any of them
  * re-proves (or breaks) alignment** — the drift-canary contract from the plan §Parity oracle 3.

@@ -40,6 +40,7 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
     private lateinit var server: TestingQuackServer
     private val oracles = linkedMapOf<String, Connection>()
     private val output = Path.of("build/with-timezone-parity")
+    private val scalarFields = listOf("year", "month", "day", "quarter", "hour", "minute", "second", "millisecond", "to_unixtime")
     private val base = testSessionBuilder().setCatalog("attach_native").setSchema("audit").setTimeZoneKey(TimeZoneKey.UTC_KEY).build()
 
     override fun createQueryRunner(): QueryRunner {
@@ -116,15 +117,23 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
         Files.createDirectories(output)
         val sql = "SELECT year(with_timezone(wall,'America/New_York')),hour(with_timezone(wall,'America/New_York')) " +
             "FROM UNNEST(ARRAY[TIMESTAMP '294247-01-10 04:00:54.775000']) input(wall)"
-        val host = computeActual(session("native", "UTC"), sql)
-        assertThat(host.rowCount).isEqualTo(1)
-        assertThat(host.materializedRows.single().getField(0)).isEqualTo(294247L)
-        assertThat(host.materializedRows.single().getField(1)).isEqualTo(4L)
-        Files.writeString(output.resolve("finite-native-boundary.txt"), "Trino SQL=$sql\nTrino=$host\n")
+        if (DuckBridgeTrinoTarget.VERSION < 484) {
+            val host = computeActual(session("native", "UTC"), sql)
+            assertThat(host.rowCount).isEqualTo(1)
+            assertThat(host.materializedRows.single().getField(0)).isEqualTo(294247L)
+            assertThat(host.materializedRows.single().getField(1)).isEqualTo(4L)
+            Files.writeString(output.resolve("finite-native-boundary.txt"), "Trino SQL=$sql\nTrino=$host\n")
+        }
         for ((profile, connection) in oracles) {
             connection.createStatement().use { statement ->
                 statement.execute("CREATE TABLE audit.native_edge AS SELECT make_timestamp(9223372036854775000) wall")
                 try {
+                    if (DuckBridgeTrinoTarget.VERSION >= 484) {
+                        val production = "SELECT year(with_timezone(wall,'America/New_York')),hour(with_timezone(wall,'America/New_York')) " +
+                            "FROM attach_$profile.audit.native_edge"
+                        val error = TrinoFailureContract.same(queryRunner, session(profile, "UTC"), sql, production, millisOverflow = true)
+                        Files.writeString(output.resolve("$profile-trino-constructor-boundary.txt"), error)
+                    }
                     val failure = assertThrows(SQLException::class.java) {
                         statement.executeQuery("SELECT epoch_us(${candidate("America/New_York")}) FROM audit.native_edge").use { it.next() }
                     }
@@ -152,8 +161,7 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
                     val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
                     Files.writeString(output.resolve("${key(profile, sessionZone, zone)}-$index.plan"), plan)
                     assertThat(actual.materializedRows).describedAs("%s %s %s", profile, sessionZone, predicate).isEqualTo(expected.materializedRows)
-                    assertThat(plan).doesNotContain("filterPredicate")
-                    assertThat(plan).contains("HUGEINT")
+                    assertConstructorPlan(plan)
                 }
             }
         }
@@ -170,10 +178,9 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
                 val expressions = fields.joinToString(",") { "$it(with_timezone(wall,'$zone'))" }
                 val expected = computeActual(session, "${WithTimezoneCases.input(sessionZone)} SELECT id,$expressions FROM input ORDER BY id")
                     .materializedRows.map { row -> (0 until row.fieldCount).map { canonical(row.getField(it)) } }
-                val emitted = fields.joinToString(",") { emitted(it, zone, sessionZone) }
-                val actual = nativeRows(connection, "SELECT id,$emitted FROM audit.attach ORDER BY id")
+                val actual = fixedScalarActual(profile, zone, sessionZone)
                 Files.write(output.resolve("${key(profile, sessionZone, zone)}-fixed-fields.tsv"),
-                    listOf("id\ttrino_fields_exact_double_bits\tnative_fields_exact_double_bits") + expected.indices.map {
+                    listOf("id\ttrino_fields_exact_double_bits\tproduction_fields_exact_double_bits") + expected.indices.map {
                         listOf(expected[it][0], expected[it].drop(1), actual[it].drop(1)).joinToString("\t")
                     })
                 assertThat(actual)
@@ -195,24 +202,8 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
             val measuredSource = computeActual(session(profile, "UTC"), "$input SELECT $measured FROM input ORDER BY id")
                 .materializedRows.map { (it.getField(0) as java.math.BigDecimal).longValueExact() }
             assertThat(measuredSource).isEqualTo(WithTimezoneCases.wideEpochs())
-            val expected = computeActual(session(profile, "UTC"), "$input SELECT id,$expressions FROM input ORDER BY id")
-                .materializedRows.map { row -> (0 until row.fieldCount).map { canonical(row.getField(it)) } }
-            val emitted = fields.joinToString(",") { emitted(it, zone, "UTC") }
-            val actual = nativeRows(connection, "SELECT id,$emitted FROM audit.wide ORDER BY id")
-            Files.write(output.resolve("$profile-wide-${zone.replace(':', '_')}-fields.tsv"),
-                listOf("id\ttrino_fields_exact_double_bits\tnative_fields_exact_double_bits") + expected.indices.map {
-                    listOf(expected[it][0], expected[it].drop(1), actual[it].drop(1)).joinToString("\t")
-                })
-            assertThat(actual).isEqualTo(expected)
-            val predicate = "hour(with_timezone(wall,'$zone'))=hour(wall) AND " +
-                "with_timezone(wall,'$zone')<=with_timezone(wall,'UTC')"
-            val oracle = computeActual(session(profile, "UTC"), "$input SELECT id FROM input WHERE $predicate ORDER BY id")
-            val sql = "SELECT id FROM attach_$profile.audit.wide WHERE $predicate ORDER BY id"
-            assertThat(computeActual(session(profile, "UTC"), sql).materializedRows).isEqualTo(oracle.materializedRows)
-            val plan = computeActual(session(profile, "UTC"), "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
-            assertThat(plan).doesNotContain("filterPredicate").contains("HUGEINT")
-            Files.createDirectories(output)
-            Files.writeString(output.resolve("$profile-wide-${zone.replace(':', '_')}.plan"), plan)
+            if (DuckBridgeTrinoTarget.VERSION >= 484) verifyPackedConstructorErrors(profile, zone, expressions)
+            else verifyWideNativeConsumers(profile, connection, zone, fields, input)
         }
     }
 
@@ -246,10 +237,21 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
                 assertThat(computeActual(session, sql).materializedRows).isEqualTo(expected.materializedRows)
                 val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
                 Files.writeString(output.resolve("$profile-${sessionZone.replace('/', '_')}-composition-$index.plan"), plan)
-                val local = index == 3 || (index == 2 && sessionZone != "UTC")
+                val local = DuckBridgeTrinoTarget.VERSION >= 484 || index == 3 || (index == 2 && sessionZone != "UTC")
                 if (local) assertThat(plan).contains("filterPredicate")
                 else assertThat(plan).doesNotContain("filterPredicate").contains("HUGEINT")
             }
+        }
+    }
+
+    @Test
+    fun testExactFiniteSourceReads() {
+        for (profile in oracles.keys) {
+            val sql = "SELECT wall FROM attach_${profile}_local.audit.wide ORDER BY id"
+            val actual = computeActual(session(profile, "UTC"), sql)
+            val expected = computeActual(session(profile, "UTC"), "WITH input AS (${WithTimezoneCases.wideInput()}) SELECT wall FROM input ORDER BY id")
+            assertThat(actual.types).containsExactly(TIMESTAMP_MICROS)
+            assertThat(actual.materializedRows).isEqualTo(expected.materializedRows)
         }
     }
 
@@ -266,17 +268,14 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
             try {
                 val session = session(profile, "UTC")
                 for (id in 3..6) {
-                    val expression = if (id <= 4) "hour(with_timezone(wall,'UTC'))>=0" else
-                        "coalesce(with_timezone(wall,'UTC'),z)=with_timezone(wall,'UTC')"
-                    val sql = "SELECT id FROM attach_$profile.audit.bad WHERE id=$id AND $expression"
-                    val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
-                    Files.writeString(output.resolve("$profile-source-guard-$id.plan"), plan)
-                    assertThat(plan).contains("error(").doesNotContain("filterPredicate")
-                    assertThatThrownBy { computeActual(session, sql) }.hasMessageContaining("finite representable source values")
+                    assertAttachSourceFailure(profile, id)
                 }
                 for (id in listOf(1, 7)) {
-                    assertThat(computeActual(session, "SELECT id FROM attach_$profile.audit.bad " +
-                        "WHERE id=$id AND hour(with_timezone(wall,'-14:00'))>=0").rowCount).isEqualTo(1)
+                    val sql = "SELECT id FROM attach_$profile.audit.bad WHERE id=$id AND hour(with_timezone(wall,'-14:00'))>=0"
+                    if (DuckBridgeTrinoTarget.VERSION >= 484 && id == 7) {
+                        val reference = "SELECT id FROM attach_${profile}_local.audit.bad WHERE id=$id AND hour(with_timezone(wall,'-14:00'))>=0"
+                        TrinoFailureContract.same(queryRunner, session, reference, sql, millisOverflow = true)
+                    } else assertThat(computeActual(session, sql).rowCount).isEqualTo(1)
                 }
                 assertThat(computeActual(session, "SELECT id FROM attach_$profile.audit.bad " +
                     "WHERE id=2 AND with_timezone(wall,'UTC') IS NULL").rowCount).isEqualTo(1)
@@ -284,15 +283,89 @@ class TestWithTimezoneParity : AbstractTestQueryFramework() {
         }
     }
 
-    private fun emitted(field: String, zone: String, sessionZone: String): String {
+    private fun emitted(field: String, zone: String, sessionZone: String): String? {
         val session = TestingConnectorSession.builder().setTimeZoneKey(TimeZoneKey.getTimeZoneKey(sessionZone))
             .setPropertyMetadata(DuckBridgeSessionProperties(DuckBridgeConfig()).getSessionProperties()).build()
         val wall = Variable("wall", TIMESTAMP_MICROS)
         val column = JdbcColumnHandle("wall", JdbcTypeHandle(Types.TIMESTAMP, Optional.of("TIMESTAMP"),
             Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), TIMESTAMP_MICROS)
         val value = Call(TIMESTAMP_TZ_MICROS, FunctionName("with_timezone"), listOf(wall, Constant(utf8Slice(zone), VARCHAR)))
-        return checkNotNull(DuckBridgeExpressionTranslator.translate(Call(if (field == "to_unixtime") DOUBLE else BIGINT,
-            FunctionName(field), listOf(value)), mapOf("wall" to column), session, aliasAvailable = false, stringComparisonAllowed = false))
+        return DuckBridgeExpressionTranslator.translate(Call(if (field == "to_unixtime") DOUBLE else BIGINT,
+            FunctionName(field), listOf(value)), mapOf("wall" to column), session, aliasAvailable = false, stringComparisonAllowed = false)
+    }
+
+    private fun scalarRows(session: Session, sql: String): List<List<Any?>> {
+        val result = computeActual(session, sql)
+        assertThat(result.types).containsExactlyElementsOf(List(9) { BIGINT } + DOUBLE)
+        return result.materializedRows.map { row -> (0 until row.fieldCount).map { canonical(row.getField(it)) } }
+    }
+
+    private fun assertConstructorPlan(plan: String) {
+        if (DuckBridgeTrinoTarget.VERSION >= 484) assertThat(plan).contains("filterPredicate").doesNotContain("HUGEINT")
+        else assertThat(plan).doesNotContain("filterPredicate").contains("HUGEINT")
+    }
+
+    private fun fixedScalarActual(profile: String, zone: String, sessionZone: String): List<List<Any?>> {
+        val sqlFields = scalarFields.map { emitted(it, zone, sessionZone) }
+        return if (DuckBridgeTrinoTarget.VERSION >= 484) {
+            sqlFields.forEach { assertThat(it).isNull() }
+            val expressions = scalarFields.joinToString(",") { "$it(with_timezone(wall,'$zone'))" }
+            scalarRows(session(profile, sessionZone), "SELECT id,$expressions FROM attach_$profile.audit.attach ORDER BY id")
+        } else {
+            nativeRows(oracles.getValue(profile), "SELECT id,${sqlFields.joinToString(",") { checkNotNull(it) }} FROM audit.attach ORDER BY id")
+        }
+    }
+
+    private fun assertAttachSourceFailure(profile: String, id: Int) {
+        val session = session(profile, "UTC")
+        val expression = if (id <= 4) "hour(with_timezone(wall,'UTC'))>=0" else
+            "coalesce(with_timezone(wall,'UTC'),z)=with_timezone(wall,'UTC')"
+        val sql = "SELECT id FROM attach_$profile.audit.bad WHERE id=$id AND $expression"
+        val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
+        Files.writeString(output.resolve("$profile-source-guard-$id.plan"), plan)
+        if (DuckBridgeTrinoTarget.VERSION >= 484) {
+            assertThat(plan).contains("filterPredicate")
+            val column = if (id <= 4) "wall" else "z"
+            TrinoFailureContract.same(queryRunner, session, "SELECT $column FROM attach_${profile}_local.audit.bad WHERE id=$id", sql)
+        } else {
+            assertThat(plan).contains("error(").doesNotContain("filterPredicate")
+            assertThatThrownBy { computeActual(session, sql) }.hasMessageContaining("finite representable source values")
+        }
+    }
+
+    private fun verifyPackedConstructorErrors(profile: String, zone: String, fields: String) {
+        val session = session(profile, "UTC")
+        val evidence = mutableListOf("id\tengine_constructor_error")
+        for (id in WithTimezoneCases.wideEpochs().indices.map { it + 1 }) {
+            val reference = "WITH input AS (${WithTimezoneCases.wideInput(id)}) SELECT id,$fields FROM input"
+            val sql = "SELECT id,$fields FROM attach_$profile.audit.wide WHERE id=$id"
+            evidence.add("$id\t${TrinoFailureContract.same(queryRunner, session, reference, sql, millisOverflow = true)}")
+        }
+        Files.write(output.resolve("$profile-wide-${zone.replace(':', '_')}-constructor-errors.tsv"), evidence)
+        val sql = "SELECT id FROM attach_$profile.audit.wide WHERE hour(with_timezone(wall,'$zone'))>=0"
+        val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
+        assertThat(plan).contains("filterPredicate").doesNotContain("HUGEINT")
+        Files.writeString(output.resolve("$profile-wide-${zone.replace(':', '_')}.plan"), plan)
+    }
+
+    private fun verifyWideNativeConsumers(profile: String, connection: Connection, zone: String, fields: List<String>, input: String) {
+        val session = session(profile, "UTC")
+        val expressions = fields.joinToString(",") { "$it(with_timezone(wall,'$zone'))" }
+        val expected = scalarRows(session, "$input SELECT id,$expressions FROM input ORDER BY id")
+        val emitted = fields.joinToString(",") { checkNotNull(emitted(it, zone, "UTC")) }
+        val actual = nativeRows(connection, "SELECT id,$emitted FROM audit.wide ORDER BY id")
+        Files.write(output.resolve("$profile-wide-${zone.replace(':', '_')}-fields.tsv"),
+            listOf("id\ttrino_fields_exact_double_bits\tnative_fields_exact_double_bits") + expected.indices.map {
+                listOf(expected[it][0], expected[it].drop(1), actual[it].drop(1)).joinToString("\t")
+            })
+        assertThat(actual).isEqualTo(expected)
+        val predicate = "hour(with_timezone(wall,'$zone'))=hour(wall) AND with_timezone(wall,'$zone')<=with_timezone(wall,'UTC')"
+        val oracle = computeActual(session, "$input SELECT id FROM input WHERE $predicate ORDER BY id")
+        val sql = "SELECT id FROM attach_$profile.audit.wide WHERE $predicate ORDER BY id"
+        assertThat(computeActual(session, sql).materializedRows).isEqualTo(oracle.materializedRows)
+        val plan = computeActual(session, "EXPLAIN (TYPE DISTRIBUTED) $sql").onlyValue.toString()
+        assertThat(plan).doesNotContain("filterPredicate").contains("HUGEINT")
+        Files.writeString(output.resolve("$profile-wide-${zone.replace(':', '_')}.plan"), plan)
     }
 
     private fun canonical(value: Any?): Any? = when (value) {

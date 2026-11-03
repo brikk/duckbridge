@@ -2,13 +2,20 @@
 
 ## 0.3.0 — Trino 483 and 484
 
-Compatibility: DuckDB **2.0.0**, native JDBC **2.0.0.0**, Quack JDBC **0.12.0**,
+Compatibility: DuckDB **2.0.0**, native JDBC **2.0.0.0**, Quack JDBC **0.12.1**,
 and signed `trino_parity` **0.5.1**. Use matching DuckDB versions on remote servers.
 Use `483-0.3.0` with Trino 483 and `484-0.3.0` with Trino 484. Their Trino libraries
 are ABI-specific. The DuckDB/Quack/parity versions are shared. Doris is a separate
 development connector, not part of these archives.
 
 ### Evaluation behavior
+
+- Quack JDBC finishes unread result streams when closing or superseding them,
+  preserving healthy manual transactions. Closing an unfinished result can wait
+  for the remaining query and transfer; closing FETCH failures are reported.
+
+- Ordinary TIMESTAMP(6) reads preserve finite microseconds through both endpoints
+  and reject infinity/reserved source carriers instead of returning finite values.
 
 - Correct floating-point domain/IEEE comparison handling, floating SIGN and
   explicit unbounded DATE-to-text formatting.
@@ -44,8 +51,10 @@ development connector, not part of these archives.
 - Quack's documented published-port streaming and autonomous orphan-session
   expiry limitations remain unresolved. Direct-bridge successes are not a claim
   that those separate acceptance routes have passed.
-- An intermittent native JDBC attach startup conflict remains cause-unassigned;
-  it was not corrected by the selected semantic changes.
+- Native JDBC 2.0.0.0 can fail during concurrent connection open/close against the
+  same embedded database file. The upstream issue remains open; no automatic retry
+  or connector-side mitigation is included. This affects connection availability,
+  not a substitute type or accepted wrong-row result.
 
 See the [pushdown reference](README-pushdown-reference.md) for precise gates and
 local behavior. Developer build/artifact evidence is maintained separately.

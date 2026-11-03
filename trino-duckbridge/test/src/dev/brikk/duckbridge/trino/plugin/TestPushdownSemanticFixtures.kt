@@ -32,7 +32,7 @@ import java.time.LocalDateTime
 
 /**
  * Cross-engine differential harness for [SemanticFixtures] (EV-B1 in
- * dev-docs/TODO-rectify-from-eval.md).
+ * dev-docs/archive/TODO-rectify-from-eval.md).
  *
  * For each [SemanticFixtures.Fixture] the SAME Trino expression is evaluated on **Trino** (the
  * authoritative expected value — never hand-written) and on **DuckDB** via the SQL the PRODUCTION

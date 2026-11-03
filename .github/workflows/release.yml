@@ -63,9 +63,13 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  compatibility:
+    name: both supported Trino ABIs
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: gated build + plugin release (:trino-duckbridge)
-    needs: parity-extension
+    needs: [parity-extension, compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -88,7 +92,10 @@ jobs:
             echo "::error::could not derive version from branch '${branch}'"
             exit 1
           fi
+          trino="${version%%-*}"
+          case "$trino" in 483|484) ;; *) echo "::error::unsupported Trino ABI $trino"; exit 1 ;; esac
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "trino=${trino}" >> "${GITHUB_OUTPUT}"
           echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
           echo "Release version: ${version} (tag v${version})"
 
@@ -131,14 +138,16 @@ jobs:
       # GATE: same full build + tests as CI, with the release version wired in via -Pversion. If
       # this fails, no later step runs -> no artifact, no release.
       - name: Build + test gate (release version)
-        run: ./gradlew :trino-duckbridge:build --no-daemon -Pversion=${{ steps.version.outputs.version }}
+        run: >-
+          ./gradlew :trino-duckbridge:build --no-daemon
+          -PtrinoVersion=${{ steps.version.outputs.trino }} -Pversion=${{ steps.version.outputs.version }}
 
       # Re-assemble + re-run the assembly guard at the release version so the produced dir is
       # trino-duckbridge-<version>/.
       - name: Assemble + verify plugin
         run: >-
           ./gradlew :trino-duckbridge:pluginAssemble :trino-duckbridge:verifyPluginAssembly
-          --no-daemon -Pversion=${{ steps.version.outputs.version }}
+          --no-daemon -PtrinoVersion=${{ steps.version.outputs.trino }} -Pversion=${{ steps.version.outputs.version }}
 
       # Package BOTH .tar.gz and .zip, each with a .sha256 sidecar, named with the v-prefixed tag.
       # Archives extract to trino-duckbridge-v<version>/ (drop into $TRINO_HOME/plugin/).
@@ -173,6 +182,7 @@ jobs:
           "${{ steps.package.outputs.base }}.zip.sha256"
           --title "${{ steps.version.outputs.tag }}"
           --target "${GITHUB_SHA}"
+          --notes-file trino-duckbridge/RELEASE-NOTES.md
           --generate-notes
 
       - name: Upload test reports

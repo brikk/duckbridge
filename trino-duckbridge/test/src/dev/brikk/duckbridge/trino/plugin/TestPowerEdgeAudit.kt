@@ -88,7 +88,7 @@ class TestPowerEdgeAudit : AbstractTestQueryFramework() {
     private fun controls() {
         assertThat(computeActual("SELECT CAST(42 AS BIGINT)").onlyValue).isEqualTo(42L)
         val trino = Path.of(io.trino.operator.scalar.MathFunctions::class.java.protectionDomain.codeSource.location.toURI())
-        assertThat(trino.fileName.toString()).isEqualTo("trino-main-483.jar")
+        assertThat(trino.fileName.toString()).isEqualTo("trino-main-${System.getProperty("duckbridge.test.trinoVersion", "483")}.jar")
         duck.createStatement().use { statement ->
             statement.executeQuery("SELECT version(),CAST(42 AS BIGINT)").use { rows ->
                 check(rows.next())

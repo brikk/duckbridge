@@ -43,6 +43,7 @@ uses the explicit opt-in and the pinned parity submodule; it is not a release in
 - [Boundary type/carrier guard](REPORT-boundary-type-policy-2026-10-30.md)
 - [Published-port HTTP investigation](REPORT-http-response-truncation-2026-10-30.md)
 - [Server expiry / lifecycle evidence](REPORT-lifecycle-qualification-2026-10-29.md)
+- [Accepted native JDBC connection-lifetime race](REPORT-native-jdbc-attach-conflict-2026-11-03.md)
 - [Current release receipt](REPORT-release-closeout-2026-11-03.md)
 - [REAL membership in 483/484](REPORT-real-membership-483-484-2026-11-03.md)
 - [Project backlog](../../dev-docs/TODO-backlog.md)

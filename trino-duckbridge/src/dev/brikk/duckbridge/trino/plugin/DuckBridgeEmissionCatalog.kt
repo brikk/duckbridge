@@ -50,7 +50,7 @@ internal object DuckBridgeEmissionCatalog {
      *
      * Classification authority: the per-entry fixtures in `SemanticFixtures`, which evaluate the
      * emitted SQL on DuckDB against the value Trino itself computes for the same expression. The
-     * 2026-09-02 evaluation (dev-docs/TODO-rectify-from-eval.md, EV-A*) is why several entries carry
+     * 2026-09-02 evaluation (dev-docs/archive/TODO-rectify-from-eval.md, EV-A*) is why several entries carry
      * gates or rewrites: DuckDB built-ins that LOOK identical frequently aren't at the edges.
      *
      *  - [Emission.Bare]     — same bare built-in name (`length(s)`, `abs(x)`, `year(x)`).
@@ -228,6 +228,7 @@ internal object DuckBridgeEmissionCatalog {
             )
             // WITH_TIMEZONE is an internal typed constructor, not a context-free native value.
             // DuckBridgeWithTimezone lowers qualified fixed-offset consumers; other uses stay local.
+            if (DuckBridgeTrinoTarget.VERSION >= 484) remove(NameArity("to_unixtime", 1))
         }
 
     /**
@@ -242,9 +243,10 @@ internal object DuckBridgeEmissionCatalog {
         // Tier B always accepted (DATE or TIMESTAMP no-TZ); Tier C (TIMESTAMP WITH TIME ZONE)
         // conditionally accepted when the session sets pushdown_timestamp_with_timezone = true.
         val arg0Tier = argTier(0)
-        for (name in listOf("year", "month", "day", "quarter", "hour", "minute", "second", "millisecond", "to_unixtime")) {
+        for (name in listOf("year", "month", "day", "quarter", "hour", "minute", "second", "millisecond")) {
             gates[NameArity(name, 1)] = arg0Tier
         }
+        gates.putAll(epochGates(arg0Tier))
         // Native DuckDB accepts units Trino rejects. Preserve local validation for invalid/dynamic units.
         gates[NameArity("date_trunc", 2)] = dateTruncGate()
         // Tier A — DATE-only.
@@ -318,10 +320,13 @@ internal object DuckBridgeEmissionCatalog {
     }
 
     private val DATE_UNITS: Set<String> = setOf("day", "week", "month", "quarter", "year")
+    private fun epochGates(tier: ArgTypeGate): Map<NameArity, ArgTypeGate> =
+        if (DuckBridgeTrinoTarget.VERSION < 484) mapOf(NameArity("to_unixtime", 1) to tier) else emptyMap()
     private val TIMESTAMP_UNITS: Set<String> = DATE_UNITS + setOf("millisecond", "second", "minute", "hour")
 
     private fun dateTruncGate(): ArgTypeGate = ArgTypeGate { args, session ->
-        argTier(1).accepts(args, session) && validTemporalUnit(args, listOf(1))
+        // Native DATE truncation returns TIMESTAMP and cannot preserve the full DATE range/error contract.
+        args[1].type !is DateType && argTier(1).accepts(args, session) && validTemporalUnit(args, listOf(1))
     }
 
     private fun floatingSign(value: String, type: String): String =

@@ -13,7 +13,7 @@ import java.util.Optional
 
 /**
  * Read-side metadata for duckbridge — the REAL implementation, built on what probe P4 proved about
- * quack-jdbc `DatabaseMetaData` fidelity (`dev-docs/REPORT-quack-jdbc-metadata-probe.md`).
+ * quack-jdbc `DatabaseMetaData` fidelity (`dev-docs/archive/REPORT-quack-jdbc-metadata-probe.md`).
  *
  * Namespace flattening (P4): DuckDB is 3-level (`catalog.schema.table`), Doris catalogs are 2-level
  * (`database.table`). We map **DuckDB schema → Doris database**, scoped to the connection's **main

@@ -23,7 +23,7 @@ package dev.brikk.duckbridge.trino.plugin
  * intersection; `[[:alpha:]]` POSIX brackets; `\v`, `\h`, `\R` classes). The translator therefore
  * pushes a regex only when the pattern is a constant composed purely of constructs verified to have
  * identical meaning in both engines. Anything else stays in Trino. (EV-A8 in
- * dev-docs/TODO-rectify-from-eval.md.)
+ * dev-docs/archive/TODO-rectify-from-eval.md.)
  *
  * Accepted: literals; `.`; `|`; `^`; groups `(` `)` and non-capturing `(?:`; quantifiers `* + ?`,
  * lazy `*? +? ??`, and `{m}` `{m,}` `{m,n}`; escapes of ASCII punctuation; `\d \D \w \W \s \S \b \B

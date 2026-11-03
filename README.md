@@ -38,6 +38,9 @@ see below).
 
 The plugin bundles its JDBC drivers. Driver versions are pinned in
 [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
+Quack JDBC **0.12.1** finishes unread results before closing or superseding them.
+Closing an unfinished result can wait for the remaining execution and transfer;
+closing FETCH failures are reported rather than silently aborting the next operation.
 
 Schema discovery is scoped to the connection's current DuckDB catalog. Flat names containing dots
 are quoted literally; catalogs containing true nested schemas fail explicitly rather than flattening
@@ -114,7 +117,8 @@ Supported scalar mappings on the production JDBC path (embedded and Quack):
 | `HUGEINT` / `UHUGEINT` | unsupported | Their extrema need 39 digits; Trino `DECIMAL` stops at 38. Never truncated or coerced by default. |
 
 `TIMESTAMP_S` / `TIMESTAMP_MS` read as Trino `TIMESTAMP(0)` / `TIMESTAMP(3)`; ordinary DuckDB
-`TIMESTAMP` reads as `TIMESTAMP(6)`. Scalar `TIMESTAMP_NS` and `TIME_NS` map to
+`TIMESTAMP` reads as `TIMESTAMP(6)`, preserving its finite microseconds and rejecting
+infinity/reserved source values. Scalar `TIMESTAMP_NS` and `TIME_NS` map to
 `TIMESTAMP(9)` and `TIME(9)` on the qualified JDBC and Arrow paths. Timestamp/time
 precision 7–9 writes use the corresponding native nanosecond storage types.
 
@@ -275,6 +279,9 @@ through Doris's connector SPI and matching JNI plugin runtime.
 
 ## Important limits
 
+- Embedded native JDBC can fail when connections to the same database file open
+  and close concurrently. This known upstream race is not fixed by the connector
+  or by the Quack JDBC version; there is no automatic retry workaround.
 - DATE-input `date_trunc` and named-zone `with_timezone` calls run in Trino.
   The 483 build can push qualified fixed-offset consumers and zoned sub-day
   truncation. The 484 build keeps WITH_TIMEZONE, TO_UNIXTIME and zoned truncation

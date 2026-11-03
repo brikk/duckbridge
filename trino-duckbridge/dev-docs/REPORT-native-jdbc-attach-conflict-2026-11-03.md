@@ -74,7 +74,10 @@ read-only ATTACH; open #25965 concerns an endless cache loop. Neither was treate
 as the exact thrown-error report.
 
 The connector's native pin remains **2.0.0.0**. No fixture was skipped or seeded
-through a substitute path, and no retry, serialization or instance-pinning
-mitigation was introduced. The failed 484 full-build receipt remains red. A
-passing 483 build does not prove this native race absent on that engine or qualify
-the required dual-version release. See the [release receipt](REPORT-release-closeout-2026-11-03.md).
+through a substitute path, and no production retry, serialization or instance-pinning
+mitigation was introduced. The user subsequently accepted the upstream race as a
+release limitation and approved test-only containment: the predicate-parity fixture
+keeps one native connection alive until its query runner is closed. Every predicate
+case, source value and assertion remains; the standalone race reproducer is retained.
+This is not evidence that the production race is fixed. The original red 484
+full-build receipt remains red. See the [release receipt](REPORT-release-closeout-2026-11-03.md).

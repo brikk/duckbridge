@@ -12,7 +12,7 @@ import java.util.regex.Pattern
  * 100% faithful — it returns the exact DuckDB type spelling for every type — while `DATA_TYPE`
  * (the JDBC int code) collapses ~40% of the surface to `OTHER(1111)`. So the metadata plane reads
  * `TYPE_NAME` and hands it here; we never trust the JDBC code. Full evidence + the decided map:
- * `dev-docs/REPORT-quack-jdbc-metadata-probe.md`.
+ * `dev-docs/archive/REPORT-quack-jdbc-metadata-probe.md`.
  *
  * This mirrors doris-ducklake's `DuckLakeTypeMapping` (which maps from the DuckLake `column_type`
  * *string* to `ConnectorType`), targeting the same `ConnectorType` factories. Where the two differ
@@ -170,7 +170,7 @@ internal object DuckDbToDorisTypeMapper {
         throw DorisConnectorException(
             "duckbridge cannot map column '$columnName' of DuckDB type '$duckdbType' to a Doris " +
                 "type: $why. This type is not supported in v1 — see " +
-                "dev-docs/REPORT-quack-jdbc-metadata-probe.md. (Failing loud rather than returning " +
+                "dev-docs/archive/REPORT-quack-jdbc-metadata-probe.md. (Failing loud rather than returning " +
                 "wrong data.)",
         )
 }

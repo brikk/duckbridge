@@ -7,12 +7,23 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
-// Default dev version. The release flow (.github/workflows/release.yml) overrides this with
-// -Pversion=<derived-from-branch> (e.g. release-483-0.1.0 -> 483-0.1.0), producing the release
-// artifact trino-duckbridge-483-0.1.0. A plain script assignment clobbers -Pversion (it runs after
-// Gradle applies project properties), so honor an explicit -Pversion when present, else the dev
-// default. Version scheme: <trino-major>-<semver> so the Trino ABI is legible in the artifact name.
-version = (findProperty("version") as? String)?.takeIf { it != "unspecified" } ?: "483-0.1.0-SNAPSHOT"
+val targetTrino = providers.gradleProperty("trinoVersion").orElse(libs.versions.trino).get()
+check(targetTrino in setOf("483", "484")) { "Supported Trino build targets are 483 and 484; got $targetTrino" }
+version = (findProperty("version") as? String)?.takeIf { it != "unspecified" } ?: "$targetTrino-0.3.0-SNAPSHOT"
+check(version.toString().startsWith("$targetTrino-")) { "Artifact version $version must identify the Trino $targetTrino ABI" }
+
+val targetSource = layout.buildDirectory.dir("generated/sources/trino-target")
+val generateTrinoTarget by tasks.registering {
+    inputs.property("trinoVersion", targetTrino)
+    outputs.dir(targetSource)
+    doLast {
+        val source = targetSource.get().file("dev/brikk/duckbridge/trino/plugin/DuckBridgeTrinoTarget.kt").asFile
+        source.parentFile.mkdirs()
+        source.writeText("package dev.brikk.duckbridge.trino.plugin\n\ninternal object DuckBridgeTrinoTarget { const val VERSION = $targetTrino }\n")
+    }
+}
+kotlin.sourceSets.named("main") { kotlin.srcDir(targetSource) }
+tasks.named("compileKotlin") { dependsOn(generateTrinoTarget) }
 
 // Idiomatic-Kotlin quality gate (detekt 2.0 runs on the JDK 25 daemon; jvmTarget is read
 // from the Kotlin compilerOptions). Custom src/test layout, so point detekt at it explicitly.
@@ -37,8 +48,8 @@ val legacyStorageDriver by configurations.creating {
 dependencies {
     add(legacyStorageDriver.name, "org.duckdb:duckdb_jdbc:1.5.6.0")
     // BOM import — controls versions for io.trino, io.airlift, jackson, opentelemetry, etc.
-    implementation(platform(libs.trino.bom))
-    testImplementation(platform(libs.trino.bom))
+    implementation(platform("io.trino:trino-root:$targetTrino"))
+    testImplementation(platform("io.trino:trino-root:$targetTrino"))
     implementation(enforcedPlatform(libs.kotlin.bom)) {
         exclude(group = "org.junit")
         exclude(group = "org.junit.jupiter")
@@ -46,8 +57,8 @@ dependencies {
 
     // Core implementation dependencies (versions from BOM)
     implementation("com.google.guava:guava")
-    implementation("com.google.inject:guice") {
-        artifact {
+    implementation(if (targetTrino == "483") "com.google.inject:guice" else "io.airlift:guice") {
+        if (targetTrino == "483") artifact {
             classifier = "classes"
         }
     }
@@ -67,7 +78,7 @@ dependencies {
     implementation(libs.quack.jdbc)
     // Arrow — the experimental execution-engine data plane decodes DuckDB's arrowExportStream
     // batches to Trino Pages via DuckBridgeArrowToPageConverter and feeds Lance/Vortex functions.
-    // Versions come solely from the Trino 483 BOM (currently Arrow 19.0.0). Do not add a second,
+    // Versions come solely from the selected Trino BOM. Do not add a second,
     // losing Arrow BOM: the former 18.3.0 pin was silently conflict-resolved to 19.0.0 (EV-D1).
     implementation(libs.arrow.vector)
     implementation(libs.arrow.memory.core)
@@ -301,6 +312,7 @@ tasks.named("processResources") {
 }
 
 tasks.test {
+    systemProperty("duckbridge.test.trinoVersion", targetTrino)
     systemProperty("duckbridge.test.legacyJdbcJar", legacyStorageDriver.singleFile.absolutePath)
     // Child-JVM raw-driver crash controls must load the exact same resolved test artifacts.
     systemProperty("duckbridge.test.classpath", sourceSets.test.get().runtimeClasspath.asPath)
@@ -337,10 +349,11 @@ val pluginAssemble by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("trino-plugin/trino-duckbridge-$version"))
     from(tasks.jar)
     from(configurations.runtimeClasspath)
+    from("RELEASE-NOTES.md", "README-pushdown-reference.md")
 }
 
 // Guard the assembled plugin dir: no engine-provided (parent-first SPI) jar may be bundled, the
-// core runtime jars must be present, exactly one guice jar (the `classes` classifier), and the
+// core runtime jars must be present, exactly one matching Guice runtime, and the
 // connector jar must carry its ServiceLoader registration (a real Trino server discovers the plugin
 // via META-INF/services — the programmatic installPlugin used by tests bypasses it, so a missing
 // registration is invisible to every suite). Mirrors trino-doris-connector's verifyPluginAssembly.
@@ -348,8 +361,12 @@ val verifyPluginAssembly by tasks.registering {
     dependsOn(pluginAssemble)
     val pluginDir = layout.buildDirectory.dir("trino-plugin/trino-duckbridge-$version")
     doLast {
-        val jars = pluginDir.get().asFile.listFiles().orEmpty().map { it.name }.sorted()
+        val files = pluginDir.get().asFile.listFiles().orEmpty().map { it.name }.sorted()
+        val jars = files.filter { it.endsWith(".jar") }
         check(jars.isNotEmpty()) { "plugin dir is empty: ${pluginDir.get()}" }
+        check(files.containsAll(listOf("RELEASE-NOTES.md", "README-pushdown-reference.md"))) {
+            "plugin package must include release limitations and the pushdown reference"
+        }
 
         val forbiddenModules = listOf(
             "trino-spi",
@@ -374,6 +391,12 @@ val verifyPluginAssembly by tasks.registering {
         val missing = requiredPrefixes.filter { prefix -> jars.none { it.startsWith(prefix) } }
         check(missing.isEmpty()) { "expected bundled jars missing (prefixes): $missing; got $jars" }
 
+        for (module in listOf("trino-base-jdbc", "trino-plugin-toolkit")) {
+            check(jars.filter { it.startsWith("$module-") } == listOf("$module-$targetTrino.jar")) {
+                "plugin must contain exactly the Trino $targetTrino $module runtime"
+            }
+        }
+
         for (prefix in listOf("duckdb_jdbc-", "quack-jdbc-")) {
             val expected = configurations.runtimeClasspath.get().files
                 .single { it.name.startsWith(prefix) }.name
@@ -384,8 +407,9 @@ val verifyPluginAssembly by tasks.registering {
         }
 
         val guiceJars = jars.filter { it.startsWith("guice-") }
-        check(guiceJars.size == 1 && guiceJars.single().endsWith("-classes.jar")) {
-            "expected exactly one guice jar with the 'classes' classifier, got: $guiceJars"
+        val correctGuiceForm = guiceJars.singleOrNull()?.let { it.endsWith("-classes.jar") == (targetTrino == "483") } ?: false
+        check(correctGuiceForm) {
+            "expected one matching Guice runtime (Google classes for 483, Airlift main for 484), got: $guiceJars"
         }
 
         val connectorJar = pluginDir.get().asFile.listFiles().orEmpty()

@@ -12,7 +12,7 @@ import java.text.Normalizer
 class TestUnicodeVersionParity {
     @Test
     fun testAllUnicodeScalarsAgainstTheCurrentJdkProfile() {
-        assertThat(Runtime.version().feature()).describedAs("Qualified Trino 483 Unicode profile is JDK 25").isEqualTo(25)
+        assertThat(Runtime.version().feature()).describedAs("Supported Trino Unicode profile is JDK 25").isEqualTo(25)
         val extension = checkNotNull(TrinoParityExtensionResolver.resolveBundledExtension())
         val hash = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(Path.of(extension.path)))
             .joinToString("") { "%02x".format(it) }

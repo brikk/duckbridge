@@ -531,7 +531,7 @@ class TestDuckBridgeExpressionTranslator {
     }
 
     @Test
-    fun testDateTruncOnDatePushes() {
+    fun testDateTruncOnDateStaysLocal() {
         val expression: ConnectorExpression =
             call(
                 StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME,
@@ -540,7 +540,7 @@ class TestDuckBridgeExpressionTranslator {
                 Variable("d", DATE),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(date_trunc('month', \"d\") = \"d\")")
+            .isEmpty()
     }
 
     @Test
@@ -570,8 +570,9 @@ class TestDuckBridgeExpressionTranslator {
         // it as UTC, so the translator re-anchors via timezone(<session zone>, ts). Without a session
         // there is no zone → stays in Trino.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly(DuckBridgeFloatingExpressions.comparison("CAST(epoch(timezone('UTC', \"ts\")) AS DOUBLE)", "=", "0.0"))
+        val expected = if (DuckBridgeTrinoTarget.VERSION >= 484) emptyArray() else
+            arrayOf(DuckBridgeFloatingExpressions.comparison("CAST(epoch(timezone('UTC', \"ts\")) AS DOUBLE)", "=", "0.0"))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true))).containsExactly(*expected)
     }
 
     // --- TIMESTAMP WITH TIME ZONE gated by session property -----------------
@@ -611,8 +612,9 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("to_unixtime"), DOUBLE, Variable("tstz", TIMESTAMP_TZ_MILLIS)),
                 Constant(0.0, DOUBLE),
             )
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
-            .containsExactly(DuckBridgeFloatingExpressions.comparison("CAST(epoch(\"tstz\") AS DOUBLE)", "=", "0.0"))
+        val expected = if (DuckBridgeTrinoTarget.VERSION >= 484) emptyArray() else
+            arrayOf(DuckBridgeFloatingExpressions.comparison("CAST(epoch(\"tstz\") AS DOUBLE)", "=", "0.0"))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true))).containsExactly(*expected)
     }
 
     @Test

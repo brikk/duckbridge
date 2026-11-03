@@ -50,7 +50,6 @@ import io.trino.plugin.jdbc.StandardColumnMappings.realWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.shortDecimalWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.smallintColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.smallintWriteFunction
-import io.trino.plugin.jdbc.StandardColumnMappings.timestampColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.timestampWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.tinyintColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.tinyintWriteFunction
@@ -78,7 +77,6 @@ import io.trino.spi.type.IntegerType.INTEGER
 import io.trino.spi.type.RealType.REAL
 import io.trino.spi.type.SmallintType.SMALLINT
 import io.trino.spi.type.TimestampType
-import io.trino.spi.type.TimestampType.TIMESTAMP_MICROS
 import io.trino.spi.type.TinyintType.TINYINT
 import io.trino.spi.type.Type
 import io.trino.spi.type.TimestampWithTimeZoneType
@@ -379,7 +377,7 @@ class DuckBridgeClient
                     )
                 Types.TIMESTAMP ->
                     // DuckDB TIMESTAMP is microsecond precision.
-                    return Optional.of(timestampColumnMapping(TIMESTAMP_MICROS))
+                    return Optional.of(DuckBridgeTimestampColumnMapping.mapping())
                 Types.ARRAY, Types.OTHER -> {
                     // DuckDB list/array (e.g. lance embedding FLOAT[3], VARCHAR[] tags, DECIMAL(5,2)[]).
                     // The element type is only in the type name; the array mapping parses it. Result-set

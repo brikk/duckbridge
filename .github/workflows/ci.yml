@@ -15,6 +15,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -22,9 +23,13 @@ concurrency:
 
 jobs:
   build:
-    name: build + tests (:trino-duckbridge)
+    name: Trino ${{ matrix.trino }} build + tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        trino: ['483', '484']
 
     steps:
       - name: Checkout
@@ -55,18 +60,21 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Check documentation links and fences
+        run: python3 tools/check-docs.py
+
       # Fetch the signed community parity binaries matching the pinned DuckDB.
       - name: Fetch trino_parity extension
         run: ./.github/scripts/fetch-parity-extension.sh
 
       - name: Build (compile + detekt + tests + plugin assembly + verify)
-        run: ./gradlew :trino-duckbridge:build --no-daemon
+        run: ./gradlew :trino-duckbridge:build --no-daemon -PtrinoVersion=${{ matrix.trino }}
 
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: test-reports-trino-${{ matrix.trino }}
           path: |
             trino-duckbridge/build/reports/tests/
             trino-duckbridge/build/test-results/

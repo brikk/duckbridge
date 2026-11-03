@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReference
  *     predictable path shared with other users of the host: this file is native code the DuckDB
  *     in the Trino worker will `dlopen`, so a world-writable `/tmp/trino-duckbridge/...` that
  *     another local user could pre-create or swap (TOCTOU) is not acceptable (EV-C4 in
- *     dev-docs/TODO-rectify-from-eval.md).
+ *     dev-docs/archive/TODO-rectify-from-eval.md).
  *  3. If neither is available, return null — the caller decides how to fail.
  *
  * Signature: DuckDB 2 only trusts a community signature when the extension is loaded from an

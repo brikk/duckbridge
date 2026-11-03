@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.TestInstance
+import java.sql.DriverManager
 
 /**
  * End-to-end pushed-vs-local row-set parity (EV-B2).
@@ -46,6 +47,8 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
 
     override fun createQueryRunner(): QueryRunner {
         val connectionUrl = DuckBridgeQueryRunner.freshDatabaseUrl()
+        // Predicate parity owns a stable database lifetime, not the native cache's open/close race.
+        closeAfterClass(DriverManager.getConnection(connectionUrl, DuckBridgeQueryRunner.duckJdbcProperties()))
         val session =
             testSessionBuilder()
                 .setCatalog(PUSHED)
@@ -188,6 +191,7 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
             Case(
                 "to_unixtime over explicit fixed zone",
                 "to_unixtime(with_timezone(ts, 'UTC')) < 100000000",
+                pushes = DuckBridgeTrinoTarget.VERSION < 484,
             ),
             Case("three-valued nested OR", "length(s) = 5 OR mod(n, 3) = 0"),
             Case("partial-risk AND, both pushable", "upper(s) = 'ALICE' AND year(d) = 2020"),

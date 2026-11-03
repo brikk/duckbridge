@@ -39,7 +39,7 @@ class TestTimestampTruncationRendering {
         for (value in expressions) for (unit in TimestampTruncationCases.units) {
             for (aliases in listOf(false, true)) for (strings in listOf(false, true)) {
                 val sql = DuckBridgeExpressionTranslator.translate(trunc(unit, value), assignments, session(true), aliases, strings)
-                assertThat(sql).contains("make_timestamptz", "date_part('timezone'", "epoch_us", "error(")
+                assertSubdayAdmission(sql, unit)
             }
         }
     }
@@ -52,9 +52,13 @@ class TestTimestampTruncationRendering {
             assertThat(DuckBridgeExpressionTranslator.translate(trunc("hour", value), assignments, session(true))).isNull()
         }
         val year = Call(io.trino.spi.type.BigintType.BIGINT, FunctionName("year"), listOf(trunc("hour", z)))
-        assertThat(DuckBridgeExpressionTranslator.translate(year, assignments, session(true))).contains("era(", "make_timestamptz")
+        val yearSql = DuckBridgeExpressionTranslator.translate(year, assignments, session(true))
+        if (DuckBridgeTrinoTarget.VERSION >= 484) assertThat(yearSql).isNull()
+        else assertThat(yearSql).contains("era(", "make_timestamptz")
         val fixedYear = Call(io.trino.spi.type.BigintType.BIGINT, FunctionName("year"), listOf(attached))
-        assertThat(DuckBridgeExpressionTranslator.translate(fixedYear, assignments, session(true))).contains("HUGEINT", "DATE '1970-01-01'")
+        val fixedSql = DuckBridgeExpressionTranslator.translate(fixedYear, assignments, session(true))
+        if (DuckBridgeTrinoTarget.VERSION >= 484) assertThat(fixedSql).isNull()
+        else assertThat(fixedSql).contains("HUGEINT", "DATE '1970-01-01'")
     }
 
     @Test
@@ -66,12 +70,23 @@ class TestTimestampTruncationRendering {
         }
         val high = Variable("z", TimestampWithTimeZoneType.createTimestampWithTimeZoneType(9))
         assertThat(DuckBridgeExpressionTranslator.translate(trunc("hour", high), assignments, session(true))).isNull()
-        assertThat(DuckBridgeExpressionTranslator.translate(trunc("HOUR", z), assignments, session(true))).contains("3600000000")
-        assertThat(DuckBridgeExpressionTranslator.translate(trunc("day", z), assignments, session(true))).isEqualTo("date_trunc('day', \"z\")")
+        val hourSql = DuckBridgeExpressionTranslator.translate(trunc("HOUR", z), assignments, session(true))
+        val daySql = DuckBridgeExpressionTranslator.translate(trunc("day", z), assignments, session(true))
+        if (DuckBridgeTrinoTarget.VERSION >= 484) {
+            assertThat(hourSql).isNull()
+            assertThat(daySql).isNull()
+        } else {
+            assertThat(hourSql).contains("3600000000")
+            assertThat(daySql).isEqualTo("date_trunc('day', \"z\")")
+        }
         assertThat(DuckBridgeExpressionTranslator.translate(trunc("hour", wall), assignments, session(true))).isEqualTo("date_trunc('hour', \"wall\")")
     }
 
     private fun trunc(unit: String, value: ConnectorExpression): Call = Call(value.type, FunctionName("date_trunc"), listOf(text(unit), value))
+    private fun assertSubdayAdmission(sql: String?, unit: String) {
+        if (DuckBridgeTrinoTarget.VERSION >= 484 && unit != "millisecond") assertThat(sql).isNull()
+        else assertThat(sql).contains("make_timestamptz", "date_part('timezone'", "epoch_us", "error(")
+    }
     private fun text(value: String): Constant = Constant(utf8Slice(value), VARCHAR)
     private fun session(enabled: Boolean) = TestingConnectorSession.builder()
         .setPropertyMetadata(DuckBridgeSessionProperties(DuckBridgeConfig()).getSessionProperties())

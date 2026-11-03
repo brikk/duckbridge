@@ -30,7 +30,7 @@ import java.time.LocalDateTime
  * composes ([DuckBridgeQueryBuilder]) against a DuckDB/quack server started in BOTH UTC and an
  * exotic non-UTC zone (`America/Los_Angeles`), and asserts identical rows. If the rendering ever
  * regressed to the zone-dependent naive-literal-vs-TIMESTAMPTZ form, the LA run would return
- * different rows and this fails. (The report `dev-docs/REPORT-doris-timezone-probe.md` records the
+ * different rows and this fails. (The report `dev-docs/archive/REPORT-doris-timezone-probe.md` records the
  * live evidence this test guards.)
  *
  * Requires Docker. Two containers (one per zone) — small, torn down at test end.

@@ -24,7 +24,7 @@ import java.time.temporal.ChronoField
  * Scope = the **domain floor** (comparisons `= <> < <= > >=`, `IN`/`NOT IN`, `IS [NOT] NULL`, boolean
  * `AND`/`OR`/`NOT`) **plus the P1-audited IDENTICAL scalar functions** — an explicit allowlist
  * ([FUNCTION_ALLOWLIST]) of `ConnectorFunctionCall` shapes the Doris↔DuckDB divergence audit proved
- * byte-exact (`dev-docs/REPORT-doris-duckdb-function-divergence.md`). Everything else
+ * byte-exact (`dev-docs/archive/REPORT-doris-duckdb-function-divergence.md`). Everything else
  * (`LIKE`/`REGEXP`/`BETWEEN`/arithmetic, and every UN-audited or DIVERGENT function) is DROPPED and
  * re-evaluated by Doris above the scan.
  *
@@ -45,7 +45,7 @@ import java.time.temporal.ChronoField
  * Identifiers are double-quoted with `"` → `""` escaping (DuckDB); string literals single-quoted
  * with `'` → `''` escaping. Only pushed onto SCALAR columns (never ARRAY/STRUCT/MAP/nested types).
  *
- * **Timezone safety (probe P3/P6, `dev-docs/REPORT-doris-timezone-probe.md`).** A datetime literal
+ * **Timezone safety (probe P3/P6, `dev-docs/archive/REPORT-doris-timezone-probe.md`).** A datetime literal
  * compared against a column is rendered by the column's DuckDB type: a naive `TIMESTAMP`/`DATE`
  * column gets a naive literal (wall-clock, zone-independent — proven), a `TIMESTAMPTZ` column gets
  * an explicit-UTC literal (`TIMESTAMPTZ '…+00'` — proven zone-independent; P4 reads the UTC instant
@@ -402,7 +402,7 @@ internal object DuckBridgeQueryBuilder {
     /**
      * Doris function-name (lowercased, as the FE emits it — verified via `EXPLAIN VERBOSE`
      * `PREDICATES:`) → DuckDB rendering. Every entry cites its verdict in
-     * `dev-docs/REPORT-doris-duckdb-function-divergence.md`. IDENTICAL, integer/string/boolean
+     * `dev-docs/archive/REPORT-doris-duckdb-function-divergence.md`. IDENTICAL, integer/string/boolean
      * returns only (float-returning functions excluded — print-precision-fragile in `=`).
      */
     private val FUNCTION_ALLOWLIST: Map<String, AllowedFunction> = buildMap {

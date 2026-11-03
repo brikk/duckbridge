@@ -32,7 +32,7 @@ import java.sql.Types
  *
  * This test does not ASSERT a mapping (that's the metadata plane's job / the integration test);
  * it fails only if the probe itself can't run (server/driver broken). The verdicts it prints are
- * transcribed into dev-docs/REPORT-quack-jdbc-metadata-probe.md.
+ * transcribed into dev-docs/archive/REPORT-quack-jdbc-metadata-probe.md.
  *
  * Requires Docker.
  */
@@ -159,7 +159,7 @@ class TestQuackJdbcMetadataProbe {
         // Persist the transcript next to the report so the human-written verdicts can be checked
         // against the raw evidence (best-effort; test dir may be read-only in some CI).
         runCatching {
-            val target = java.nio.file.Path.of("dev-docs/REPORT-quack-jdbc-metadata-probe.transcript.txt")
+            val target = java.nio.file.Path.of("build/reports/quack-jdbc-metadata-probe.transcript.txt")
             java.nio.file.Files.createDirectories(target.parent)
             java.nio.file.Files.writeString(target, sb.toString())
             println("[probe] transcript written to ${target.toAbsolutePath()}")

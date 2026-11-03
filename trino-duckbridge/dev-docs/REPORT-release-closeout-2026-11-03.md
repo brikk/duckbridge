@@ -14,9 +14,11 @@ owned work, with these explicit dispositions:
    Retain the independent reproducer and verify each actual connector execution
    path honestly; do not skip membership, normalize signs or invent a production
    workaround. An upstream engine fix/upgrade is not selected.
-3. **Ignore the intermittent native JDBC attach issue for this close-out.** Its
-   cause stays unassigned and no fix is claimed. No investigation, retry or test
-   exclusion is introduced. A red build is still a red build.
+3. Initially leave the intermittent native JDBC attach issue alone. Later user
+   direction authorizes its narrow reproduction/reporting, accepts the upstream
+   race as a release limitation, and approves test-only predicate-fixture lifetime
+   containment. No native fix, production workaround, retry or test exclusion is
+   selected. Original red builds remain red.
 4. Reconcile the owned audit files/trackers and prepare a clean, verifiable Trino
    artifact. This is not authorization to push, tag, publish or trigger the
    release-branch workflow. No Doris native/runtime/API/feature intake is included.
@@ -106,7 +108,7 @@ JNI6 JDBC READY/zero failed plugins are verified. The owned fresh compose projec
 `duckbridge-release-quack0121` was stopped without deleting volumes. Peer stacks,
 older runtime images/volumes and the native source/build were not changed. These
 are Linux-amd64 ASAN correctness observations, not production/performance claims.
-All 23 Python checks pass. Final dual-ABI Trino builds/packages remain pending.
+All 23 Python checks pass. Final dual-ABI Trino results are recorded below.
 Evidence is under `build/release-closeout/quack-0.12.1/`. This does not establish
 a fix for orphan reaping, published-port HTTP, native carriers or JNI UTF-8.
 
@@ -138,9 +140,9 @@ red preliminary run, not a qualified build. Its cause is not reassigned to Quack
 and the user-directed no-investigation/no-retry/no-exclusion disposition remains.
 The independently required final builds use the newly selected 0.12.1 driver.
 
-The final 483/0.12.1 clean LA-JVM build passes all 977 cases, with no failures,
+The pre-containment 483/0.12.1 clean LA-JVM build passes all 977 cases, with no failures,
 errors or skips; assembly has 87 JARs. Its ZIP/tar.gz and checksum/resource
-validation are retained. The 484/0.12.1 run remains red: 947 cases with one
+validation are retained. The corresponding pre-containment 484/0.12.1 run remains red: 947 cases with one
 row-set-class initialization failure from the same native attach conflict. Its
 89-JAR assembly and strict cancel/partition-cancel/disconnect tasks pass, but do
 not qualify the failed build.
@@ -152,12 +154,92 @@ controls pass. An Opus-5.5-edited follow-up was posted to existing upstream
 [#22277](https://github.com/duckdb/duckdb/issues/22277#issuecomment-6602525930),
 not a duplicate issue. [Reproducer, evidence and scope](REPORT-native-jdbc-attach-conflict-2026-11-03.md).
 No native pin, upstream source, test exclusion or connector workaround changed.
-Dual-version release qualification therefore remains blocked.
+Dual-version release qualification remained blocked at that point.
 
-Targeted UTC/LA checks, final clean full build, plugin assembly verification and
-archive validation are pending. Original red full-run XML/results remain in
-the earlier math/timestamp/WITH_TIMEZONE evidence directories; they are not
-overwritten or retroactively called green.
+### Accepted native race and predicate fixture scope
+
+The user subsequently directed release preparation to continue with the native
+JDBC race as an accepted limitation, awaiting a future upstream correction. The
+user explicitly approved holding one native connection for the predicate-parity
+fixture's lifetime. `closeAfterClass` owns it before the query runner is created,
+so runner teardown precedes releasing that connection. The fixture still creates
+and inserts its original data through the connector and runs every predicate,
+plan, source-type and row-set assertion. There is no retry, exclusion, alternate
+engine/format or production connection change.
+
+This test-only containment separates semantic qualification from the already
+reproduced native database-lifetime race. The standalone Java reproducer and all
+red runs are retained; a passing contained suite is not a native-race fix or a
+general concurrency guarantee. README and packaged release notes state the
+remaining connection-availability limitation. New clean full builds, matching
+archives and stock-engine packaged-plugin smokes pass for both ABIs below.
+
+Earlier package-smoke probe assumptions are retained separately: Trino rewrote
+a constant DATE predicate into a domain, and a zoned timestamp constant was not
+an admitted remote comparison child. The corrected probes use dynamic DATE and
+mapped-zoned-column comparisons already covered by the semantic suite. The
+infinity reader's actual public page-source error is JDBC_ERROR wrapping its
+NOT_SUPPORTED cause; the probe now checks that exact reader message/category.
+These are probe corrections, not production gate widening or error relaxation.
+
+### Final local release gates — passed
+
+Both targets use JDK 25 with the JVM in America/Los_Angeles, matching selected
+Trino dependencies, Quack JDBC 0.12.1 and the unchanged signed native inputs.
+The targeted 484 predicate-parity class passes all 31 cases and lint before the
+full builds; no predicate or assertion was removed.
+
+| Gate | Trino 483 / 483-0.3.0 | Trino 484 / 484-0.3.0 |
+|---|---|---|
+| Clean module build and lint | Pass | Pass |
+| JUnit cases | 977; zero failures/errors/skips | 977; zero failures/errors/skips |
+| Plugin assembly | 87 JARs; Google Guice 7.0.0 classes | 89 JARs; Airlift Guice 10 main |
+| ZIP and tar.gz, with SHA-256 sidecars | Verified | Verified |
+| Actual packaged-plugin stock-engine smoke | 19 query/result/plan checks pass | 20 query/result/plan checks pass |
+
+The final 484 invocation also passes strict healthy CANCEL/SQLState 57014,
+partition cancellation/fail-closed budget and bounded DISCONNECT tasks. Those
+results do not certify the separately documented published-port streaming route
+or autonomous orphan reaping.
+
+Each archive is checked against its assembled directory file-for-file, with the
+matching Trino base-JDBC/toolkit, one correct Guice runtime, exactly one native
+JDBC driver and one checksum-verified Central Quack 0.12.1 JAR. Provided SPI,
+Slice/Jackson-annotation/OpenTelemetry API classes and test-only benchmarks are
+not packaged. ServiceLoader metadata and the bundled human-facing notes are
+verified. All four parity binary/`.info` pairs—eight resources—match the retained
+signed-input manifest byte-for-byte. This is not a new native build or fresh
+execution on all four platforms.
+
+Stock-engine smokes load the ZIP-extracted plugin through real Trino discovery,
+not programmatic `installPlugin`. They check exact values, preserved REAL zero
+signs and engine-specific membership, signed parity pushdown, local DATE
+truncation, complete finite TIMESTAMP endpoints, infinity refusal and per-ABI
+attachment/epoch/truncation plans. The 484 constructor-bound failure is checked
+as its actual GENERIC_INTERNAL_ERROR/`Millis overflow:` contract. Owned containers
+are removed after each smoke; unrelated running services are untouched.
+
+Official server images:
+
+- 483: `trinodb/trino@sha256:db58cc93e593a2706553745f276bb119c9810e69918be56ecde088ba7ccb0534`
+- 484: `trinodb/trino@sha256:2704eb53935af5e582d63d6033e9bf99d20c325e9b0e30b1016ef59a4773979f`
+
+Prepared archives are in `build/release-closeout/artifacts/`:
+
+| Archive | SHA-256 |
+|---|---|
+| `trino-duckbridge-v483-0.3.0.zip` | `03f0ab8573f3d897a36a46937b34b4ddc8cde9bb86a3c2f71becefbd09557e8e` |
+| `trino-duckbridge-v483-0.3.0.tar.gz` | `1b124845ed092f38080d156ebe90ff91a8f342c028601cf2b1172cfbb3b5f8d7` |
+| `trino-duckbridge-v484-0.3.0.zip` | `acb67d224a3336d88e3890ef5eeabab49a438e5d4146d7657b5d46b33b907521` |
+| `trino-duckbridge-v484-0.3.0.tar.gz` | `052bdb059037bd5f7e85e3195cfffaff0d2e6aae1be7cbdc46222481beca46de` |
+
+Detailed evidence: `full-<ABI>-final.log`, `full-<ABI>-final-results/`,
+`full-<ABI>-final-summary.json`, `package-<ABI>-verified.log`, and
+`smoke-<ABI>-qualified/` beneath `build/release-closeout/`. Original red full-run
+XML/results and pre-containment summaries remain separately retained; they are not
+overwritten or retroactively called green. The approved native race and other
+unresolved producer limitations remain visible in the active backlog, README
+and release notes. Completed release-closeout tasks are removed from active TODOs.
 
 The seven wider audit/helper files and their original report were pre-existing
 owned work. They are reviewed and committed with current dispositions, retaining

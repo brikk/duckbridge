@@ -71,7 +71,8 @@ class TestDateWritesAndTemporalUnits {
             for (unit in timestampUnits + listOf("century", "days", "fortnight", "", " hour")) {
                 for (name in listOf("date_trunc", "date_diff")) {
                     val sql = translate(name, type, Constant(utf8Slice(unit), VARCHAR))
-                    assertThat(sql != null).describedAs("%s(%s, %s)", name, unit, type).isEqualTo(unit in valid)
+                    val admitted = unit in valid && !(name == "date_trunc" && type == DATE)
+                    assertThat(sql != null).describedAs("%s(%s, %s)", name, unit, type).isEqualTo(admitted)
                 }
             }
             for (unit in listOf(Constant(null, VARCHAR), Variable("unit", VARCHAR))) {

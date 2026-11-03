@@ -39,7 +39,7 @@ import java.sql.Statement
  * from trino-ducklake are UNVERIFIED under duckbridge's single-split-per-query, pushdown model and
  * should be MEASURED, not assumed: (1) fixed server-side pool exhaustion under per-split churn
  * (seen with DuckLake's per-file parallel splits), (2) the streaming-scans limit (attach-mode only).
- * See dev-docs/P3-NOTES.md.
+ * See dev-docs/archive/P3-NOTES.md.
  */
 class QuackDuckBridgeExecutor(
     private val host: String,

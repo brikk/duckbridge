@@ -27,7 +27,7 @@ import java.sql.SQLException
  * `JdbcTableHandle` (see [DuckBridgeArrowPageSourceProvider]), so this interface takes a plain SQL
  * string rather than DuckLake's `ExecutionRequest` + `DuckDbAttachTarget` + `DuckDbSelectSqlBuilder`
  * (all of which encode DuckLake's file-scan / schema-evolution model and are intentionally NOT
- * ported — see dev-docs/P3-NOTES.md "Dropped from the ported executor surface").
+ * ported — see dev-docs/archive/P3-NOTES.md "Dropped from the ported executor surface").
  *
  * Two concrete shapes:
  *  - [InProcessDuckBridgeExecutor]: embedded DuckDB via `jdbc:duckdb:`.
