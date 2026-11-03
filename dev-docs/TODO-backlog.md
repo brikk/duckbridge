@@ -44,9 +44,12 @@ weaken types, normalize values or claim arbitrary matching failures as parity.
 - **B-TRINO-TEST-CARRIER:** ambiguous wall-time-plus-zone result reconstruction
   loses late-overlap occurrence information. Measure integer instants inside the
   engine or export UTC after calculation, not by changing the query session zone.
-- **B-DB-ATTACH:** the intermittent native JDBC startup attach conflict remains
-  cause-unassigned. The user directed us to ignore investigation for this cut.
-  It is not fixed; do not add retries or exclude ordinary tests.
+- **B-DB-ATTACH:** native JDBC concurrent open/close reproduces the startup attach
+  conflict without the connector, on 2.0.0.0 and 2.0.0.1. The user authorized
+  reporting, not an upstream fix. A Java reproducer was added to existing
+  [upstream #22277](https://github.com/duckdb/duckdb/issues/22277#issuecomment-6602525930).
+  It is not fixed; do not add retries or exclude ordinary tests. Dual-version
+  release qualification remains blocked. [Evidence](../trino-duckbridge/dev-docs/REPORT-native-jdbc-attach-conflict-2026-11-03.md).
 
 ## Coverage gaps — not demonstrated defects
 
