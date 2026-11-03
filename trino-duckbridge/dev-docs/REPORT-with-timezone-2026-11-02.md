@@ -1,5 +1,11 @@
 # Bounded WITH_TIMEZONE parity — 2026-11-02
 
+Subsequent disposition: the user selected the exact fixed-offset/UTC consumer
+slice with named-zone evaluation local. Current implementation/qualification is
+in [the fixed-offset report](REPORT-with-timezone-fixed-offset-2026-11-03.md).
+The experimental candidate and red routing observations below are historical
+investigation evidence, not the production admission policy.
+
 ## Selected scope and state
 
 After pushing the sub-day truncation/YEAR work, the user selected the next

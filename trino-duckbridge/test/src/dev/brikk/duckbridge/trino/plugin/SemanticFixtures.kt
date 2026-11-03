@@ -395,11 +395,9 @@ object SemanticFixtures {
                 ),
             )
             add(
-                fx(
-                    "with_timezone", 2, "arg-order flip → instant",
+                np(
+                    "with_timezone", 2, "bare zoned constructor/short precision stays local",
                     call("with_timezone", TIMESTAMP_TZ_MILLIS, tsVar(), str("America/Los_Angeles")),
-                    wrapTrino = { "to_unixtime($it)" }, wrapDuck = { "CAST(epoch($it) AS DOUBLE)" },
-                    fromClause = fromTs("2024-01-01 12:00:00"),
                 ),
             )
         }

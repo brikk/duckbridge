@@ -629,7 +629,7 @@ class TestDuckBridgeExpressionTranslator {
     }
 
     @Test
-    fun testWithTimezoneOnTimestampPushes() {
+    fun testShortPrecisionWithTimezoneStaysLocal() {
         val expression: ConnectorExpression =
             call(
                 StandardFunctions.IS_NULL_FUNCTION_NAME,
@@ -642,7 +642,7 @@ class TestDuckBridgeExpressionTranslator {
                 ),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(timezone('America/Los_Angeles', \"ts\") IS NULL)")
+            .isEmpty()
     }
 
     @Test

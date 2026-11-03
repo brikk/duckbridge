@@ -9,10 +9,11 @@ Select a category or item ID before starting another workstream.
 - DuckDB v2 compatibility intake and the matched Doris API-27 qualification have
   been completed for their documented lanes. Outstanding correctness defects
   are not concealed by that statement. The latest full invocation reports
-  942 cases/939 passing/three failures: residual DATE/WITH_TIMEZONE audit,
-  native Trino-IN audit and a separate native JDBC attach startup failure in
-  string-mode setup. Selected timestamp tests pass; the wider suite is not green.
-  See the [timestamp verification receipt](../trino-duckbridge/dev-docs/REPORT-timestamp-truncation-2026-11-02.md).
+  969 cases/967 passing/two failures: residual wide-DATE audit and native
+  Trino-IN audit. Selected timestamp/WITH_TIMEZONE tests pass; the wider suite
+  is not green. The native attach startup conflict did not recur in this run,
+  which does not assign its cause or fix it. See the
+  [current verification receipt](../trino-duckbridge/dev-docs/REPORT-with-timezone-fixed-offset-2026-11-03.md).
 - **Confirmed defect**, **coverage gap** and **optional feature** are different
   categories. A missing test is not evidence of a bug. An unchecked box in the
   older preview/readiness tracker is not automatically a new release gate.
@@ -29,9 +30,9 @@ Select a category or item ID before starting another workstream.
   is needed. This does not select DATE/calendar work or general WITH_TIMEZONE.
 
 **A-MATH and A-TZ-TRUNC's bounded sub-day slice plus astronomical zoned YEAR are
-complete. The user has now selected bounded A-TZ-ATTACH literal-zone attachment
-and nested consumers. DATE/calendar, dynamic per-row zones and unrelated
-full-suite failures remain separate; other items require their own selection.**
+complete. A-TZ-ATTACH's selected exact fixed-offset/UTC slice with named-zone
+local evaluation is also complete. DATE/calendar, dynamic per-row zones, future
+native named-zone pushdown and unrelated failures require separate selection.**
 
 ## A. Confirmed connector defects and their dispositions
 
@@ -47,9 +48,10 @@ Evidence for A and B-TRINO is the
   selected tests also pass in the full UTC run (wider suite remains red). Unknown zone origins
   and nested truncation stay local. DATE/naive/calendar truncation is unchanged;
   broader calendar qualification is not implied. [Report](../trino-duckbridge/dev-docs/REPORT-timestamp-truncation-2026-11-02.md).
-- [ ] **A-TZ-ATTACH — WITH_TIMEZONE.** Correct overlap attachment and nested
-  consumers of per-value zone metadata versus DuckDB's session-zone model.
-  The existing zoned-function property does not gate every naive-input call.
+- [x] **A-TZ-ATTACH — Selected WITH_TIMEZONE disposition.** Exact fixed-offset/UTC
+  consumers retain full admitted finite source range and attached-zone metadata;
+  named-zone calls stay local. The zoned-function property now gates the typed
+  fixed-offset path too. No timestamp type is degraded or native range guard added.
   User selected a bounded literal-zone slice after the timestamp push; native
   offset candidate matches 8,896 exact ordinary-range observations. A reproduced
   finite boundary allows Trino YEAR/HOUR over an attached intermediate outside
@@ -58,8 +60,12 @@ Evidence for A and B-TRINO is the
   not accept a guard. [Assessment](../trino-duckbridge/dev-docs/RESEARCH-with-timezone-exact-scope-2026-11-03.md):
   current-pin fixed-offset typed lowering is medium work with named-zone calls
   local; full named-zone pushdown needs a wide native API and matched runtime
-  release, not just an extension TIMESTAMPTZ scalar. Await the implementation/
-  local-performance disposition; production unchanged.
+  release, not just an extension TIMESTAMPTZ scalar. User then selected the exact
+  current-pin UTC/fixed-offset cut with named-zone calls local. Typed lowering
+  is qualified: 702 focused LA-JVM cases pass; all selected cases pass in the full
+  UTC run (969/967 passing, two separate audit failures). No range guard or native
+  runtime change. All seven previous WITH_TIMEZONE audit row-set mismatches clear.
+  [Implementation receipt](../trino-duckbridge/dev-docs/REPORT-with-timezone-fixed-offset-2026-11-03.md).
   Dynamic per-row zones and wider calendar work are not selected.
   [Current work](../trino-duckbridge/dev-docs/REPORT-with-timezone-2026-11-02.md).
 - [ ] **A-DATE-TRUNC — Wide DATE truncation.** Resolve the native TIMESTAMP
@@ -99,7 +105,9 @@ Existing shared tracker entries refer to the same work, not duplicate tasks.
   the math fallback. The timestamp-stage full UTC run repeats the same symptom
   in `TestDuckBridgeStringPushdownModes` setup while all 31 row-set cases pass;
   this does not fix/clear the startup issue. No automatic lifecycle work is
-  selected. [Original evidence](../trino-duckbridge/dev-docs/REPORT-local-math-fallback-2026-11-02.md),
+  selected. The fixed-offset full run executes all 16 string-mode and 31 row-set
+  cases successfully; non-reproduction is not a root-cause correction.
+  [Original evidence](../trino-duckbridge/dev-docs/REPORT-local-math-fallback-2026-11-02.md),
   [latest exact error/results](../trino-duckbridge/dev-docs/REPORT-timestamp-truncation-2026-11-02.md).
 - [ ] **B-QUACK-YEAR-BIND — Expanded positive year parameter binding.** The
   timestamp fixture's direct Quack JDBC `setObject(OffsetDateTime)` batch produces
@@ -117,6 +125,14 @@ Existing shared tracker entries refer to the same work, not duplicate tasks.
   this diagnostic and measures selected truncations inside the engine; it does
   not change the query/session zone or blame Trino's engine rounding. No upstream
   client redesign/report is selected. [Diagnostic/source evidence](../trino-duckbridge/dev-docs/REPORT-timestamp-truncation-2026-11-02.md).
+- [ ] **B-TRINO-TS-LITERAL — Bottom-end TIMESTAMP literal partial-product overflow.**
+  Trino 483 `DateTimes.parseShortTimestamp` overflows `epochSecond*1e6` before
+  adding the positive fraction for the finite microsecond endpoint represented
+  by `-290308-12-21 19:59:05.224192`. This blocks literal construction, not proof
+  that the raw timestamp value/type is unsupported. The selected qualification
+  retains the endpoint via exact typed timestamp arithmetic and independent
+  engine integer-epoch measurement. No parser change or upstream report selected.
+  [Evidence](../trino-duckbridge/dev-docs/REPORT-with-timezone-fixed-offset-2026-11-03.md).
 - [ ] **B-QUACK-LEASE — Autonomous orphan-session reaping.** Await a real server
   correction and rerun unchanged expiry assertions. Healthy heartbeat renewal
   and bounded close/cancel are already proved, not a substitute for expiry.
@@ -217,6 +233,9 @@ the already-qualified v2 intake. Each requires a concrete selection/use case.
   selected useful workload or demonstrated divergence. The extension is available,
   but function availability is not a reason to implement all missing pushdowns.
   Broader JSON mutation support remains unpushed; local regex safety is complete.
+  Native named-zone WITH_TIMEZONE pushdown is a separately sized future option:
+  the current exact disposition is local named-zone evaluation, not a mandatory
+  new native runtime/API release. See the linked exact-scope assessment above.
 
 ## E. Bounded release close-out — after selected issue dispositions
 

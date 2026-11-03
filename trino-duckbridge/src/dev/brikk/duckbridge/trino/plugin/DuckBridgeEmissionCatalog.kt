@@ -226,8 +226,8 @@ internal object DuckBridgeEmissionCatalog {
                     }
                 },
             )
-            // with_timezone(ts, zone) -> DuckDB timezone(zone, ts) ARG-ORDER FLIP.
-            put(NameArity("with_timezone", 2), Emission.Inline { a -> "timezone(${a[1]}, ${a[0]})" })
+            // WITH_TIMEZONE is an internal typed constructor, not a context-free native value.
+            // DuckBridgeWithTimezone lowers qualified fixed-offset consumers; other uses stay local.
         }
 
     /**
@@ -252,8 +252,6 @@ internal object DuckBridgeEmissionCatalog {
         for (name in listOf("day_of_week", "day_of_year", "last_day_of_month", "week", "week_of_year", "year_of_week", "yow")) {
             gates[NameArity(name, 1)] = arg0DateStrict
         }
-        // with_timezone(TIMESTAMP no-TZ, varchar) → WTZ. Gate strictly to TIMESTAMP.
-        gates[NameArity("with_timezone", 2)] = arg(0, TimestampType::class.java)
 
         // lpad/rpad: push ONLY when the pad argument (arg 2) is a constant, non-empty varchar AND the
         // size (arg 1) is a constant ≥ 0. Trino raises on an empty pad string and on a negative size;

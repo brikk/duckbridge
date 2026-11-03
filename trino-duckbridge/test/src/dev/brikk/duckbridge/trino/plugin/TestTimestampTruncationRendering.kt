@@ -53,8 +53,8 @@ class TestTimestampTruncationRendering {
         }
         val year = Call(io.trino.spi.type.BigintType.BIGINT, FunctionName("year"), listOf(trunc("hour", z)))
         assertThat(DuckBridgeExpressionTranslator.translate(year, assignments, session(true))).contains("era(", "make_timestamptz")
-        val unknownYear = Call(io.trino.spi.type.BigintType.BIGINT, FunctionName("year"), listOf(attached))
-        assertThat(DuckBridgeExpressionTranslator.translate(unknownYear, assignments, session(true))).isNull()
+        val fixedYear = Call(io.trino.spi.type.BigintType.BIGINT, FunctionName("year"), listOf(attached))
+        assertThat(DuckBridgeExpressionTranslator.translate(fixedYear, assignments, session(true))).contains("HUGEINT", "DATE '1970-01-01'")
     }
 
     @Test

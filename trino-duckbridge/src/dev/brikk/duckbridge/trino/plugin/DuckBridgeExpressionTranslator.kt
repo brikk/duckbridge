@@ -258,6 +258,12 @@ object DuckBridgeExpressionTranslator {
         val name: FunctionName = call.functionName
         val args: List<ConnectorExpression> = call.arguments
 
+        // Zoned intermediates may exceed native TIMESTAMPTZ and carry a non-session zone.
+        // A typed consumer must lower them; generic recursion must never masquerade them as integers.
+        if (args.any { it.type is TimestampWithTimeZoneType && DuckBridgeWithTimezone.contains(it) }) {
+            return DuckBridgeWithTimezone.render(call, session) { translateVariable(it, assignments) }
+        }
+
         when {
             name == StandardFunctions.AND_FUNCTION_NAME -> return joinBinary(args, " AND ", assignments, session, ctx)
             name == StandardFunctions.OR_FUNCTION_NAME -> return joinBinary(args, " OR ", assignments, session, ctx)

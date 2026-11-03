@@ -1,5 +1,14 @@
 # Exact WITH_TIMEZONE: scope and cost assessment — 2026-11-03
 
+## Subsequent selection
+
+The user subsequently selected the recommended current-pin exact UTC/fixed-offset
+slice with named-zone calls evaluated locally. That approval is for the bounded
+connector implementation and its explicit local performance disposition, not a
+native producer API/runtime release. See the
+[implementation/qualification report](REPORT-with-timezone-fixed-offset-2026-11-03.md).
+The assessment below preserves the decision and evidence at its original boundary.
+
 ## Decision boundary
 
 The user selected **size the exact fix**, not implementation of a larger native
