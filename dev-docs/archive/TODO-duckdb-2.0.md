@@ -16,7 +16,7 @@ release with the explicitly reproduced Trino REAL membership / signed-zero
 limitation, and no further attach-conflict investigation for this cut. Source
 types/guards remain intact. The owned audit bundle is being finalized, followed
 by a clean Trino build and verified plugin packaging; see the
-[release preparation receipt](../../trino-duckbridge/dev-docs/REPORT-release-closeout-2026-11-03.md).
+[release preparation receipt](../../trino-duckbridge/dev-docs/archive/REPORT-release-closeout-2026-11-03.md).
 No upstream/native API change, broad new audit or Doris release is selected.
 Earlier counts and pending dispositions below are dated history, not current gates.
 

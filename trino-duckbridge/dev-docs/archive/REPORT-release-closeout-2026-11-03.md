@@ -3,7 +3,7 @@
 This receipt records the qualified **Quack 0.12.1 / parity 0.5.1 preparation**.
 The user later authorized publishing with refreshed dependencies; final adoption,
 CI gates and release assets are recorded in the
-[publication receipt](REPORT-release-publication-2026-11-04.md).
+[publication receipt](../REPORT-release-publication-2026-11-04.md).
 
 ## User decisions and boundary
 
@@ -75,7 +75,7 @@ No production REAL domain/comparison code changes are made. The release notes
 and pushdown reference retain the 483 limitation in plain language. The specific
 signed-zero counterexample is fixed in stock 484, verified with preserved input
 bits and folded/compiled/projected IN/NOT IN. See the
-[483/484 probe](REPORT-real-membership-483-484-2026-11-03.md).
+[483/484 probe](../REPORT-real-membership-483-484-2026-11-03.md).
 
 ## Verification and repository close-out
 
@@ -157,7 +157,7 @@ The user then authorized a narrow investigation, followed by reporting only:
 on published native JDBC 2.0.0.0 and 2.0.0.1, on Java 17 and 25; one-thread
 controls pass. An Opus-5.5-edited follow-up was posted to existing upstream
 [#22277](https://github.com/duckdb/duckdb/issues/22277#issuecomment-6602525930),
-not a duplicate issue. [Reproducer, evidence and scope](REPORT-native-jdbc-attach-conflict-2026-11-03.md).
+not a duplicate issue. [Reproducer, evidence and scope](../REPORT-native-jdbc-attach-conflict-2026-11-03.md).
 No native pin, upstream source, test exclusion or connector workaround changed.
 Dual-version release qualification remained blocked at that point.
 

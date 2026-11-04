@@ -45,4 +45,4 @@ loaded Trino JAR identity. Both variants run IN/NOT IN, folded input, runtime in
 independent equality sets and physical connector scans. The 483 test expects only
 the precise negative-zero discrepancy; 484 requires equality with the fixed
 engine result. Neither version skips the test. Separate full connector and plugin
-packaging results belong in the [release receipt](REPORT-release-closeout-2026-11-03.md).
+packaging results belong in the [publication receipt](REPORT-release-publication-2026-11-04.md).

@@ -80,4 +80,5 @@ release limitation and approved test-only containment: the predicate-parity fixt
 keeps one native connection alive until its query runner is closed. Every predicate
 case, source value and assertion remains; the standalone race reproducer is retained.
 This is not evidence that the production race is fixed. The original red 484
-full-build receipt remains red. See the [release receipt](REPORT-release-closeout-2026-11-03.md).
+full-build receipt remains red. See the [preparation receipt](archive/REPORT-release-closeout-2026-11-03.md)
+and [current publication receipt](REPORT-release-publication-2026-11-04.md).

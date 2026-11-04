@@ -17,7 +17,7 @@ sets; no source sign is normalized and no membership test is skipped. The
 specific four decimal narrowing-error limitations remain the only accepted
 decimal error-category differences. Owned audit files/trackers are included in
 the close-out, not abandoned to make CI green. Current verification is in the
-[release preparation receipt](../REPORT-release-closeout-2026-11-03.md).
+[release preparation receipt](REPORT-release-closeout-2026-11-03.md).
 
 ## Original audit outcome and subsequent narrow fixes
 

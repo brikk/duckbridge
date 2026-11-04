@@ -2,6 +2,14 @@
 
 ## Scope and current status
 
+**Published as stable, non-SNAPSHOT releases on 2026-11-04:**
+
+- [v483-0.3.0](https://github.com/brikk/duckbridge/releases/tag/v483-0.3.0)
+- [v484-0.3.0](https://github.com/brikk/duckbridge/releases/tag/v484-0.3.0) — latest
+
+Both tags resolve to `76c3701288d2101e778f4ed0c7ef276f469accaa`. Each release
+contains its ZIP, tar.gz and both SHA-256 sidecars; neither is a draft or prerelease.
+
 The user authorized publishing both `483-0.3.0` and `484-0.3.0` to GitHub Releases,
 then explicitly chose parity 0.5.2 adoption rather than reusing 0.5.1 inputs.
 After a resource-priority pause, the user resumed this work and requested the
@@ -9,7 +17,7 @@ latest published Quack JDBC. GitHub Releases and Maven Central both select
 **Quack JDBC 0.13.0**. Both connector pins and version assertions are updated;
 the underlying native JDBC remains **2.0.0.0** and DuckDB remains **2.0.0**.
 
-The previous [local qualification](REPORT-release-closeout-2026-11-03.md) used
+The previous [local qualification](archive/REPORT-release-closeout-2026-11-03.md) used
 Quack 0.12.1 and parity 0.5.1. Its test results, hashes and prepared artifacts
 are historical evidence, not qualification of these new dependencies. The
 preserved inputs/results are in `build/release-publication/rollback-parity-0.5.1/`.
@@ -81,14 +89,66 @@ matrix supplies final publication archives.
 
 ## Publication gates
 
-Qualification is in progress. Require the full existing per-module assertions,
-both matching Trino ABIs, and the signed native platform matrix. The release
-workflow retains its compatibility and signature gates, packages matching
-drivers/Guice/Trino libraries and all binary/`.info` pairs, and stages both
-archives plus their SHA-256 sidecars as drafts. Uploaded archives and exact tags
-are independently checked and smoke-tested on stock engines before publication;
-do not label the old 0.12.1/0.5.1 receipts as tests of these inputs.
+The full existing per-module assertions and both matching Trino ABI gates pass.
+All four signed native jobs (Linux amd64/arm64, macOS arm64, Windows amd64) pass
+stock-CLI signature-enabled LOAD, exact v0.5.2 and ten-function smoke checks for
+each release. No CI check was bypassed or weakened.
 
-No new Trino 0.3.0 GitHub release or tag has been created at the start of this
-resumed qualification. Final run identities, hashes, release URLs and cleanup
-results will be recorded here after the actual gates complete.
+| Run | Result |
+|---|---|
+| [Main CI 41748485274](https://github.com/brikk/duckbridge/actions/runs/41748485274) | Both Trino build/test jobs pass |
+| [483 release 41748485126](https://github.com/brikk/duckbridge/actions/runs/41748485126) | Four native jobs, both ABI compatibility jobs and the 483 release build pass |
+| [484 release 41748485335](https://github.com/brikk/duckbridge/actions/runs/41748485335) | Four native jobs, both ABI compatibility jobs and the 484 release build pass |
+
+The workflow stages drafts first. Both uploaded archive sets were downloaded
+through authenticated asset IDs and checked before either became public:
+
+- ZIP/tar.gz file contents agree; sidecars and GitHub asset digests agree with
+  actual downloaded bytes. Names, paths, target commit and four assets per release
+  are checked explicitly.
+- 483 has 87 JARs and Google Guice 7.0.0 classes; 484 has 89 JARs and Airlift Guice
+  10 main. Both contain their matching Trino base-JDBC/toolkit, one native JDBC
+  2.0.0.0 and the exact Central Quack 0.13.0 JAR. Provided SPI/API JARs and test
+  benchmark classes are absent; ServiceLoader metadata and bundled notes match.
+- All eight parity binary/`.info` resources agree byte-for-byte with the actual
+  signed artifacts uploaded by the corresponding platform jobs. The two release
+  runs produced the same four native pairs; no old 0.5.1 resources were mixed in.
+- The exact uploaded ZIPs were extracted and loaded by official stock Trino:
+  **22 checks on 483 and 23 on 484** pass. These include default native PARITY
+  operation, the actual v0.5.2 version, engine-specific REAL membership, DATE/
+  temporal gates, finite endpoints and refusal/error contracts.
+- A separate owned Quack server exercises the packaged 0.13.0 driver through
+  each stock Trino plugin's real classloader: 6,000-row sequence/constant queries
+  retain the exact source types, full distinct range, corresponding integer
+  values, BIGINT maximum, signed REAL/DOUBLE zero bits and NULLs. This uses a
+  private bridge route; it is not a correction or acceptance claim for the
+  separately documented published-port streaming fault.
+
+Both drafts were published only after those checks. Publication is read back
+from the server, actual tags are resolved to the expected commit, and 484 is
+explicitly marked latest. The release-body reference link is tag-specific rather
+than a broken relative path. Publication used the existing release IDs; no new
+duplicate release or tag was created during verification/retry handling.
+
+## Published archive hashes
+
+| Asset | SHA-256 |
+|---|---|
+| `trino-duckbridge-v483-0.3.0.zip` | `0e825099adea8ed5d8fd380d2f7479495664d815af7516b162162795c33152d2` |
+| `trino-duckbridge-v483-0.3.0.tar.gz` | `8cfd9bb6523fe222161aca36ac1b46d77e070e8fafcc065e743b3ee67c88bb35` |
+| `trino-duckbridge-v484-0.3.0.zip` | `9547afe75ce807785c1c5abe3d67291b60a04766edd5d195f192c8a08a297906` |
+| `trino-duckbridge-v484-0.3.0.tar.gz` | `37dbc00ef7e1bd515ed0e6fc43ee51d35fc4e5c5ca509a5d16f44bfdca9dcd95` |
+
+## Evidence and cleanup
+
+Evidence is under `build/release-publication/`: `verified-drafts.json`,
+`uploaded-smokes.json`, `published-releases.json`, both `published-release-*.json`,
+native input artifacts, downloaded assets and the full stock-server/RPC logs.
+The official CLI used to seed native data is checksum-verified DuckDB 2.0.0,
+source `d54cbbe3df`. Owned stock Trino/Quack smoke containers are removed after
+each check; the Doris stack was already stopped without deleting volumes.
+Unrelated services, old images/volumes and failure evidence remain untouched.
+
+The accepted native JDBC cache race and other open producer/type limitations
+remain documented and unresolved. Successful release qualification is not an
+upstream fix, broader transport guarantee or semantic/error waiver.

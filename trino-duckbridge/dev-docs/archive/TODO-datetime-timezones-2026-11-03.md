@@ -6,7 +6,7 @@ explicit user decision. Known-session-zone sub-day truncation and astronomical
 zoned YEAR are qualified. Exact UTC/fixed-offset WITH_TIMEZONE consumers preserve
 wide intermediates; named-zone calls remain local. See the
 [pushdown reference](../../README-pushdown-reference.md) and
-[release preparation receipt](../REPORT-release-closeout-2026-11-03.md).
+[release preparation receipt](REPORT-release-closeout-2026-11-03.md).
 The dated findings below preserve their historical scope, not still-enabled defects.
 
 The DuckLake connector accumulated a lot of hard-won date/time/timezone correctness
