@@ -76,6 +76,38 @@ class TestDuckBridgeQueryOverQuack {
     }
 
     @Test
+    fun compactSequencesAndConstantsPreserveJdbcGetters() {
+        server.openConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT i::INTEGER,i,true,9223372036854775807::BIGINT," +
+                    "'-0.0'::FLOAT,'-0.0'::DOUBLE,NULL::INTEGER FROM range(6000) t(i)").use { rows ->
+                    assertThat((1..7).map { rows.metaData.getColumnTypeName(it) }).containsExactly(
+                        "INTEGER", "BIGINT", "BOOLEAN", "BIGINT", "FLOAT", "DOUBLE", "INTEGER",
+                    )
+                    var count = 0
+                    while (rows.next()) {
+                        assertCompactRow(rows, count)
+                        count++
+                    }
+                    assertThat(count).isEqualTo(6000)
+                }
+            }
+        }
+    }
+
+    private fun assertCompactRow(rows: java.sql.ResultSet, index: Int) {
+        assertThat(rows.getInt(1)).isEqualTo(index)
+        assertThat(rows.getLong(2)).isEqualTo(index.toLong())
+        assertThat(rows.getBoolean(3)).isTrue()
+        assertThat(rows.getLong(4)).isEqualTo(Long.MAX_VALUE)
+        assertThat(rows.getFloat(5).toRawBits()).isEqualTo((-0.0f).toRawBits())
+        assertThat(rows.getDouble(6).toRawBits()).isEqualTo((-0.0).toRawBits())
+        assertThat(rows.getInt(7)).isZero()
+        assertThat(rows.wasNull()).isTrue()
+        assertThat(rows.getObject(7)).isNull()
+    }
+
+    @Test
     fun ordinaryQueryErrorDoesNotPoisonTheAutocommitSession() {
         server.openConnection().use { connection ->
             assertThatThrownBy {

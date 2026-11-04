@@ -124,7 +124,7 @@ if [[ -z "$driver_src" ]]; then
     rm -rf "$tmp_extract"
     exit 1
 fi
-expected_driver="quack-jdbc-${DUCKBRIDGE_QUALIFICATION_QUACK_VERSION:-0.12.1}.jar"
+expected_driver="quack-jdbc-${DUCKBRIDGE_QUALIFICATION_QUACK_VERSION:-0.13.0}.jar"
 if [[ "$(basename "$driver_src")" != "${expected_driver}" ]]; then
     log "ERROR: staged Quack driver is '$(basename "$driver_src")' (expected ${expected_driver})."
     rm -rf "$tmp_extract"

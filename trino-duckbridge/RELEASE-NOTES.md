@@ -2,8 +2,8 @@
 
 ## 0.3.0 — Trino 483 and 484
 
-Compatibility: DuckDB **2.0.0**, native JDBC **2.0.0.0**, Quack JDBC **0.12.1**,
-and signed `trino_parity` **0.5.1**. Use matching DuckDB versions on remote servers.
+Compatibility: DuckDB **2.0.0**, native JDBC **2.0.0.0**, Quack JDBC **0.13.0**,
+and signed `trino_parity` **0.5.2**. Use matching DuckDB versions on remote servers.
 Use `483-0.3.0` with Trino 483 and `484-0.3.0` with Trino 484. Their Trino libraries
 are ABI-specific. The DuckDB/Quack/parity versions are shared. Doris is a separate
 development connector, not part of these archives.
@@ -13,6 +13,10 @@ development connector, not part of these archives.
 - Quack JDBC finishes unread result streams when closing or superseding them,
   preserving healthy manual transactions. Closing an unfinished result can wait
   for the remaining query and transfer; closing FETCH failures are reported.
+- Quack's compact sequence/primitive-constant decoding avoids expanding those
+  vectors into row-count-sized arrays; JDBC types, values and NULLs are unchanged.
+- Parity functions expose descriptions and examples in DuckDB's SQL catalog;
+  the ten-function API and the admitted pushdown surface are unchanged.
 
 - Ordinary TIMESTAMP(6) reads preserve finite microseconds through both endpoints
   and reject infinity/reserved source carriers instead of returning finite values.

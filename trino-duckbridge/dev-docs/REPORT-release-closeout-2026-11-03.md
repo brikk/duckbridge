@@ -1,5 +1,10 @@
 # Bounded Trino release close-out — 2026-11-03
 
+This receipt records the qualified **Quack 0.12.1 / parity 0.5.1 preparation**.
+The user later authorized publishing with refreshed dependencies; final adoption,
+CI gates and release assets are recorded in the
+[publication receipt](REPORT-release-publication-2026-11-04.md).
+
 ## User decisions and boundary
 
 The user approved normal release preparation and committing the outstanding
@@ -247,7 +252,7 @@ original observations as history. The two tracked readiness/temporal documents
 are reconciled rather than dropped. No broad unchecked preview item becomes a
 new release gate, and unsafe type/carrier guards remain in force.
 
-Current targets: Trino 483 and 484, DuckDB/native JDBC 2.0.0/2.0.0.0, Quack JDBC 0.12.1,
+Qualified preparation inputs: Trino 483 and 484, DuckDB/native JDBC 2.0.0/2.0.0.0, Quack JDBC 0.12.1,
 parity 0.5.1. The catalogs have 75 (483) / 74 (484) entries, both with ten extension aliases. No extension
 source/metadata/binary or production transport default changes.
 

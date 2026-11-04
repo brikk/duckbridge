@@ -25,7 +25,7 @@ class TestUnicodeVersionParity {
                 ).use { rows ->
                     assertThat(rows.next()).isTrue()
                     assertThat(rows.getString(1)).isEqualTo("v2.0.0")
-                    assertThat(rows.getString(2)).isEqualTo("v0.5.1")
+                    assertThat(rows.getString(2)).isEqualTo("v0.5.2")
                 }
                 statement.executeQuery(
                     "SELECT cp,trino_lower(s),trino_upper(s),trino_trim(s),trino_ltrim(s),trino_rtrim(s)," +

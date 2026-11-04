@@ -115,6 +115,31 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
     }
 
     @Test
+    fun compactSequencesAndConstantsRetainTypesValuesAndNulls() {
+        val source = "SELECT i::INTEGER n32,i n64,true b,7::TINYINT n8,300::SMALLINT n16," +
+            "2147483647::INTEGER c32,9223372036854775807::BIGINT c64," +
+            "'-0.0'::FLOAT f32,'-0.0'::DOUBLE f64,NULL::INTEGER nil FROM range(6000) t(i)"
+        val sql = "SELECT * FROM TABLE(duckbridge.system.query(query => '${source.replace("'", "''")}')) ORDER BY n64"
+        val result = computeActual(sql)
+        assertThat(result.types.map { it.toString() }).containsExactly(
+            "integer", "bigint", "boolean", "tinyint", "smallint", "integer", "bigint", "real", "double", "integer",
+        )
+        assertThat(result.rowCount).isEqualTo(6000)
+        result.materializedRows.forEachIndexed { index, row ->
+            assertThat((row.getField(0) as Number).toLong()).isEqualTo(index.toLong())
+            assertThat(row.getField(1)).isEqualTo(index.toLong())
+            assertThat(row.getField(2)).isEqualTo(true)
+            assertThat((row.getField(3) as Number).toLong()).isEqualTo(7L)
+            assertThat((row.getField(4) as Number).toLong()).isEqualTo(300L)
+            assertThat((row.getField(5) as Number).toLong()).isEqualTo(Int.MAX_VALUE.toLong())
+            assertThat(row.getField(6)).isEqualTo(Long.MAX_VALUE)
+            assertThat((row.getField(7) as Number).toFloat().toRawBits()).isEqualTo((-0.0f).toRawBits())
+            assertThat((row.getField(8) as Number).toDouble().toRawBits()).isEqualTo((-0.0).toRawBits())
+            assertThat(row.getField(9)).isNull()
+        }
+    }
+
+    @Test
     fun scalarRoundTripOverQuack() {
         val row = computeActual("SELECT id, name, birth FROM t WHERE id = 3").materializedRows.single()
         assertThat(row.getField(0)).isEqualTo(3L)

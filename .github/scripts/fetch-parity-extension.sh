@@ -23,7 +23,7 @@ case "${os}:${arch}" in
   MINGW*:x86_64|MSYS*:x86_64|CYGWIN*:x86_64)
     asset_platform="windows-amd64"; duckdb_platform="windows_amd64"; connector_platform="windows-amd64"; exe="duckdb.exe" ;;
   *)
-    echo "::error::trino_parity 0.5.1 has no DuckDB 2.0 community build for ${os}/${arch}" >&2
+    echo "::error::trino_parity 0.5.2 has no DuckDB 2.0 community build for ${os}/${arch}" >&2
     exit 1
     ;;
 esac
@@ -55,7 +55,7 @@ result="$(${duckdb_bin} -csv -noheader -c "
   FORCE INSTALL trino_parity FROM community;
   LOAD trino_parity;
   SELECT CASE WHEN
-    (SELECT extension_version FROM duckdb_extensions() WHERE extension_name='trino_parity') = 'v0.5.1'
+    (SELECT extension_version FROM duckdb_extensions() WHERE extension_name='trino_parity') = 'v0.5.2'
     AND (SELECT count(*) FROM trino_meta()) = 10
     AND trino_lower('ABC') = 'abc'
     AND trino_upper('straße') = 'STRAßE'
@@ -67,7 +67,8 @@ result="$(${duckdb_bin} -csv -noheader -c "
     AND hex(trino_xxhash64('abc'::BLOB)) = '44BC2CF5AD770999'
     AND hex(trino_sha512('abc'::BLOB)) = 'DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F'
     AND hex(trino_hmac_sha256('The quick brown fox jumps over the lazy dog'::BLOB, 'key'::BLOB)) = 'F7BC83F430538424B13298E6AA6FB143EF4D59A14946175997479DBC2D1A3CD8'
-  THEN 'PASS' ELSE error('trino_parity smoke failed') END;")"
+  THEN 'PASS' ELSE error('trino_parity 0.5.2 smoke failed; installed version: ' ||
+    (SELECT extension_version FROM duckdb_extensions() WHERE extension_name='trino_parity')) END;")"
 result="${result//$'\r'/}"
 if [ "$result" != "PASS" ]; then
   echo "::error::unexpected trino_parity smoke result: ${result}" >&2
@@ -87,7 +88,7 @@ rm -rf "$dest"
 mkdir -p "$dest"
 cp "$binary" "$info" "$dest/"
 
-echo "Prepared signed trino_parity 0.5.1 for ${connector_platform}:"
+echo "Prepared signed trino_parity 0.5.2 for ${connector_platform}:"
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum "$dest/trino_parity.duckdb_extension" "$dest/trino_parity.duckdb_extension.info"
 else

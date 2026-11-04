@@ -171,7 +171,9 @@ jobs:
           echo "base=${base}" >> "${GITHUB_OUTPUT}"
           echo "Packaged:"; ls -la "${GITHUB_WORKSPACE}/${base}".*
 
-      - name: Create GitHub release
+      # Stage assets first. Publication follows independent uploaded-archive checks and stock-engine
+      # plugin smoke, rather than making an unverified upload public immediately.
+      - name: Create draft GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
@@ -184,6 +186,7 @@ jobs:
           --target "${GITHUB_SHA}"
           --notes-file trino-duckbridge/RELEASE-NOTES.md
           --generate-notes
+          --draft
 
       - name: Upload test reports
         if: failure()
