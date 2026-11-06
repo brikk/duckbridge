@@ -17,19 +17,9 @@ import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * Loader + prober for the `trino_parity` DuckDB extension, which registers the
- * `trino_<name>(...)` scalar functions/macros and the `trino_meta()` table macro that the
- * connector's pushdown translator relies on.
- *
- * The extension is a hard dependency of parity pushdown. Release jars bundle a signed community
- * binary plus DuckDB's `.info` provenance and load it by name from a private installed-extension
- * tree. Operators can override with `duckbridge.parity-extension-path`; a locally-built unsigned
- * override needs `allow_unsigned_extensions=true` when the connection is created.
- *
- * P3 note: this in-process LOAD assumes the extension binary lives on the same filesystem as the
- * DuckDB instance. A remote/server-side DuckDB (Quack) needs the LOAD forwarded server-side and
- * the binary present on the server — see [TrinoParityExtensionResolver]'s P3 note. That
- * server-side forwarder is intentionally NOT ported here (no Quack in this module yet).
+ * Loads the `trino_parity` DuckDB extension, which registers the `trino_<name>(...)` functions the
+ * pushdown translator emits. A locally built unsigned binary needs `allow_unsigned_extensions=true`
+ * when the connection is created.
  */
 object TrinoFunctionAliases {
     /**

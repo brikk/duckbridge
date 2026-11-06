@@ -24,14 +24,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-/**
- * T2 Arrow page source over a [DuckBridgeExecutor.ExecutionContext] (the QUACK engine). The executor
- * has already run the query — server-side via `quack_query_by_name` — and exposes the result as an
- * `ArrowReader`; this source drains it batch-by-batch and decodes each to a Trino [Page].
- *
- * Contrast with [DuckBridgeArrowPageSource] (DUCKDB_LOCAL), which holds a live `PreparedStatement`
- * and runs it lazily on first read. Here the query is already executing, so we only iterate.
- */
+/** Arrow page source over a [DuckBridgeExecutor.ExecutionContext] whose query is already running. */
 class DuckBridgeExecutorPageSource(
     private val context: DuckBridgeExecutor.ExecutionContext,
     private val converter: DuckBridgeArrowToPageConverter,
@@ -63,8 +56,7 @@ class DuckBridgeExecutorPageSource(
             val root = reader.vectorSchemaRoot
             val page: Page =
                 if (projectedColumnCount == 0) {
-                    // Empty projection (e.g. count(*)): base-jdbc emits a single dummy column so
-                    // positions flow; only the row count matters, not the dummy values.
+                    // Empty projection: base-jdbc emits a dummy column; only the row count matters.
                     Page(root.rowCount)
                 } else {
                     converter.convert(root)

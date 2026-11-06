@@ -14,30 +14,19 @@
 package dev.brikk.duckbridge.trino.plugin
 
 import com.google.inject.Inject
-import io.airlift.log.Logger
 import io.trino.spi.StandardErrorCode.NOT_SUPPORTED
 import io.trino.spi.TrinoException
 import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * Loads the DuckDB `lance` / `vortex` extensions that back the scan + search PTFs, when enabled.
- *
- * "Probed, never managed" — the extension is INSTALLed (floating latest, matching the DuckLake
- * connector's stance; a hard version pin isn't possible because extensions.duckdb.org serves only
- * the latest build per (DuckDB version, platform)) + LOADed on each connection. If the extension
- * can't be installed/loaded, PTF use fails loud with install instructions rather than silently
- * returning empty.
- *
- * On a remote (Quack) server the extension is a server-side concern: the connector still issues
- * INSTALL/LOAD over the pass-through connection, but if the server lacks network/repo access the
- * failure surfaces here with a server-side hint. There is no bundled binary for these (unlike
- * trino_parity) — they come from DuckDB's extension repositories.
+ * INSTALLs and LOADs the DuckDB `lance` / `vortex` extensions on each connection when enabled. The
+ * install floats to latest because extensions.duckdb.org serves only the latest build per DuckDB
+ * version and platform, so a version pin is not possible.
  */
 class DuckBridgeScanExtensions
     @Inject
     constructor(private val config: DuckBridgeConfig) {
-        /** INSTALL + LOAD the enabled scan extensions on [connection]. Idempotent; no-op when both off. */
         fun ensureLoaded(connection: Connection) {
             if (config.isLanceEnabled) {
                 install(connection, LANCE)
@@ -47,10 +36,7 @@ class DuckBridgeScanExtensions
             }
         }
 
-        /**
-         * Fail loud if [extension] isn't enabled, so a PTF whose extension is off gives a clear error
-         * at analyze time rather than a cryptic "function not found" from DuckDB.
-         */
+        /** Gives a clear analyze-time error instead of DuckDB's "function not found". */
         fun requireEnabled(extension: String) {
             val enabled =
                 when (extension) {
@@ -70,7 +56,6 @@ class DuckBridgeScanExtensions
         private fun install(connection: Connection, extension: String) {
             try {
                 connection.createStatement().use { stmt ->
-                    // Floating latest from the default extension repo (matches the DuckLake connector).
                     stmt.execute("INSTALL $extension")
                     stmt.execute("LOAD $extension")
                 }
@@ -90,8 +75,5 @@ class DuckBridgeScanExtensions
         companion object {
             const val LANCE: String = "lance"
             const val VORTEX: String = "vortex"
-
-            @Suppress("unused")
-            private val log: Logger = Logger.get(DuckBridgeScanExtensions::class.java)
         }
     }

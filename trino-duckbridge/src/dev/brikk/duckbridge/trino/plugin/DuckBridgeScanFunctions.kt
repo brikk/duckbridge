@@ -24,8 +24,7 @@ import io.trino.spi.type.VarcharType.VARCHAR
 
 /**
  * `SELECT * FROM TABLE(<catalog>.system.lance_scan(path => '<dataset dir>'))` — plain scan of a lance
- * dataset directory via DuckDB's `__lance_scan`. Ported from the DuckLake FileScan `__lance_scan`
- * path, now a path-based PTF. Returns the dataset's columns as-is.
+ * dataset directory via DuckDB's `__lance_scan`, returning the dataset's columns as-is.
  */
 class LanceScanTableFunction(
     private val scanExtensions: DuckBridgeScanExtensions,
@@ -54,7 +53,7 @@ class LanceScanTableFunction(
 
 /**
  * `SELECT * FROM TABLE(<catalog>.system.vortex_scan(path => '<file.vortex>'))` — plain scan of a
- * vortex file via DuckDB's `read_vortex`. Ported from the DuckLake FileScan `read_vortex` path.
+ * vortex file via DuckDB's `read_vortex`.
  */
 class VortexScanTableFunction(
     private val scanExtensions: DuckBridgeScanExtensions,

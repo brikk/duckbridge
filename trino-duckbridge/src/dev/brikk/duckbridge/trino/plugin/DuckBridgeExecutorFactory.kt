@@ -18,13 +18,7 @@ import io.trino.plugin.jdbc.BaseJdbcConfig
 import io.trino.spi.StandardErrorCode.CONFIGURATION_INVALID
 import io.trino.spi.TrinoException
 
-/**
- * Builds the T2 [DuckBridgeExecutor] for the configured [DuckBridgeExecutionEngine]. Ported from the
- * DuckLake connector's `DucklakeDuckDbExecutorFactory`.
- *
- * Only consulted when the execution engine is a T2 Arrow engine (DUCKDB_LOCAL / QUACK); the default
- * JDBC path never touches this. Fails loud (CONFIGURATION_INVALID) when a required knob is missing.
- */
+/** Builds the Arrow [DuckBridgeExecutor] for the DUCKDB_LOCAL and QUACK execution engines. */
 class DuckBridgeExecutorFactory
     @Inject
     constructor(
@@ -73,7 +67,6 @@ class DuckBridgeExecutorFactory
             return QuackDuckBridgeExecutor(host, port, token, tuning, serverSideParityPathOrNull())
         }
 
-        /** Extract host/port from a `jdbc:quack://host:port[/...]` connection-url; null if not a quack URL. */
         private fun parseQuackHostPort(connectionUrl: String): Pair<String, Int>? {
             val prefix = "jdbc:quack://"
             if (!connectionUrl.startsWith(prefix)) {
@@ -90,7 +83,7 @@ class DuckBridgeExecutorFactory
 
         private data class LocalParityLoad(val path: String, val extensionDirectory: String?)
 
-        /** Local extension load source for the in-process T2 engine — null disables parity. */
+        /** Null disables parity. */
         private fun localParityLoadOrNull(): LocalParityLoad? {
             if (!config.stringPushdownMode.requiresParityExtension) {
                 return null
@@ -107,13 +100,9 @@ class DuckBridgeExecutorFactory
         }
 
         /**
-         * Optional server-side development path for the QUACK T2 engine. Production servers preload
-         * the signed community extension; the connector's startup probe fails loud when they do not.
+         * Optional server-side development path. Production servers preload the signed community
+         * extension; the startup probe fails loud when they do not.
          */
-        private fun serverSideParityPathOrNull(): String? {
-            if (!config.stringPushdownMode.requiresParityExtension) {
-                return null
-            }
-            return config.parityExtensionPath
-        }
+        private fun serverSideParityPathOrNull(): String? =
+            if (config.stringPushdownMode.requiresParityExtension) config.parityExtensionPath else null
     }

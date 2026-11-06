@@ -20,37 +20,16 @@ import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * Connection-init byte-comparison canary for string-pushdown modes >= BINARY (BINARY, PARITY).
- *
- * The dial's BINARY/PARITY contract is "DuckDB compares and orders VARCHAR by raw UTF-8 bytes,
- * identical to Trino's VARCHAR codepoint semantics." That contract must be VERIFIED per connection,
- * not assumed: a remote Quack server (or a future DuckDB build) configured with a case-insensitive
- * or otherwise non-binary `default_collation` would silently break equality/range pushdown —
- * returning wrong rows, the exact failure the doris string-probe work was built to prevent.
- *
- * Two checks, both fail loud:
- *  (a) `default_collation` is empty/binary (not e.g. `nocase`).
- *  (b) a small comparison + ordering canary over adversarial pairs: case-pair inequality,
- *      trailing-space inequality, NFC != NFD, astral (4-byte) ordering, zero-width inequality.
- *
- * On any failure, throws a [TrinoException] telling the operator to select GUARDED (or fix the
- * server's collation). GUARDED / NULL_ONLY never call this — they make no byte-alignment claim.
- *
- * See `dev-docs/REPORT-string-comparison-probe-duckdb-2.0.0.md`.
+ * Connection-init canary for string-pushdown modes BINARY and PARITY, which assume DuckDB compares
+ * and orders VARCHAR by raw UTF-8 bytes like Trino. That is verified per connection because a server
+ * with a non-binary `default_collation` would silently return wrong rows; any failure throws.
  */
 internal object DuckBridgeStringComparisonProbe {
     private val log: Logger = Logger.get(DuckBridgeStringComparisonProbe::class.java)
 
-    /**
-     * A single canary: a boolean SQL predicate that MUST evaluate to true under Trino-aligned byte
-     * semantics. [hazard] names the class for the error/report.
-     */
+    /** A boolean SQL predicate that must be true under Trino-aligned byte semantics. */
     data class Canary(val hazard: String, val sql: String)
 
-    /**
-     * The comparison/ordering canary set. Each predicate is true iff DuckDB matches Trino's VARCHAR
-     * byte semantics. Kept as data so the probe report test can enumerate and print verdicts.
-     */
     val CANARIES: List<Canary> =
         listOf(
             Canary("case-pair inequality (no case fold)", "('a' <> 'A') AND ('a' > 'A')"),
@@ -89,7 +68,6 @@ internal object DuckBridgeStringComparisonProbe {
             ),
         )
 
-    /** One-row result of the consolidated connection-init query. */
     data class ProbeResult(
         val collation: String,
         val parityMetaRows: Int?,
@@ -97,14 +75,9 @@ internal object DuckBridgeStringComparisonProbe {
     )
 
     /**
-     * Run every connection-init check in ONE statement / round trip. With [includeParityMeta], the
-     * same SELECT also resolves and counts `trino_meta()` — so default PARITY init no longer runs a
-     * metadata query plus 13 individual comparison queries (especially costly over Quack HTTP).
-     *
-     * This intentionally runs per connection rather than using a process-wide URL/mode cache. A
-     * cache cannot identify a restarted Quack/DuckDB instance: after restart the extension may no
-     * longer be loaded or `default_collation` may have changed, and skipping validation could return
-     * wrong rows. One fresh statement is the small, correctness-preserving cost (EV-C1).
+     * Runs every connection-init check in one round trip; with [includeParityMeta] it also counts
+     * `trino_meta()`. Deliberately not cached per URL: a cache cannot detect a restarted server whose
+     * extension or `default_collation` has changed.
      */
     @Throws(SQLException::class)
     fun probe(connection: Connection, includeParityMeta: Boolean): ProbeResult {
@@ -128,7 +101,6 @@ internal object DuckBridgeStringComparisonProbe {
         }
     }
 
-    /** The single SELECT used by [probe], data-exposed for statement-count / shape tests. */
     internal fun probeSql(includeParityMeta: Boolean): String =
         buildString {
             append("SELECT (SELECT value FROM duckdb_settings() WHERE name = 'default_collation') AS default_collation")
@@ -140,16 +112,12 @@ internal object DuckBridgeStringComparisonProbe {
             }
         }
 
-    /**
-     * Verify the connection honors Trino-aligned byte comparison, or throw. FULL mode does NOT call
-     * this (caller-asserted); only BINARY and PARITY do.
-     */
+    /** FULL mode does not call this: its byte alignment is asserted by the operator. */
     @Throws(SQLException::class)
     fun verifyOrThrow(connection: Connection, mode: DuckBridgeStringPushdownMode) {
         verifyOrThrow(probe(connection, includeParityMeta = false), mode)
     }
 
-    /** Validate a consolidated [ProbeResult], naming the first failed hazard class. */
     fun verifyOrThrow(result: ProbeResult, mode: DuckBridgeStringPushdownMode) {
         if (!isBinaryCollation(result.collation)) {
             throw divergence(
@@ -164,7 +132,6 @@ internal object DuckBridgeStringComparisonProbe {
         }
     }
 
-    /** Reads `default_collation` from `duckdb_settings()`; empty string when unset. */
     @Throws(SQLException::class)
     fun readDefaultCollation(connection: Connection): String {
         connection.createStatement().use { stmt ->

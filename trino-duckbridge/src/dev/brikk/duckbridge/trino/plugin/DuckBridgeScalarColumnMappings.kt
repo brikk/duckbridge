@@ -20,7 +20,10 @@ import io.trino.plugin.jdbc.ObjectWriteFunction
 import io.trino.plugin.jdbc.PredicatePushdownController.DISABLE_PUSHDOWN
 import io.trino.plugin.jdbc.SliceReadFunction
 import io.trino.plugin.jdbc.SliceWriteFunction
+import io.trino.plugin.jdbc.StandardColumnMappings.bigintColumnMapping
+import io.trino.plugin.jdbc.StandardColumnMappings.integerColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.longDecimalWriteFunction
+import io.trino.plugin.jdbc.StandardColumnMappings.smallintColumnMapping
 import io.trino.plugin.jdbc.StandardColumnMappings.timeReadFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.timeWriteFunction
 import io.trino.plugin.jdbc.StandardColumnMappings.timestampColumnMapping
@@ -34,14 +37,13 @@ import io.trino.spi.type.DateTimeEncoding.unpackMillisUtc
 import io.trino.spi.type.DateTimeEncoding.unpackOffsetMinutes
 import io.trino.spi.type.DateTimeEncoding.unpackTimeNanos
 import io.trino.spi.type.DecimalType.createDecimalType
-import io.trino.spi.type.IntegerType.INTEGER
 import io.trino.spi.type.Int128
 import io.trino.spi.type.LongTimestampWithTimeZone
-import io.trino.spi.type.SmallintType.SMALLINT
 import io.trino.spi.type.TimeType
 import io.trino.spi.type.TimeType.TIME_MICROS
 import io.trino.spi.type.TimeWithTimeZoneType
 import io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS
+import io.trino.spi.type.TimeZoneKey
 import io.trino.spi.type.TimestampWithTimeZoneType
 import io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MICROS
 import io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS
@@ -52,6 +54,7 @@ import io.trino.spi.type.UuidType.UUID
 import io.trino.spi.type.VarbinaryType.VARBINARY
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.Types
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.Instant
@@ -61,23 +64,16 @@ import java.time.OffsetTime
 import java.time.ZoneOffset
 
 /**
- * Lossless DuckDB scalar mappings not covered by the original upstream DuckDbClient port (EV-C5).
- *
- * JDBC 2.0.0 was probed at both `ResultSetMetaData` and value-getter levels before adding these:
- * BLOB→`getBytes`, TIMESTAMPTZ→[OffsetDateTime], TIME→[LocalTime], TIMETZ raw object→[OffsetTime],
- * UUID→[java.util.UUID], and unsigned integers widened to the next signed Trino type. Predicate
- * domain pushdown is disabled for UUID and zoned temporal values until their ordering/bind semantics
- * have their own cross-engine proof; function-expression pushdown is independent of that controller.
- *
- * DuckDB HUGEINT/UHUGEINT are intentionally absent: both can require 39 decimal digits, while Trino
- * DECIMAL tops out at 38. Mapping either to DECIMAL(38,0), BIGINT, or VARCHAR by default would degrade
- * value/type semantics; unsupported handling remains explicit and fail-safe.
+ * Lossless DuckDB scalar mappings beyond the standard JDBC type codes. Unsigned integers widen to the
+ * next signed Trino type; domain pushdown is disabled for UUID and zoned temporal values, whose
+ * ordering and bind semantics are not proven to match. HUGEINT/UHUGEINT are absent because they can
+ * need 39 digits and Trino DECIMAL stops at 38.
  */
 internal object DuckBridgeScalarColumnMappings {
     private val UBIGINT_DECIMAL = createDecimalType(20, 0)
 
     /** Mapping selected by DuckDB's JDBC type name before the coarser JDBC type-code switch. */
-    fun byTypeName(typeName: String?, sessionZone: io.trino.spi.type.TimeZoneKey): ColumnMapping? =
+    fun byTypeName(typeName: String?, sessionZone: TimeZoneKey): ColumnMapping? =
         DuckBridgeNanosColumnMappings.byTypeName(typeName, sessionZone) ?: when (typeName?.uppercase()) {
             "BLOB" -> varbinaryColumnMapping()
             "TIMESTAMP_S" -> timestampColumnMapping(TIMESTAMP_SECONDS)
@@ -92,11 +88,10 @@ internal object DuckBridgeScalarColumnMappings {
                 )
             "TIME WITH TIME ZONE", "TIMETZ" -> timeWithTimeZoneMapping()
             "UUID" -> uuidMapping()
-            "UTINYINT" -> io.trino.plugin.jdbc.StandardColumnMappings.smallintColumnMapping()
-            "USMALLINT" -> io.trino.plugin.jdbc.StandardColumnMappings.integerColumnMapping()
-            "UINTEGER" -> io.trino.plugin.jdbc.StandardColumnMappings.bigintColumnMapping()
+            "UTINYINT" -> smallintColumnMapping()
+            "USMALLINT" -> integerColumnMapping()
+            "UINTEGER" -> bigintColumnMapping()
             "UBIGINT" -> unsignedBigintMapping()
-            // HUGEINT/UHUGEINT: no lossless Trino primitive; leave to configured unsupported handling.
             else -> null
         }
 
@@ -128,7 +123,7 @@ internal object DuckBridgeScalarColumnMappings {
             else -> null
         }
 
-    private fun timestampWithTimeZoneMapping(zone: io.trino.spi.type.TimeZoneKey): ColumnMapping =
+    private fun timestampWithTimeZoneMapping(zone: TimeZoneKey): ColumnMapping =
         ColumnMapping.objectMapping(
             TIMESTAMP_TZ_MICROS,
             ObjectReadFunction.of(LongTimestampWithTimeZone::class.java) { rs, index -> readTimestampWithTimeZone(rs, index, zone) },
@@ -158,7 +153,7 @@ internal object DuckBridgeScalarColumnMappings {
     private fun readTimestampWithTimeZone(
         resultSet: ResultSet,
         index: Int,
-        zone: io.trino.spi.type.TimeZoneKey,
+        zone: TimeZoneKey,
     ): LongTimestampWithTimeZone {
         val value = resultSet.getObject(index, OffsetDateTime::class.java)
         val instant = value.toInstant()
@@ -176,7 +171,7 @@ internal object DuckBridgeScalarColumnMappings {
         return if (type.isShort) {
             WriteMapping.longMapping(
                 "timestamp with time zone",
-                LongWriteFunction.of(java.sql.Types.TIMESTAMP_WITH_TIMEZONE) { statement, index, packed ->
+                LongWriteFunction.of(Types.TIMESTAMP_WITH_TIMEZONE) { statement, index, packed ->
                     statement.setObject(index, OffsetDateTime.ofInstant(Instant.ofEpochMilli(unpackMillisUtc(packed)), ZoneOffset.UTC))
                 },
             )

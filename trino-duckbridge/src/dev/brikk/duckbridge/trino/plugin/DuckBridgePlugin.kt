@@ -15,12 +15,5 @@ package dev.brikk.duckbridge.trino.plugin
 
 import io.trino.plugin.jdbc.JdbcPlugin
 
-/**
- * DuckBridge: a generic Trino -> DuckDB connector, seed for later parity-extension pushdown phases.
- *
- * Built on Trino's base-jdbc framework. The `duckbridge` connector name is the string users put
- * in a catalog properties file (`connector.name=duckbridge`).
- *
- * [JdbcPlugin] wires the `query` passthrough table function for free.
- */
+/** Trino connector for DuckDB, registered as `connector.name=duckbridge`. */
 class DuckBridgePlugin : JdbcPlugin("duckbridge", { DuckBridgeClientModule() })

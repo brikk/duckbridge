@@ -22,22 +22,10 @@ import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * Owns parity-extension lifecycle for the connector: resolves the extension binary path once, and
- * on each session connection LOADs + probes the extension, failing loud if parity is enabled but the
- * extension can't be made available.
- *
- * "Fail loud over silently wrong": if the operator enabled parity (default) but the extension is
- * missing or won't load/probe, every query on that catalog throws a clear [TrinoException] with
- * install instructions rather than silently degrading to no function pushdown (which would look like
- * a mysterious perf cliff, not a misconfiguration).
- *
- * Transport-aware (P3):
- *  - EMBEDDED (T1): extract a bundled signed binary + install provenance into a private DuckDB
- *    extension directory and `LOAD trino_parity` by name. Explicit development paths load directly.
- *  - QUACK (T3): the worker cannot extract a binary for the *remote* server. If
- *    `duckbridge.parity-extension-path` is set it is treated as a SERVER-SIDE path and LOADed over
- *    the pass-through connection; otherwise we assume the server pre-loaded the extension and just
- *    probe `trino_meta()`. Either way, failure throws with server-side install instructions.
+ * LOADs and probes the parity extension on each connection. If PARITY mode is selected but the
+ * extension is unavailable, queries throw rather than silently losing function pushdown. Over Quack
+ * the worker cannot supply a binary, so a configured path is treated as server-side; otherwise the
+ * server is assumed to have the extension preloaded.
  */
 class DuckBridgeParity
     @Inject

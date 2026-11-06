@@ -15,12 +15,7 @@ package dev.brikk.duckbridge.trino.plugin
 
 /**
  * String predicate pushdown mode — catalog config `duckbridge.string-pushdown.mode`, per-query
- * override via session property `string_pushdown_mode` (either direction: tighten or loosen).
- *
- * Design borrowed from the sibling trino-doris connector's mode dial (grounded in a live
- * byte-semantics probe; see `dev-docs/REPORT-string-comparison-probe-duckdb-2.0.0.md`, whose format
- * mirrors doris's `REPORT-string-comparison-probe-4.1.3.md`). This dial REPLACES the old
- * `duckbridge.parity.enabled` boolean: it encodes two independent trust axes.
+ * override via session property `string_pushdown_mode`. It encodes two independent trust axes.
  *
  * **Comparison trust** (string `=`/`<`/IN/ranges/ORDER BY):
  *  - [NULL_ONLY]: push null-ness only; retain the full domain locally.
@@ -28,12 +23,12 @@ package dev.brikk.duckbridge.trino.plugin
  *    semantic assumptions; NUL-bearing domains are skipped entirely (the probed under-return hazard).
  *  - [BINARY]: full pushdown, backed by a live byte-comparison probe at connection init.
  *  - [FULL]: full pushdown, caller-asserted (no probe).
- *  - [PARITY]: BINARY comparison trust PLUS the `trino_parity` extension (the 10 ICU/hash ALIAS
- *    natives). The default.
+ *  - [PARITY]: BINARY comparison trust plus the `trino_parity` extension's ALIAS functions.
+ *    The default.
  *
  * **Function-semantics trust**: BARE/RENAME/OPERATOR/INLINE translator emissions are fixture-proven
- * and extension-free — they push in EVERY mode when they don't compare a string operand. ALIAS (the
- * 10 natives) needs the extension and is available ONLY in [PARITY]. Function predicates are never
+ * and extension-free — they push in EVERY mode when they don't compare a string operand. ALIAS
+ * needs the extension and is available ONLY in [PARITY]. Function predicates are never
  * "guarded": a diverging function prefilter under-returns, which a retained filter cannot repair, so
  * a string-comparing function conjunct is binary — proven (≥ BINARY) or not pushed.
  */
@@ -65,10 +60,8 @@ enum class DuckBridgeStringPushdownMode {
     FULL,
 
     /**
-     * [BINARY] comparison trust PLUS the `trino_parity` extension: the 10 ICU/hash ALIAS natives
-     * (`lower`, `upper`, `reverse`, trim family, `normalize/1`, `xxhash64`, `sha512`, `hmac_sha256`)
-     * push. The init probe runs AND the extension is LOADed + probed (fail-loud if missing). The
-     * default mode.
+     * [BINARY] comparison trust plus the `trino_parity` extension's ALIAS functions. The extension
+     * is LOADed and probed at connection init, failing loud if missing. The default mode.
      */
     PARITY,
     ;

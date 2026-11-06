@@ -5,7 +5,7 @@ import io.trino.spi.TrinoException
 import java.sql.Types
 import java.util.Locale
 
-/** Temporary fail-closed policy; revisit project TODO 5bdd9ba4 after the current qualification rounds. */
+/** Fails closed on DuckDB types that have no qualified Trino carrier. */
 internal object DuckBridgeBoundaryTypeGuard {
     fun verify(typeName: String, jdbcType: Int, textRequested: Boolean) {
         val name = typeName.trim().uppercase(Locale.ROOT)
@@ -19,7 +19,6 @@ internal object DuckBridgeBoundaryTypeGuard {
             else -> return
         }
         throw TrinoException(NOT_SUPPORTED, "DuckBridge temporarily rejects DuckDB type '$typeName': $reason. " +
-            "Use an explicit source CAST to a supported type if its semantics are intended; no automatic SQL CAST is inserted. " +
-            "See dev-docs/REPORT-boundary-type-policy-2026-10-30.md (revisit TODO 5bdd9ba4).")
+            "Use an explicit source CAST to a supported type if its semantics are intended; no automatic SQL CAST is inserted.")
     }
 }

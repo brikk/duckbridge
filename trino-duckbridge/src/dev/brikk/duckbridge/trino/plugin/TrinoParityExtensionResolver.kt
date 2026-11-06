@@ -16,6 +16,7 @@ package dev.brikk.duckbridge.trino.plugin
 import io.airlift.log.Logger
 import java.io.IOException
 import java.net.URL
+import java.nio.ByteBuffer
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -40,8 +41,7 @@ import java.util.concurrent.atomic.AtomicReference
  *     unsigned local development builds use a direct path. The directory is never a fixed,
  *     predictable path shared with other users of the host: this file is native code the DuckDB
  *     in the Trino worker will `dlopen`, so a world-writable `/tmp/trino-duckbridge/...` that
- *     another local user could pre-create or swap (TOCTOU) is not acceptable (EV-C4 in
- *     dev-docs/archive/TODO-rectify-from-eval.md).
+ *     another local user could pre-create or swap (TOCTOU) is not acceptable.
  *  3. If neither is available, return null — the caller decides how to fail.
  *
  * Signature: DuckDB 2 only trusts a community signature when the extension is loaded from an
@@ -57,14 +57,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Windows  + x86_64/amd64  -> windows-amd64
  * ```
  *
- * The Gradle build's `bundleParityExtension` task writes the host platform's binary plus any
- * cross-built linux variants that exist. Multi-platform bundling needs a CI matrix that builds
- * the extension on each target.
- *
- * P3 note (Quack remote): a server-side execution engine evaluates SQL in a separate process, so
- * this resolver's worker-local extraction is meaningless there. Production servers install and
- * LOAD the signed community extension by name; a configured path is only for a directly loadable
- * server-side development binary.
+ * Not used for a remote Quack server, which evaluates SQL in a separate process.
  */
 object TrinoParityExtensionResolver {
     private val log: Logger = Logger.get(TrinoParityExtensionResolver::class.java)
@@ -111,12 +104,11 @@ object TrinoParityExtensionResolver {
     fun resolveBundledExtensionPath(): String? = resolveBundledExtension()?.path
 
     /**
-     * Resolve a specific platform's bundled binary, regardless of the running host. Used by test
-     * fixtures that need to mount the Linux binary into a Linux container even though the JVM runs
-     * on macOS. Result is NOT cached — different platforms have different paths.
+     * Resolves a specific platform's bundled binary regardless of the running host. Not cached,
+     * since each platform has a different path.
      */
-    fun resolveBundledExtensionFor(platform: String): BundledExtension? {
-        return synchronized(resolveLock) {
+    fun resolveBundledExtensionFor(platform: String): BundledExtension? =
+        synchronized(resolveLock) {
             val resourcePath = "$RESOURCE_DIR/$platform/$RESOURCE_FILE"
             val url = TrinoParityExtensionResolver::class.java.classLoader.getResource(resourcePath)
             if (url == null) {
@@ -132,7 +124,6 @@ object TrinoParityExtensionResolver {
                 extractOrNull(url, infoUrl, platform)
             }
         }
-    }
 
     fun resolveBundledExtensionPathFor(platform: String): String? = resolveBundledExtensionFor(platform)?.path
 
@@ -255,9 +246,9 @@ object TrinoParityExtensionResolver {
     private fun readTail(file: Path, size: Long): ByteArray =
         Files.newByteChannel(file).use { ch ->
             ch.position(size - SIGNATURE_BYTES)
-            val buf = java.nio.ByteBuffer.allocate(SIGNATURE_BYTES)
+            val buf = ByteBuffer.allocate(SIGNATURE_BYTES)
             while (buf.hasRemaining() && ch.read(buf) >= 0) {
-                // fill to SIGNATURE_BYTES or EOF
+                // Read until full or EOF.
             }
             buf.flip()
             ByteArray(buf.remaining()).also { buf.get(it) }

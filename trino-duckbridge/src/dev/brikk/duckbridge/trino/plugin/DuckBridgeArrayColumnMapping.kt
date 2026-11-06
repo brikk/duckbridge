@@ -21,6 +21,7 @@ import io.trino.plugin.jdbc.PredicatePushdownController.DISABLE_PUSHDOWN
 import io.trino.spi.StandardErrorCode.NOT_SUPPORTED
 import io.trino.spi.TrinoException
 import io.trino.spi.block.ArrayBlockBuilder
+import io.trino.spi.block.ArrayValueBuilder
 import io.trino.spi.block.Block
 import io.trino.spi.block.BlockBuilder
 import io.trino.spi.type.ArrayType
@@ -38,21 +39,15 @@ import io.trino.spi.type.TimestampType
 import io.trino.spi.type.TimeType
 import io.trino.spi.type.VarcharType
 import java.math.BigDecimal
+import java.math.BigInteger
+import java.time.LocalTime
 
 /**
- * Read-only `ARRAY` column mapping for DuckDB list/array columns (`FLOAT[3]`, `DOUBLE[]`,
- * `VARCHAR[]`, ...). Needed for the lance embedding + tag columns the P5 scan/search PTFs surface —
- * base-jdbc's default `toColumnMapping` rejects `Types.ARRAY`, which is why `lance_scan('...')` over
- * a dataset with an embedding column failed metadata resolution.
- *
- * The DuckDB type name (`<element>[len]` or `<element>[]`) carries the element type; we map the
- * supported scalar element types and read via `java.sql.Array`. Predicate pushdown is disabled for
- * array columns (no meaningful domain over an array), and writes are unsupported (these functions
- * are read paths). The T2 Arrow page source decodes arrays via [DuckBridgeArrowToPageConverter]; this
- * mapping is the JDBC record-set counterpart + the metadata resolver.
+ * Read-only `ARRAY` column mapping for DuckDB list/array columns (`FLOAT[3]`, `VARCHAR[]`, ...),
+ * whose element type is carried only in the type name. Predicate pushdown is disabled and writes
+ * are unsupported.
  */
 object DuckBridgeArrayColumnMapping {
-    /** Build an ARRAY [ColumnMapping] from a DuckDB array type name, or null if the element is unsupported. */
     fun fromTypeName(duckDbTypeName: String): ColumnMapping? {
         val elementTypeName = arrayElementTypeName(duckDbTypeName) ?: return null
         val elementType = trinoElementType(elementTypeName) ?: return null
@@ -109,7 +104,7 @@ object DuckBridgeArrayColumnMapping {
             return arrayType.getObject(builder.build(), 0) as Block
         }
         builder.buildEntry(
-            io.trino.spi.block.ArrayValueBuilder<RuntimeException> { elementBuilder: BlockBuilder ->
+            ArrayValueBuilder<RuntimeException> { elementBuilder: BlockBuilder ->
                 for (element in elements) {
                     appendElement(elementType, elementBuilder, element)
                 }
@@ -128,12 +123,12 @@ object DuckBridgeArrayColumnMapping {
             INTEGER -> INTEGER.writeLong(builder, (element as Number).toLong())
             SMALLINT -> SMALLINT.writeLong(builder, (element as Number).toLong())
             BIGINT -> BIGINT.writeLong(builder, (element as Number).toLong())
-            REAL -> REAL.writeLong(builder, java.lang.Float.floatToRawIntBits((element as Number).toFloat()).toLong())
+            REAL -> REAL.writeLong(builder, (element as Number).toFloat().toRawBits().toLong())
             DOUBLE -> DOUBLE.writeDouble(builder, (element as Number).toDouble())
             is VarcharType -> elementType.writeSlice(builder, Slices.utf8Slice(element.toString()))
             is DecimalType -> appendDecimal(elementType, builder, element)
             is TimestampType -> elementType.writeObject(builder, DuckBridgeNanos.timestampCarrier(element))
-            is TimeType -> elementType.writeLong(builder, DuckBridgeNanos.time(element as java.time.LocalTime))
+            is TimeType -> elementType.writeLong(builder, DuckBridgeNanos.time(element as LocalTime))
             else -> throw TrinoException(NOT_SUPPORTED, "Unsupported array element type: $elementType")
         }
     }
@@ -142,7 +137,7 @@ object DuckBridgeArrayColumnMapping {
         val value =
             when (element) {
                 is BigDecimal -> element
-                is java.math.BigInteger -> element.toBigDecimal()
+                is BigInteger -> element.toBigDecimal()
                 else -> BigDecimal(element.toString())
             }.setScale(type.scale)
         if (type.isShort) {

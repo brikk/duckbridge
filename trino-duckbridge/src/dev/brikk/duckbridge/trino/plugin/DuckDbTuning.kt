@@ -16,10 +16,8 @@ package dev.brikk.duckbridge.trino.plugin
 import io.airlift.units.DataSize
 
 /**
- * DuckDB engine tuning applied at connection init by the T2 [DuckBridgeExecutor]s. For the
- * in-process engine each setting targets the per-split embedded instance; for Quack the SETs travel
- * via `quack_query_by_name` to the server-side DuckDB (instance-wide there). Ported from the DuckLake
- * connector's `DuckDbTuning`.
+ * DuckDB engine tuning applied at connection init by the Arrow [DuckBridgeExecutor]s. Over Quack the
+ * settings apply to the whole server-side instance, not just one split.
  */
 @JvmRecord
 data class DuckDbTuning(

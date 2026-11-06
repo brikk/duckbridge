@@ -19,15 +19,9 @@ import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * Decorates the base [ConnectionFactory] so that EVERY DuckDB connection the connector opens — the
- * scan/read path AND base-jdbc's own metadata probes (`getTableHandle`, `getColumns`, which call
- * `ConnectionFactory.openConnection` directly, bypassing `DuckBridgeClient.getConnection`) — has the
- * parity + lance/vortex extensions loaded.
- *
- * This is why extension loading lives here rather than only in `DuckBridgeClient.getConnection`: the
- * P5 scan PTFs resolve their output columns via `getTableHandle`, which opens a bare connection and
- * would otherwise see `__lance_scan` / `read_vortex` as unknown functions. Session-specific setup
- * (SET TimeZone) stays in `DuckBridgeClient.getConnection` — metadata probes don't need it.
+ * Loads the parity and lance/vortex extensions on every connection. This lives in the factory, not
+ * `DuckBridgeClient.getConnection`, because base-jdbc metadata probes (`getTableHandle`,
+ * `getColumns`) open connections directly and the scan table functions resolve columns through them.
  */
 class DuckBridgeExtensionConnectionFactory(
     private val delegate: ConnectionFactory,
@@ -38,9 +32,6 @@ class DuckBridgeExtensionConnectionFactory(
     override fun openConnection(session: ConnectorSession): Connection {
         val connection = delegate.openConnection(session)
         try {
-            // Per-connection string-pushdown init: LOAD+probe the extension in PARITY mode, and run
-            // the byte-comparison canary at mode >= BINARY. The mode is resolved from the session
-            // (honoring the string_pushdown_mode override) with the catalog default as fallback.
             parity.ensureInitialised(connection, session)
             scanExtensions.ensureLoaded(connection)
         } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {

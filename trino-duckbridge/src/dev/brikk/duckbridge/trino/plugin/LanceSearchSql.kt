@@ -14,8 +14,7 @@
 package dev.brikk.duckbridge.trino.plugin
 
 /**
- * Renders the DuckDB scan + lance-search SQL the P5 PTFs run. Ported from the DuckLake connector's
- * `LanceSearchSplitProcessor.renderExtraArgsSql`, adapted to the path-based (no-catalog) surface.
+ * Renders the DuckDB SQL the lance/vortex scan and search table functions run.
  *
  * All string arguments are single-quote escaped; vector elements are finite doubles (validated at
  * analyze time) so `Double.toString` always yields valid SQL literals; `k`/`alpha`/`prefilter` are
@@ -27,26 +26,18 @@ object LanceSearchSql {
 
     private fun sqlVector(vector: List<Double>): String = "[${vector.joinToString(", ")}]::DOUBLE[]"
 
-    /** `SELECT * FROM __lance_scan('<dir>')` — plain lance dataset scan. */
     fun lanceScan(path: String): String = "SELECT * FROM __lance_scan(${sqlString(path)})"
 
-    /** `SELECT * FROM read_vortex('<path>')` — plain vortex file scan. */
     fun vortexScan(path: String): String = "SELECT * FROM read_vortex(${sqlString(path)})"
 
-    /** `lance_vector_search('<dir>', '<col>', [..]::DOUBLE[], k := n, prefilter := b)`. */
     fun lanceVectorSearch(path: String, column: String, queryVector: List<Double>, k: Long, prefilter: Boolean): String =
         "SELECT * FROM lance_vector_search(${sqlString(path)}, ${sqlString(column)}, ${sqlVector(queryVector)}, " +
             "k := $k, prefilter := $prefilter)"
 
-    /** `lance_fts('<dir>', '<col>', '<query>', k := n, prefilter := b)`. */
     fun lanceFts(path: String, column: String, query: String, k: Long, prefilter: Boolean): String =
         "SELECT * FROM lance_fts(${sqlString(path)}, ${sqlString(column)}, ${sqlString(query)}, " +
             "k := $k, prefilter := $prefilter)"
 
-    /**
-     * `lance_hybrid_search('<dir>', '<vecCol>', [..]::DOUBLE[], '<textCol>', '<query>', k := n,
-     * [alpha := a,] prefilter := b)`.
-     */
     @Suppress("LongParameterList")
     fun lanceHybridSearch(
         path: String,

@@ -16,24 +16,18 @@ package dev.brikk.duckbridge.trino.plugin
 import java.sql.SQLException
 import java.sql.Statement
 
-/**
- * Renders a [DuckDbTuning] as the SET statements DuckDB expects, plus the settings we always apply
- * (`http_keep_alive`, `http_retries`). Executors call [applyDirect] (in-process) or [statements]
- * (Quack, which ships each via the `quack_query_by_name` wrapper). Ported from the DuckLake connector.
- */
+/** Renders a [DuckDbTuning] as DuckDB SET statements, plus the HTTP settings that are always applied. */
 object DuckDbTuningSql {
-    fun statements(tuning: DuckDbTuning): List<String> {
-        val out = mutableListOf<String>()
-        // Mandatory: connection reuse + sane retry posture for httpfs paths.
-        out.add("SET http_keep_alive = true")
-        out.add("SET http_retries = 5")
-        out.add("SET enable_object_cache = ${tuning.enableObjectCache}")
-        tuning.memoryLimit?.let { v -> out.add("SET memory_limit = '$v'") }
-        tuning.threads?.let { v -> out.add("SET threads = $v") }
-        tuning.tempDirectory?.let { v -> out.add("SET temp_directory = '${v.replace("'", "''")}'") }
-        tuning.tempDirectoryMaxSize?.let { v -> out.add("SET max_temp_directory_size = '$v'") }
-        return out
-    }
+    fun statements(tuning: DuckDbTuning): List<String> =
+        buildList {
+            add("SET http_keep_alive = true")
+            add("SET http_retries = 5")
+            add("SET enable_object_cache = ${tuning.enableObjectCache}")
+            tuning.memoryLimit?.let { v -> add("SET memory_limit = '$v'") }
+            tuning.threads?.let { v -> add("SET threads = $v") }
+            tuning.tempDirectory?.let { v -> add("SET temp_directory = '${v.replace("'", "''")}'") }
+            tuning.tempDirectoryMaxSize?.let { v -> add("SET max_temp_directory_size = '$v'") }
+        }
 
     @Throws(SQLException::class)
     fun applyDirect(stmt: Statement, tuning: DuckDbTuning) {

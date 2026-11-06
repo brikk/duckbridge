@@ -25,11 +25,11 @@ import io.trino.spi.expression.StandardFunctions
 import io.trino.spi.expression.Variable
 import io.trino.spi.type.BigintType
 import io.trino.spi.type.BooleanType
+import io.trino.spi.type.CharType
 import io.trino.spi.type.DateType
 import io.trino.spi.type.DoubleType
 import io.trino.spi.type.IntegerType
 import io.trino.spi.type.SmallintType
-import io.trino.spi.type.TimestampType
 import io.trino.spi.type.TimestampWithTimeZoneType
 import io.trino.spi.type.TinyintType
 import io.trino.spi.type.Type
@@ -37,142 +37,61 @@ import io.trino.spi.type.VarcharType
 import java.time.LocalDate
 
 /**
- * Translates a Trino [ConnectorExpression] predicate into DuckDB SQL fragments that the connector
- * pushes into the remote DuckDB WHERE clause via the base-jdbc `convertPredicate` seam.
- *
- * This is the "brain" of function-shape pushdown. It consults [EMISSION_STRATEGIES] and, for a
- * recognised `(name, arity)`, emits SQL per that entry's [Emission] class: a bare DuckDB built-in
- * ([Emission.Bare]), a rename ([Emission.Rename]), a parenthesized operator ([Emission.Operator]),
- * an inline SQL transform ([Emission.Inline]), or the `trino_parity` extension's `trino_<name>(...)`
- * alias ([Emission.Alias]). "Alias only what diverges": only the [Emission.Alias] entries depend on
- * the extension; the rest evaluate with Trino-identical semantics on a bare DuckDB and stay pushable
- * even when parity is disabled. Anything unrecognized — unknown function, NULL constant, unsupported
- * type — fails the translation for that conjunct so the caller leaves it in the remaining expression
- * for Trino to evaluate above the scan. The translator never throws.
- *
- * Top-level conjuncts (the children of a top-level `$and`) are translated independently so partial
- * pushdown is possible. (base-jdbc additionally splits conjuncts before calling `convertPredicate`,
- * so this decomposition is belt-and-suspenders.)
- *
- * Difference from the DuckLake port: variables resolve against [JdbcColumnHandle] (base-jdbc's
- * remote column handle) instead of DuckLake's own handle, and there is no row-id column concept.
+ * Translates a Trino [ConnectorExpression] predicate into DuckDB SQL fragments for the remote WHERE
+ * clause. Anything unrecognised (unknown function, unsupported type or constant) fails translation
+ * for that conjunct, leaving it for Trino to evaluate above the scan; the translator never throws.
  */
 object DuckBridgeExpressionTranslator {
-    /**
-     * The set of `(name, arg_count)` pairs the translator can push (across all emission classes).
-     * Backed by [EMISSION_STRATEGIES]. Only the [Emission.Alias] subset needs the extension; that
-     * subset is asserted ⊆ `trino_meta()` by `TestTrinoFunctionAliases.testAliasSetIsSubsetOfMeta`.
-     */
     val PUSHABLE_FUNCTIONS: Set<NameArity> get() = EMISSION_STRATEGIES.keys
 
-    /** The [Emission.Alias] subset — the entries that require the `trino_parity` extension. */
+    /** The entries that require the `trino_parity` extension. */
     val ALIAS_FUNCTIONS: Set<NameArity> get() = EMISSION_STRATEGIES.filterValues { it is Emission.Alias }.keys
 
-    /** The catalog of pushable entries and how each is emitted; lives in [DuckBridgeEmissionCatalog]. */
     val EMISSION_STRATEGIES: Map<NameArity, Emission> get() = DuckBridgeEmissionCatalog.EMISSION_STRATEGIES
 
     private val TYPE_GATES: Map<NameArity, ArgTypeGate> get() = DuckBridgeEmissionCatalog.TYPE_GATES
 
     /**
-     * Decompose `expression` into top-level AND-conjuncts and translate each independently.
-     * Returns the SQL fragments for conjuncts the translator could handle. The session-less overload
-     * reads as "no session properties available" — Tier C and any other session-property-gated entry
-     * stays unpushed.
-     */
-    fun translateConjuncts(expression: ConnectorExpression, assignments: Map<String, ColumnHandle>): List<String> =
-        translateConjuncts(expression, assignments, null)
-
-    fun translateConjuncts(
-        expression: ConnectorExpression,
-        assignments: Map<String, ColumnHandle>,
-        session: ConnectorSession?,
-    ): List<String> = translateConjuncts(expression, assignments, session, aliasAvailable = true)
-
-    /**
-     * [aliasAvailable] tells the translator whether the `trino_parity` extension's `trino_<name>(...)`
-     * layer is loaded on the target connection. When false, [Emission.Alias] entries are NOT pushed
-     * (they'd resolve to a missing function on the remote DuckDB); the Bare/Rename/Operator/Inline
-     * classes push regardless — they never touch the extension. This overload keeps string-comparison
-     * pushdown ON (used by rendering unit tests); production passes both trust axes via the mode.
+     * Translates each top-level AND-conjunct independently and returns the fragments that translated.
+     * [aliasAvailable] is whether the `trino_parity` extension is loaded on the target connection.
+     * [stringComparisonAllowed] is false in NULL_ONLY/GUARDED, where a diverging string prefilter
+     * would under-return and no retained filter can repair it.
      */
     fun translateConjuncts(
         expression: ConnectorExpression,
         assignments: Map<String, ColumnHandle>,
-        session: ConnectorSession?,
-        aliasAvailable: Boolean,
-    ): List<String> = translateConjuncts(expression, assignments, session, aliasAvailable, stringComparisonAllowed = true)
-
-    /**
-     * Full-trust-axis entry point. [aliasAvailable] gates the extension-backed [Emission.Alias]
-     * functions; [stringComparisonAllowed] gates conjuncts that COMPARE a string operand
-     * (`upper(x)='B'`, `x LIKE 'a%'`, string `=`/`</`/range) — false in NULL_ONLY/GUARDED, where such
-     * comparisons stay in Trino because a diverging string prefilter under-returns and no retained
-     * filter can repair it. Non-string-comparing conjuncts (`length(s)=5`, `abs(id)=3`,
-     * `year(d)=2000`) push in every mode.
-     */
-    fun translateConjuncts(
-        expression: ConnectorExpression,
-        assignments: Map<String, ColumnHandle>,
-        session: ConnectorSession?,
-        aliasAvailable: Boolean,
-        stringComparisonAllowed: Boolean,
-    ): List<String> {
-        val out: MutableList<String> = mutableListOf()
-        for (conjunct in conjuncts(expression)) {
-            if (isTautologyTrue(conjunct)) {
-                continue
-            }
-            translate(conjunct, assignments, session, aliasAvailable, stringComparisonAllowed)?.let(out::add)
-        }
-        return out.toList()
-    }
+        session: ConnectorSession? = null,
+        aliasAvailable: Boolean = true,
+        stringComparisonAllowed: Boolean = true,
+    ): List<String> =
+        conjuncts(expression)
+            .filterNot(::isTautologyTrue)
+            .mapNotNull { translate(it, assignments, session, aliasAvailable, stringComparisonAllowed) }
 
     private fun isTautologyTrue(expression: ConnectorExpression): Boolean =
         expression is Constant && expression.type is BooleanType && expression.value == true
 
-    private fun conjuncts(expression: ConnectorExpression): List<ConnectorExpression> {
+    private fun conjuncts(expression: ConnectorExpression): List<ConnectorExpression> =
         if (expression is Call && expression.functionName == StandardFunctions.AND_FUNCTION_NAME) {
-            val out: MutableList<ConnectorExpression> = mutableListOf()
-            for (child in expression.arguments) {
-                out.addAll(conjuncts(child))
-            }
-            return out
+            expression.arguments.flatMap(::conjuncts)
+        } else {
+            listOf(expression)
         }
-        return listOf(expression)
-    }
 
-    /** Translate a single expression to DuckDB SQL. Returns null when any subterm is unrecognised. Never throws. */
-    fun translate(expression: ConnectorExpression, assignments: Map<String, ColumnHandle>): String? =
-        translate(expression, assignments, null)
-
+    /** Translates a single expression to DuckDB SQL, or null when any subterm is unrecognised. */
     fun translate(
         expression: ConnectorExpression,
         assignments: Map<String, ColumnHandle>,
-        session: ConnectorSession?,
-    ): String? = translate(expression, assignments, session, aliasAvailable = true)
-
-    fun translate(
-        expression: ConnectorExpression,
-        assignments: Map<String, ColumnHandle>,
-        session: ConnectorSession?,
-        aliasAvailable: Boolean,
-    ): String? = translate(expression, assignments, session, aliasAvailable, stringComparisonAllowed = true)
-
-    fun translate(
-        expression: ConnectorExpression,
-        assignments: Map<String, ColumnHandle>,
-        session: ConnectorSession?,
-        aliasAvailable: Boolean,
-        stringComparisonAllowed: Boolean,
+        session: ConnectorSession? = null,
+        aliasAvailable: Boolean = true,
+        stringComparisonAllowed: Boolean = true,
     ): String? =
         try {
             translateOrNull(expression, assignments, session, Ctx(aliasAvailable, stringComparisonAllowed))
         } catch (@Suppress("TooGenericExceptionCaught") ignored: RuntimeException) {
-            // Defensive: any unexpected RuntimeException from a sub-translator => fail safe.
             null
         }
 
-    /** The two per-query trust axes threaded through the recursive translator. */
     private data class Ctx(val aliasAvailable: Boolean, val stringComparisonAllowed: Boolean)
 
     private fun translateOrNull(
@@ -189,16 +108,14 @@ object DuckBridgeExpressionTranslator {
         }
 
     private fun translateVariable(variable: Variable, assignments: Map<String, ColumnHandle>): String? {
-        if (DuckBridgeNanos.isHighPrecision(variable.type)) return null // nanos function semantics are not a generic microsecond proof
-        val column = assignments[variable.name]
-        if (column !is JdbcColumnHandle) {
-            return null
-        }
+        // Function semantics proven over microseconds do not carry over to nanosecond values.
+        if (DuckBridgeNanos.isHighPrecision(variable.type)) return null
+        val column = assignments[variable.name] as? JdbcColumnHandle ?: return null
         val escaped = column.columnName.replace("\"", "\"\"")
         return "\"$escaped\""
     }
 
-    @Suppress("CyclomaticComplexMethod") // Faithful port: one branch per SPI constant type; splitting it would obscure the type dispatch.
+    @Suppress("CyclomaticComplexMethod")
     private fun translateConstant(constant: Constant): String? {
         val value: Any? = constant.value
         val type: Type = constant.type
@@ -226,7 +143,7 @@ object DuckBridgeExpressionTranslator {
             val days = value as Long
             val date = LocalDate.ofEpochDay(days)
             // DuckDB's DATE literal parser rejects the signed/extended forms LocalDate emits for
-            // years <1 (BC, '-') or >9999 ('+'); leave such constants unpushed for Trino-side eval.
+            // years <1 or >9999.
             if (date.year !in 1..9999) {
                 return null
             }
@@ -235,8 +152,6 @@ object DuckBridgeExpressionTranslator {
         return null
     }
 
-    // Faithful port of the operator/function dispatch table; each branch encodes a verified semantic
-    // edge case (see class doc). Intentionally kept as one dispatch rather than re-derived.
     @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun translateCall(
         call: Call,
@@ -256,16 +171,11 @@ object DuckBridgeExpressionTranslator {
         when {
             name == StandardFunctions.AND_FUNCTION_NAME -> return joinBinary(args, " AND ", assignments, session, ctx)
             name == StandardFunctions.OR_FUNCTION_NAME -> return joinBinary(args, " OR ", assignments, session, ctx)
-            name == StandardFunctions.NOT_FUNCTION_NAME && args.size == 1 -> {
-                val inner = translateOrNull(args[0], assignments, session, ctx)
-                return if (inner == null) null else "(NOT $inner)"
-            }
-            name == StandardFunctions.IS_NULL_FUNCTION_NAME && args.size == 1 -> {
-                val inner = translateOrNull(args[0], assignments, session, ctx)
-                return if (inner == null) null else "($inner IS NULL)"
-            }
+            name == StandardFunctions.NOT_FUNCTION_NAME && args.size == 1 ->
+                return translateOrNull(args[0], assignments, session, ctx)?.let { "(NOT $it)" }
+            name == StandardFunctions.IS_NULL_FUNCTION_NAME && args.size == 1 ->
+                return translateOrNull(args[0], assignments, session, ctx)?.let { "($it IS NULL)" }
             name == StandardFunctions.LIKE_FUNCTION_NAME && args.size in 2..3 -> {
-                // LIKE is inherently a string comparison — requires >= BINARY string-comparison trust.
                 if (!ctx.stringComparisonAllowed) {
                     return null
                 }
@@ -275,10 +185,6 @@ object DuckBridgeExpressionTranslator {
 
         comparisonOperator(name)?.let { operator ->
             if (args.size == 2) {
-                // A comparison whose operands are string-typed needs >= BINARY string-comparison trust:
-                // in NULL_ONLY/GUARDED a diverging string prefilter under-returns, unfixable by a
-                // retained filter, so the whole conjunct stays in Trino. Non-string comparisons
-                // (length(s)=5, abs(id)=3, year(d)=2000) push in every mode.
                 if (comparesStringOperand(args) && !ctx.stringComparisonAllowed) {
                     return null
                 }
@@ -300,7 +206,6 @@ object DuckBridgeExpressionTranslator {
 
         when {
             name == StandardFunctions.IDENTICAL_OPERATOR_FUNCTION_NAME && args.size == 2 -> {
-                // IS NOT DISTINCT FROM over strings is a string comparison — same gate as `=`.
                 if (comparesStringOperand(args) && !ctx.stringComparisonAllowed) {
                     return null
                 }
@@ -318,29 +223,20 @@ object DuckBridgeExpressionTranslator {
                     "(CASE WHEN ${DuckBridgeFloatingExpressions.comparison(left, "=", right)} THEN NULL ELSE $left END)"
                 else "nullif($left, $right)"
             }
-            name == StandardFunctions.NEGATE_FUNCTION_NAME && args.size == 1 -> {
-                val inner = translateOrNull(args[0], assignments, session, ctx)
-                return if (inner == null) null else "(-$inner)"
-            }
+            name == StandardFunctions.NEGATE_FUNCTION_NAME && args.size == 1 ->
+                return translateOrNull(args[0], assignments, session, ctx)?.let { "(-$it)" }
             name == StandardFunctions.CAST_FUNCTION_NAME && args.size == 1 ->
                 return translateCast(call, args[0], "CAST", assignments, session, ctx)
             name == StandardFunctions.TRY_CAST_FUNCTION_NAME && args.size == 1 ->
                 return translateCast(call, args[0], "TRY_CAST", assignments, session, ctx)
         }
 
-        // String concat is a translator rewrite (NOT a macro): Trino's concat(a,b,c) NULL-propagates,
-        // DuckDB's built-in concat silently skips NULLs. The `||` operator NULL-propagates in BOTH
-        // engines, so rewrite to (a || b || c). Gated on VARCHAR return type to avoid Trino's array
-        // overload (different NULL semantics).
+        // Trino's concat NULL-propagates but DuckDB's concat skips NULLs; `||` NULL-propagates in
+        // both. Gated on a VARCHAR result to exclude Trino's array overload.
         if (isVarcharConcat(name, args, call)) {
             return translateStringConcat(args, assignments, session, ctx)
         }
 
-        // Trino built-in functions: only push if (name, arity) is in our brain AND the optional
-        // argument-type gate accepts the actual call's argument types. The emission strategy decides
-        // whether we render a bare built-in, a rename, an operator, an inline transform, or the
-        // extension's trino_<name>(...) alias — and ALIAS entries only push when the extension is
-        // available on the target connection.
         if (name.catalogSchema.isEmpty) {
             val key = NameArity(name.name, args.size)
             val emission = EMISSION_STRATEGIES[key] ?: return null
@@ -356,7 +252,6 @@ object DuckBridgeExpressionTranslator {
         return null
     }
 
-    /** Render a pushable function call per its [Emission] strategy. Returns null if any arg fails. */
     private fun emitFunction(
         emission: Emission,
         trinoName: String,
@@ -365,10 +260,7 @@ object DuckBridgeExpressionTranslator {
         session: ConnectorSession?,
         ctx: Ctx,
     ): String? {
-        val rendered = ArrayList<String>(args.size)
-        for (arg in args) {
-            rendered.add(translateOrNull(arg, assignments, session, ctx) ?: return null)
-        }
+        val rendered = translateAll(args, assignments, session, ctx) ?: return null
         return when (emission) {
             is Emission.Bare -> call(trinoName, rendered)
             is Emission.Rename -> call(emission.duckName, rendered)
@@ -381,13 +273,22 @@ object DuckBridgeExpressionTranslator {
 
     private fun call(name: String, args: List<String>): String = args.joinToString(", ", "$name(", ")")
 
-    /**
-     * True iff either operand of a 2-arg comparison is a string type (VARCHAR or CHAR). Such
-     * comparisons carry the collation/byte-ordering trust question the mode dial gates; everything
-     * else is independent of string collation (floating comparisons have their own IEEE rendering).
-     */
+    /** Translates every argument in order, or returns null at the first one that fails. */
+    private fun translateAll(
+        args: List<ConnectorExpression>,
+        assignments: Map<String, ColumnHandle>,
+        session: ConnectorSession?,
+        ctx: Ctx,
+    ): List<String>? {
+        val rendered = ArrayList<String>(args.size)
+        for (arg in args) {
+            rendered.add(translateOrNull(arg, assignments, session, ctx) ?: return null)
+        }
+        return rendered
+    }
+
     private fun comparesStringOperand(args: List<ConnectorExpression>): Boolean =
-        args.any { it.type is VarcharType || it.type is io.trino.spi.type.CharType }
+        args.any { it.type is VarcharType || it.type is CharType }
 
     private fun isIntegerFamily(type: Type): Boolean = DuckBridgeEmissionCatalog.isIntegerFamily(type)
 
@@ -400,42 +301,19 @@ object DuckBridgeExpressionTranslator {
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
         ctx: Ctx,
-    ): String? {
-        val sql = StringBuilder(sqlName).append('(')
-        for (i in args.indices) {
-            if (i > 0) {
-                sql.append(", ")
-            }
-            val arg = translateOrNull(args[i], assignments, session, ctx) ?: return null
-            sql.append(arg)
-        }
-        sql.append(')')
-        return sql.toString()
-    }
+    ): String? = translateAll(args, assignments, session, ctx)?.let { call(sqlName, it) }
 
     private fun translateStringConcat(
         args: List<ConnectorExpression>,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
         ctx: Ctx,
-    ): String? {
-        val out = StringBuilder("(")
-        for (i in args.indices) {
-            if (i > 0) {
-                out.append(" || ")
-            }
-            val inner = translateOrNull(args[i], assignments, session, ctx) ?: return null
-            out.append(inner)
-        }
-        out.append(')')
-        return out.toString()
-    }
+    ): String? = translateAll(args, assignments, session, ctx)?.joinToString(" || ", "(", ")")
 
     /**
-     * Trino's planner unpacks a compiled LikePattern before it reaches the connector: the call is
-     * `$like(value, pattern)` or `$like(value, pattern, escape)` with VARCHAR [Constant] pattern and
-     * single-character escape. `NOT LIKE` arrives as `$not($like(...))` and reaches us through the
-     * `$not` branch. A non-constant or NULL pattern, or a NUL byte in either literal, stays unpushed.
+     * Trino's planner unpacks a compiled LikePattern before it reaches the connector, so the pattern
+     * and optional single-character escape arrive as VARCHAR [Constant]s. `NOT LIKE` arrives as
+     * `$not($like(...))`.
      */
     private fun translateLike(
         value: ConnectorExpression,
@@ -451,11 +329,8 @@ object DuckBridgeExpressionTranslator {
             return null
         }
         val translatedValue = translateOrNull(value, assignments, session, ctx) ?: return null
-        val sql = StringBuilder("(").append(translatedValue).append(" LIKE ").append(quoteLiteral(pattern))
-        if (escape != null) {
-            sql.append(" ESCAPE ").append(quoteLiteral(escape))
-        }
-        return sql.append(')').toString()
+        val escapeClause = escape?.let { " ESCAPE ${quoteLiteral(it)}" }.orEmpty()
+        return "($translatedValue LIKE ${quoteLiteral(pattern)}$escapeClause)"
     }
 
     private fun varcharConstant(expression: ConnectorExpression): String? {
@@ -487,16 +362,14 @@ object DuckBridgeExpressionTranslator {
 
     /**
      * Source/target pairs whose CAST / TRY_CAST results are identical in both engines. Excluded:
-     *  - string → anything else (EV-A9): DuckDB's parsers are more lenient — '1.0'→INTEGER 1,
-     *    '2020/01/01'→DATE, 'yes'→BOOLEAN — where Trino rejects (TRY_CAST NULL / CAST error).
-     *  - DOUBLE/REAL → VARCHAR (EV-A10): Java `Double.toString` vs DuckDB formatting
-     *    (1.0E7 vs 10000000.0, 1.0E20 vs 1e+20).
-     *  - TIMESTAMP/TIME/DECIMAL-family and anything not in [duckdbTypeName] → VARCHAR: rendering
-     *    (precision digits, trailing zeros) is engine-specific. Unbounded DATE text uses an explicit
-     *    astronomical-year formatter rather than DuckDB's native BC spelling.
+     *  - string → anything else: DuckDB's parsers are more lenient ('1.0'→INTEGER 1,
+     *    '2020/01/01'→DATE, 'yes'→BOOLEAN) where Trino rejects.
+     *  - DOUBLE/REAL → VARCHAR: Java `Double.toString` vs DuckDB formatting (1.0E7 vs 10000000.0).
+     *  - TIMESTAMP/TIME/DECIMAL-family → VARCHAR: precision digits and trailing zeros differ.
+     *    Unbounded DATE text uses an explicit astronomical-year formatter rather than DuckDB's BC spelling.
      */
     private fun castSemanticsAlign(source: Type, target: Type): Boolean {
-        val sourceIsString = source is VarcharType || source is io.trino.spi.type.CharType
+        val sourceIsString = source is VarcharType || source is CharType
         if (sourceIsString) {
             return target is VarcharType
         }
@@ -506,11 +379,6 @@ object DuckBridgeExpressionTranslator {
         return true
     }
 
-    /**
-     * Map a Trino [Type] to the DuckDB type name to use inside a CAST. Conservative: only primitive
-     * numeric / boolean / varchar / date are handled; timestamp precision + decimal scale + nested
-     * types are unsupported so the translator fails the cast cleanly and stays unpushed.
-     */
     private fun duckdbTypeName(type: Type): String? =
         when (type) {
             is BooleanType -> "BOOLEAN"
@@ -537,16 +405,12 @@ object DuckBridgeExpressionTranslator {
 
     private fun arithmeticOperator(name: FunctionName): String? =
         when (name) {
-            // Trino's $add/$subtract/$multiply map to identical SQL operators in DuckDB; both engines
-            // align on integer overflow throws and float NaN/Inf propagation.
             StandardFunctions.ADD_FUNCTION_NAME -> "+"
             StandardFunctions.SUBTRACT_FUNCTION_NAME -> "-"
             StandardFunctions.MULTIPLY_FUNCTION_NAME -> "*"
-            // $divide and $modulo are INTENTIONALLY not pushed: Trino integer `/` truncates toward
-            // zero (5/2=2) but DuckDB does true division (5/2=2.5), and divide/modulo-by-zero throws
-            // in Trino but silently yields Infinity/NULL in DuckDB (stripping the row before Trino's
-            // above-scan re-eval can throw). A future trino_divide/trino_modulo parity function would
-            // let these push safely. See TestDuckBridgeArithmeticPushdownParity.
+            // $divide and $modulo are not pushed: Trino integer `/` truncates (5/2=2) where DuckDB
+            // does true division (2.5), and division by zero throws in Trino but yields
+            // Infinity/NULL in DuckDB, silently dropping the row.
             else -> null
         }
 
@@ -560,16 +424,7 @@ object DuckBridgeExpressionTranslator {
         if (args.isEmpty()) {
             return null
         }
-        val out = StringBuilder("(")
-        for (i in args.indices) {
-            if (i > 0) {
-                out.append(separator)
-            }
-            val inner = translateOrNull(args[i], assignments, session, ctx) ?: return null
-            out.append(inner)
-        }
-        out.append(')')
-        return out.toString()
+        return translateAll(args, assignments, session, ctx)?.joinToString(separator, "(", ")")
     }
 
     fun interface ArgTypeGate {
@@ -578,9 +433,6 @@ object DuckBridgeExpressionTranslator {
 
     data class NameArity(val name: String, val arity: Int)
 
-    /**
-     * Emission strategy for a pushable `(name, arity)`. See [EMISSION_STRATEGIES].
-     */
     sealed interface Emission {
         /** Emit the same bare built-in name (`length(s)`, `abs(x)`). */
         data object Bare : Emission

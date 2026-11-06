@@ -24,13 +24,10 @@ import io.trino.spi.predicate.Domain
 
 /**
  * Mode-resolved [PredicatePushdownController] for VARCHAR (and CHAR-as-VARCHAR) domains. The
- * per-query [DuckBridgeStringPushdownMode] (session property override of the catalog default)
- * decides how a string-column [TupleDomain][io.trino.spi.predicate.TupleDomain] constraint is
- * split between the remote DuckDB WHERE clause and Trino's retained filter.
- *
- * Evidence: `dev-docs/REPORT-string-comparison-probe-duckdb-2.0.0.md` — DuckDB VARCHAR comparison /
- * range / IN / ORDER BY are pure byte (memcmp) semantics over UTF-8, identical to Trino's VARCHAR
- * semantics, with NUL (U+0000) as the one probed under-return hazard class handled by GUARDED.
+ * session's [DuckBridgeStringPushdownMode] decides how a string-column
+ * [TupleDomain][io.trino.spi.predicate.TupleDomain] constraint is split between the remote DuckDB
+ * WHERE clause and Trino's retained filter. NUL (U+0000) is the one known under-return hazard,
+ * handled by GUARDED.
  *
  * | mode | VARCHAR value domains | retained filter |
  * |------|------------------------|-----------------|

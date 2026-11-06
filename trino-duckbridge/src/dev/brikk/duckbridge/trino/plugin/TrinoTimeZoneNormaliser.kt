@@ -23,10 +23,7 @@ package dev.brikk.duckbridge.trino.plugin
  *   - Everything else — named IANA (`America/Los_Angeles`, `Asia/Kolkata`), bare
  *       `UTC`/`GMT`, AND fractional bare offsets (`+05:30`) — passes through unchanged.
  *       DuckDB accepts the named cases and cleanly rejects fractional bare offsets
- *       (`Unknown TimeZone '+05:30'!`). The caller decides what to do on rejection —
- *       typically log a one-shot WARN and proceed without a `SET TimeZone`, which
- *       compromises Tier C pushdown correctness for that connection but leaves Tier A/B
- *       untouched.
+ *       (`Unknown TimeZone '+05:30'!`); the caller decides what to do on rejection.
  *
  * In practice Trino delivers fractional-offset zones via their named IANA counterparts
  * (`Asia/Kolkata`, `America/St_Johns`), so the fractional-bare-offset rejection path is
@@ -45,7 +42,6 @@ object TrinoTimeZoneNormaliser {
         if ("Z" == trinoZoneId) {
             return "UTC"
         }
-        // ±HH:MM with integer-hour offset → Etc/GMT∓HH (POSIX sign inversion).
         if (isSixCharHhmmOffset(trinoZoneId)) {
             val hours = (trinoZoneId[1].code - '0'.code) * 10 + (trinoZoneId[2].code - '0'.code)
             val mins = (trinoZoneId[4].code - '0'.code) * 10 + (trinoZoneId[5].code - '0'.code)

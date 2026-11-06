@@ -17,20 +17,9 @@ import io.airlift.configuration.Config
 import io.airlift.configuration.ConfigDescription
 import io.airlift.units.DataSize
 
-/**
- * Connector-level configuration for the DuckBridge connector.
- *
- * The DuckDB connection URL comes from the standard base-jdbc `connection-url` catalog
- * property (handled by [io.trino.plugin.jdbc.BaseJdbcConfig]); this class holds the
- * DuckBridge-specific knobs.
- */
+/** DuckBridge-specific catalog configuration; the connection URL is base-jdbc's `connection-url`. */
 class DuckBridgeConfig {
-    /**
-     * When true, the in-process DuckDB is opened with `allow_unsigned_extensions=true`, which
-     * disables DuckDB's signature verification for every `LOAD`. Defaults to FALSE; release
-     * packages bundle signed community binaries. An unsigned development binary is rejected unless
-     * the operator explicitly opts in. (EV-C4: never silently dlopen unverified native code.)
-     */
+    /** Disables DuckDB's signature verification for every `LOAD`; only for local unsigned builds. */
     var isAllowUnsignedExtensions: Boolean = false
         private set
 
@@ -45,15 +34,9 @@ class DuckBridgeConfig {
     }
 
     /**
-     * String predicate pushdown mode (catalog default; per-query override via the
-     * `string_pushdown_mode` session property). Encodes both the string-comparison trust axis
-     * (NULL_ONLY < GUARDED < BINARY = FULL = PARITY) and the function-semantics trust axis (only
-     * PARITY unlocks the extension-backed ALIAS functions). Default [DuckBridgeStringPushdownMode.PARITY]
-     * — full comparison pushdown plus the trino_parity extension, the connector's historical posture.
-     *
-     * This dial REPLACES the former `duckbridge.parity.enabled` boolean. To run without the
-     * extension (formerly `parity.enabled=false`) use `GUARDED` (extension-free exact pushdown with
-     * a retained filter) or a higher non-PARITY mode.
+     * Catalog default for the `string_pushdown_mode` session property. Encodes both string-comparison
+     * trust (NULL_ONLY < GUARDED < BINARY = FULL = PARITY) and whether the extension-backed ALIAS
+     * functions push (PARITY only).
      */
     var stringPushdownMode: DuckBridgeStringPushdownMode = DuckBridgeStringPushdownMode.PARITY
         private set
@@ -68,12 +51,7 @@ class DuckBridgeConfig {
         return this
     }
 
-    // ---- lance / vortex scan+search PTFs (P5) ----------------------------------------------
-    // These PTFs run through DuckDB's `lance` / `vortex` extensions. When enabled, the connector
-    // INSTALLs (floating latest) + LOADs the extension on each connection so the PTF's synthetic
-    // scan query resolves. Off by default so a plain DuckDB/parity deployment never pays the
-    // per-connection extension load. On a remote (Quack) server the extension is a server-side
-    // concern — the connector probes it, never manages it.
+    // Off by default so a deployment without lance/vortex never pays the per-connection extension load.
 
     /** Enable the `lance_scan` / `lance_vector_search` / `lance_fts` / `lance_hybrid_search` PTFs. */
     var isLanceEnabled: Boolean = false
@@ -112,10 +90,7 @@ class DuckBridgeConfig {
         return this
     }
 
-    // ---- Quack (T3 remote) auth -------------------------------------------------------------
-    // Host/port live in the connection-url (jdbc:quack://host:port/...). Credentials live here so
-    // they are not embedded in a copy-pasteable URL. Mapped straight onto quack-jdbc's connection
-    // properties (token / tokenEnv / tokenFile / tls).
+    // Quack credentials live here rather than in the copy-pasteable connection-url.
 
     /** Quack auth token, passed to quack-jdbc's `token` property. Prefer [quackTokenEnv]/[quackTokenFile] for secrets. */
     var quackToken: String? = null
@@ -161,66 +136,45 @@ class DuckBridgeConfig {
         return this
     }
 
-    // ---- T2 execution engine (Arrow data plane) --------------------------------------------
-    // The default JDBC record-set path is production. The T2 Arrow page source is a benchmark
-    // channel; the DUCKDB_LOCAL/QUACK engines opt into it.
-
-    /**
-     * Data-plane read strategy. Default [DuckBridgeExecutionEngine.JDBC] (the plain base-jdbc
-     * row-by-row path, production). [DuckBridgeExecutionEngine.DUCKDB_LOCAL] /
-     * [DuckBridgeExecutionEngine.QUACK] select the T2 Arrow page source — an EXPERIMENTAL/BENCHMARK
-     * channel, never the default.
-     *
-     * QUACK is WIRED (experimental): [DuckBridgePageSourceProvider] renders base-jdbc's split query
-     * to a literal SQL string (parameters inlined by [QuackParameterInliner]) and ships it through
-     * `quack_query_by_name` via [QuackDuckBridgeExecutor]. Two INHERITED cautions from trino-ducklake
-     * do NOT obviously apply here and remain UNVERIFIED — treat as "measure, don't assume":
-     *   1. Server pool exhaustion — seen under DuckLake's per-file parallel splits; duckbridge uses
-     *      base-jdbc's single-split-per-query model, so that churn generator is absent.
-     *   2. "Multiple streaming scans" (duckdb-quack#150) — that is an ATTACH-mode local-optimizer
-     *      limit; both duckbridge remote paths run server-side (T3 quack-jdbc; T2 via
-     *      `quack_query_by_name`) and base-jdbc never pushes joins to the source, so the wall is
-     *      not on our read path.
-     */
+    /** Data-plane read strategy; the Arrow engines are benchmark channels. */
     var executionEngine: DuckBridgeExecutionEngine = DuckBridgeExecutionEngine.JDBC
         private set
 
     @Config("duckbridge.execution-engine")
-    @ConfigDescription("Data-plane engine: JDBC (default, production), DUCKDB_LOCAL or QUACK (T2 Arrow, benchmark)")
+    @ConfigDescription("Data-plane engine: JDBC (default), DUCKDB_LOCAL or QUACK (Arrow, experimental)")
     fun setExecutionEngine(executionEngine: DuckBridgeExecutionEngine): DuckBridgeConfig {
         this.executionEngine = executionEngine
         return this
     }
 
-    /** Quack server host for the T2 QUACK engine (the T3 quack-jdbc transport reads host from the URL). */
+    /** Quack server host for the QUACK execution engine; the quack-jdbc transport reads it from the URL. */
     var quackHost: String? = null
         private set
 
     @Config("duckbridge.quack.host")
-    @ConfigDescription("Quack server host for the T2 QUACK execution engine")
+    @ConfigDescription("Quack server host for the QUACK execution engine")
     fun setQuackHost(quackHost: String?): DuckBridgeConfig {
         this.quackHost = quackHost?.takeIf { it.isNotBlank() }
         return this
     }
 
-    /** Quack server port for the T2 QUACK engine. */
     var quackPort: Int = DEFAULT_QUACK_PORT
         private set
 
     @Config("duckbridge.quack.port")
-    @ConfigDescription("Quack server port for the T2 QUACK execution engine")
+    @ConfigDescription("Quack server port for the QUACK execution engine")
     fun setQuackPort(quackPort: Int): DuckBridgeConfig {
         this.quackPort = quackPort
         return this
     }
 
-    // ---- DuckDB tuning (applied by the T2 executors) ---------------------------------------
+    // ---- DuckDB tuning (applied by the Arrow executors) ------------------------------------
 
     var memoryLimit: DataSize? = null
         private set
 
     @Config("duckbridge.duckdb.memory-limit")
-    @ConfigDescription("DuckDB memory_limit for the T2 execution engine (e.g. '4GB')")
+    @ConfigDescription("DuckDB memory_limit for the in-process execution engine (e.g. '4GB')")
     fun setMemoryLimit(memoryLimit: DataSize?): DuckBridgeConfig {
         this.memoryLimit = memoryLimit
         return this
@@ -230,7 +184,7 @@ class DuckBridgeConfig {
         private set
 
     @Config("duckbridge.duckdb.threads")
-    @ConfigDescription("DuckDB threads for the T2 execution engine")
+    @ConfigDescription("DuckDB threads for the in-process execution engine")
     fun setThreads(threads: Int?): DuckBridgeConfig {
         this.threads = threads
         return this

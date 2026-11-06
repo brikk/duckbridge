@@ -25,8 +25,7 @@ val generateTrinoTarget by tasks.registering {
 kotlin.sourceSets.named("main") { kotlin.srcDir(targetSource) }
 tasks.named("compileKotlin") { dependsOn(generateTrinoTarget) }
 
-// Idiomatic-Kotlin quality gate (detekt 2.0 runs on the JDK 25 daemon; jvmTarget is read
-// from the Kotlin compilerOptions). Custom src/test layout, so point detekt at it explicitly.
+// Custom src/test layout, so point detekt at it explicitly.
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
@@ -44,10 +43,8 @@ val legacyStorageDriver by configurations.creating {
     isTransitive = false
 }
 
-// Use Trino BOM for all managed dependency versions
 dependencies {
     add(legacyStorageDriver.name, "org.duckdb:duckdb_jdbc:1.5.6.0")
-    // BOM import — controls versions for io.trino, io.airlift, jackson, opentelemetry, etc.
     implementation(platform("io.trino:trino-root:$targetTrino"))
     testImplementation(platform("io.trino:trino-root:$targetTrino"))
     implementation(enforcedPlatform(libs.kotlin.bom)) {
@@ -55,7 +52,6 @@ dependencies {
         exclude(group = "org.junit.jupiter")
     }
 
-    // Core implementation dependencies (versions from BOM)
     implementation("com.google.guava:guava")
     implementation(if (targetTrino == "483") "com.google.inject:guice" else "io.airlift:guice") {
         if (targetTrino == "483") artifact {
@@ -71,15 +67,11 @@ dependencies {
     implementation("io.trino:trino-plugin-toolkit")
     implementation("jakarta.validation:jakarta.validation-api")
     implementation(libs.duckdb.jdbc)
-    // Quack remote transport (T3): brikk's pure-JVM JDBC driver for DuckDB's Quack RPC protocol
-    // (dev.brikk.duckdb:quack-jdbc — a fixed fork of gizmodata's driver, incl. the LIST/ARRAY
-    // element-type fix). No runtime deps of its own (uses JDK 17 HttpClient). Selected by
-    // connection-url prefix (jdbc:quack://...) alongside the embedded DuckDB driver.
+    // Pure-JVM JDBC driver for DuckDB's Quack RPC protocol (a fork of gizmodata's driver),
+    // selected by the jdbc:quack:// connection-url prefix.
     implementation(libs.quack.jdbc)
-    // Arrow — the experimental execution-engine data plane decodes DuckDB's arrowExportStream
-    // batches to Trino Pages via DuckBridgeArrowToPageConverter and feeds Lance/Vortex functions.
-    // Versions come solely from the selected Trino BOM. Do not add a second,
-    // losing Arrow BOM: the former 18.3.0 pin was silently conflict-resolved to 19.0.0 (EV-D1).
+    // Arrow versions come solely from the Trino BOM. A second Arrow BOM loses conflict resolution
+    // silently.
     implementation(libs.arrow.vector)
     implementation(libs.arrow.memory.core)
     implementation(libs.arrow.data)
@@ -92,15 +84,11 @@ dependencies {
     compileOnly("io.opentelemetry:opentelemetry-context")
     compileOnly("io.trino:trino-spi")
 
-    // Runtime-only dependencies
     runtimeOnly("io.airlift:log-manager")
 
-    // Test dependencies
     testImplementation("io.airlift:testing")
     testImplementation("io.trino:trino-main")
-    // The pushdown plan assertions (QueryAssertions.QueryAssert.isFullyPushedDown / the
-    // io.trino.sql.planner.assertions.* plan matchers) and AbstractTestQueryFramework live in the
-    // trino-main and trino-testing test-jars.
+    // Plan assertions and AbstractTestQueryFramework live in the trino-main and trino-testing test-jars.
     testImplementation("io.trino:trino-main") {
         artifact { classifier = "tests" }
     }
@@ -111,7 +99,7 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    // Testcontainers-hosted Quack server for the T3 (quack-jdbc) integration tests.
+    // Testcontainers-hosted Quack server for the quack-jdbc integration tests.
     testImplementation(libs.testcontainers.core)
     testImplementation("org.testcontainers:testcontainers-toxiproxy:${libs.versions.containers.get()}")
 
@@ -121,11 +109,10 @@ dependencies {
     testImplementation("io.trino:trino-spi")
 }
 
-// ★ Keep engine-provided (parent-first SPI) jars OUT of the plugin dir. trino-base-jdbc /
+// Keep engine-provided (parent-first SPI) jars OUT of the plugin dir. trino-base-jdbc /
 // plugin-toolkit / airlift-json pull slice + jackson-annotations + opentelemetry-context back in at
 // COMPILE scope, so `compileOnly` alone does not remove them from runtimeClasspath — without these
 // excludes the assembled plugin dir bundles them and collides with Trino's parent-first classloader.
-// (Mirrors the trino-doris-connector assembly proof.)
 configurations.named("runtimeClasspath") {
     exclude(group = "io.trino", module = "trino-spi")
     exclude(group = "io.airlift", module = "slice")
@@ -141,8 +128,8 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
 
-// Strict dependency acceptance gates, separate from JUnit: 0.10.0 failed these contracts.
-// The bridge diagnostic is deliberately a different task, never a replacement acceptance route.
+// Strict Quack acceptance gates, run outside JUnit. The bridge diagnostic is a separate control
+// task, never an acceptance route.
 listOf("qualifyQuackStreaming" to "streaming", "qualifyQuackCancel" to "cancel",
     "qualifyQuackDisconnect" to "disconnect", "qualifyQuackCancelPartition" to "cancel-partition",
     "qualifyQuackLeaseReaping" to "lease-reaping", "probeQuackStreamingBridge" to "streaming-bridge-control").forEach { (name, gate) ->
@@ -174,10 +161,8 @@ tasks.register<JavaExec>("benchmarkScans") {
 
 // ---- Bundle trino_parity DuckDB extension into the plugin jar ----
 //
-// DuckDB 2 community signatures require the binary AND DuckDB-generated .info provenance. Signed
-// release inputs live under build/community/<platform>; local unsigned development builds remain a
-// binary-only fallback. The runtime resolver extracts signed pairs into a private standard DuckDB
-// extension tree and LOADs by name, while unsigned development builds retain direct-path loading.
+// DuckDB 2 community signatures require the binary AND its DuckDB-generated .info provenance, so
+// signed inputs are bundled as pairs; local unsigned builds are a binary-only fallback.
 //
 // Local development source paths (each independently optional), relative to the parity submodule:
 //   duckdb-trino-parity-extension/build/release/extension/...    host platform
@@ -352,11 +337,8 @@ val pluginAssemble by tasks.registering(Sync::class) {
     from("RELEASE-NOTES.md", "README-pushdown-reference.md")
 }
 
-// Guard the assembled plugin dir: no engine-provided (parent-first SPI) jar may be bundled, the
-// core runtime jars must be present, exactly one matching Guice runtime, and the
-// connector jar must carry its ServiceLoader registration (a real Trino server discovers the plugin
-// via META-INF/services — the programmatic installPlugin used by tests bypasses it, so a missing
-// registration is invisible to every suite). Mirrors trino-doris-connector's verifyPluginAssembly.
+// Guard the assembled plugin dir. The ServiceLoader check matters because tests install the plugin
+// programmatically, so a missing META-INF/services registration is invisible to every suite.
 val verifyPluginAssembly by tasks.registering {
     dependsOn(pluginAssemble)
     val pluginDir = layout.buildDirectory.dir("trino-plugin/trino-duckbridge-$version")

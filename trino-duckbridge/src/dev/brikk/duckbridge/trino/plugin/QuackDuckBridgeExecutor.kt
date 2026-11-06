@@ -25,21 +25,10 @@ import java.sql.SQLException
 import java.sql.Statement
 
 /**
- * Out-of-process T2 [DuckBridgeExecutor] reached via the Quack RPC protocol. Ported from the
- * DuckLake connector's `QuackDuckDbExecutor` and simplified to the base-jdbc seam.
- *
- * The JDBC client is still `duckdb_jdbc` (NOT gizmo's quack-jdbc): the local DuckDB LOADs the `quack`
- * extension, ATTACHes the remote server, and the query is run server-side via `quack_query_by_name`.
- * We use the DuckDB driver here — not quack-jdbc — precisely because only the DuckDB driver exposes
- * `DuckDBResultSet.arrowExportStream`, the Arrow surface this data plane needs.
- *
- * **Status: experimental/benchmark channel, never the default.** This executor runs in Quack
- * PUSHDOWN mode — the whole query is shipped server-side via `quack_query_by_name` — so it does NOT
- * hit the ATTACH-mode "multiple streaming scans" wall (duckdb-quack#150). Two inherited cautions
- * from trino-ducklake are UNVERIFIED under duckbridge's single-split-per-query, pushdown model and
- * should be MEASURED, not assumed: (1) fixed server-side pool exhaustion under per-split churn
- * (seen with DuckLake's per-file parallel splits), (2) the streaming-scans limit (attach-mode only).
- * See dev-docs/archive/P3-NOTES.md.
+ * [DuckBridgeExecutor] for a remote DuckDB reached via the Quack RPC protocol. A local DuckDB loads
+ * the `quack` extension and runs the query server-side through `quack_query_by_name`; it uses the
+ * DuckDB JDBC driver rather than quack-jdbc because only the former exposes `arrowExportStream`.
+ * Benchmark channel only.
  */
 class QuackDuckBridgeExecutor(
     private val host: String,
@@ -71,8 +60,7 @@ class QuackDuckBridgeExecutor(
                 for (tuningSql in DuckDbTuningSql.statements(tuning)) {
                     drainWrappedQuery(init, tuningSql)
                 }
-                // Server-side LOAD of trino_parity (registers trino_<name> + trino_meta() into the
-                // server's shared catalog). Idempotent-converging; retry catalog write-write conflicts.
+                // The server's catalog is shared across sessions, so concurrent LOADs can conflict.
                 parityExtensionPath?.let { path ->
                     DuckDbCatalogWriteRetry.retryConflicts("server-side LOAD trino_parity") {
                         connection.createStatement().use { s ->
@@ -134,7 +122,6 @@ class QuackDuckBridgeExecutor(
             }
         }
 
-        /** Wrap SQL for server-side execution via the `quack_query_by_name` table function. */
         private fun wrapAsSelect(innerSql: String): String =
             "SELECT * FROM system.main.quack_query_by_name('$ENGINE_CATALOG', '${escapeLiteral(innerSql)}')"
 

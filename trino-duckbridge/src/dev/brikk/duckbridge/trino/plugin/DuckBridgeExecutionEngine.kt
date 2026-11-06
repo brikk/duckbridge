@@ -14,16 +14,13 @@
 package dev.brikk.duckbridge.trino.plugin
 
 /**
- * The data-plane read strategy, selected via the `duckbridge.execution-engine` catalog property.
+ * The data-plane read strategy, selected via `duckbridge.execution-engine`.
  *
- *  - [JDBC] (default): the plain base-jdbc row-by-row path (`JdbcRecordSetProvider`). Works over both
- *    transports (embedded DuckDB and remote Quack via quack-jdbc). This is the production default.
- *  - [DUCKDB_LOCAL] (T2): a custom Arrow page source that runs the split's SQL through an in-process
- *    DuckDB and decodes `arrowExportStream` batches to Trino Pages. Benchmark channel.
- *  - [QUACK] (T2): the same Arrow page source but reaching a remote DuckDB via the `quack` DuckDB
- *    extension + `quack_query_by_name` wrapper (NOT quack-jdbc — that driver has no Arrow surface).
- *    Benchmark channel. **Gated:** Quack 1.5.4's fixed server-side connection pool exhausts under
- *    per-split churn, so this is a benchmark channel, not the default, until the pool rework lands.
+ *  - [JDBC] (default, production): the base-jdbc row-by-row path, over either transport.
+ *  - [DUCKDB_LOCAL]: an Arrow page source over an in-process DuckDB. Benchmark only.
+ *  - [QUACK]: the same Arrow page source over a remote DuckDB via the `quack` DuckDB extension
+ *    (quack-jdbc has no Arrow surface). Benchmark only: Quack's fixed server-side connection pool
+ *    exhausts under per-split churn.
  */
 enum class DuckBridgeExecutionEngine {
     JDBC,
@@ -31,6 +28,5 @@ enum class DuckBridgeExecutionEngine {
     QUACK,
     ;
 
-    /** True for the T2 Arrow page-source engines (as opposed to the default JDBC record-set path). */
     val isArrowPageSource: Boolean get() = this != JDBC
 }

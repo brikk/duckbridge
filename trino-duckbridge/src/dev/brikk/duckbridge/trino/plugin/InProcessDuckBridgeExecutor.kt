@@ -21,17 +21,13 @@ import org.duckdb.DuckDBConnection
 import org.duckdb.DuckDBResultSet
 import java.io.IOException
 import java.sql.Connection
+import java.sql.DriverManager
 import java.sql.SQLException
 import java.sql.Statement
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * In-process T2 [DuckBridgeExecutor]: per-execution embedded DuckDB against [connectionUrl]
- * (`jdbc:duckdb:...`), reusing `DuckDBResultSet.arrowExportStream` for the Arrow data plane.
- * Ported and simplified from the DuckLake connector's `InProcessDuckDbExecutor` — no ATTACH/file-scan
- * target machinery, since the query SQL already names its tables (base-jdbc rendered it).
- */
+/** [DuckBridgeExecutor] over a fresh embedded DuckDB connection per execution. */
 class InProcessDuckBridgeExecutor(
     private val connectionUrl: String,
     private val tuning: DuckDbTuning,
@@ -59,14 +55,12 @@ class InProcessDuckBridgeExecutor(
     }
 
     private fun openRawConnection(): DuckDBConnection {
-        // allow_unsigned_extensions is a startup setting — pass it as a connection property (a runtime
-        // SET is rejected and closes the Statement). Honours the same catalog flag as the JDBC path:
-        // off by default, so the LOAD '<path>' below is signature-verified (EV-C4).
+        // allow_unsigned_extensions is a startup setting: a runtime SET is rejected and closes the Statement.
         val props = Properties()
         if (allowUnsignedExtensions) {
             props.setProperty("allow_unsigned_extensions", "true")
         }
-        return java.sql.DriverManager.getConnection(connectionUrl, props) as DuckDBConnection
+        return DriverManager.getConnection(connectionUrl, props) as DuckDBConnection
     }
 
     @Throws(SQLException::class)
@@ -117,7 +111,6 @@ class InProcessDuckBridgeExecutor(
 
         @Throws(IOException::class)
         override fun close() {
-            // Fresh per-execution in-memory connection; connection.close() tears down everything.
             closeQuietly(arrowReader, resultSet, statement, connection, allocator)
         }
     }
@@ -136,7 +129,7 @@ class InProcessDuckBridgeExecutor(
                 if (timeZoneFailureWarned.putIfAbsent(z, true) == null) {
                     log.warn(
                         "duckbridge: in-process DuckDB rejected SET TimeZone for zone '%s': %s. " +
-                            "Tier A/B pushdown unaffected; Tier C correctness may diverge for this split.",
+                            "Pushed TIMESTAMP WITH TIME ZONE expressions may evaluate in a different zone for this split.",
                         z,
                         e.message?.lineSequence()?.firstOrNull() ?: e.message ?: "(no message)",
                     )

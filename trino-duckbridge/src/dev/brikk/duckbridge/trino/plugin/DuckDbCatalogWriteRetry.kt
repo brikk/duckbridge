@@ -26,7 +26,7 @@ import java.util.concurrent.ThreadLocalRandom
  * by every concurrent client session, and DuckDB aborts overlapping catalog writes with
  * `Catalog write-write conflict on create/alter with "..."` even when both transactions would write
  * identical content. The in-process executor opens a private DuckDB per split, so it never conflicts
- * and does not use this. Ported from the DuckLake connector.
+ * and does not use this.
  */
 internal object DuckDbCatalogWriteRetry {
     private val log: Logger = Logger.get(DuckDbCatalogWriteRetry::class.java)

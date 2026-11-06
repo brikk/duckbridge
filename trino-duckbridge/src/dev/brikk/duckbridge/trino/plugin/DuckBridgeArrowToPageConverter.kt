@@ -77,6 +77,8 @@ import org.apache.arrow.vector.complex.ListVector
 import org.apache.arrow.vector.complex.MapVector
 import org.apache.arrow.vector.complex.StructVector
 import org.apache.arrow.vector.types.pojo.ArrowType
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Materializes one [VectorSchemaRoot] batch from DuckDB's Arrow export stream
@@ -112,12 +114,8 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
         private val log: Logger = Logger.get(DuckBridgeArrowToPageConverter::class.java)
         private const val INITIAL_SCRATCH_BYTES = 256
 
-        // DuckDB exports JSON columns as Utf8 (the JSON text) over Arrow. Inlined from the DuckLake
-        // connector's DucklakeJsonSupport.isJson to avoid porting that whole helper.
         private fun isJsonType(type: Type): Boolean = type.baseName == StandardTypes.JSON
 
-        // Faithful port of the DuckLake converter: one dedicated per-column loop per Trino type,
-        // kept as a single dispatch so each type's Arrow-vector handling stays in one place.
         @Suppress("CyclomaticComplexMethod", "LongMethod")
         private fun convertColumn(type: Type, vector: FieldVector, rowCount: Int): Block {
             val builder: BlockBuilder = type.createBlockBuilder(null, rowCount)
@@ -228,10 +226,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                     writeTimestampTzColumn(type, vector, builder, rowCount)
                 }
                 UuidType.UUID -> {
-                    // DuckDB exports UUID columns as Utf8 (the printed hex form), not
-                    // FixedSizeBinary(16) — verified empirically against the in-process
-                    // DuckDB JDBC driver. Parse the string and convert to Trino's
-                    // 16-byte big-endian UUID Slice.
+                    // DuckDB exports UUID columns as Utf8 text, not FixedSizeBinary(16).
                     val v = vector as VarCharVector
                     for (i in 0 until rowCount) {
                         if (v.isNull(i)) {
@@ -239,19 +234,15 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                         }
                         else {
                             val s = String(v.get(i), Charsets.UTF_8)
-                            UuidType.UUID.writeSlice(builder, UuidType.javaUuidToTrinoUuid(java.util.UUID.fromString(s)))
+                            UuidType.UUID.writeSlice(builder, UuidType.javaUuidToTrinoUuid(UUID.fromString(s)))
                         }
                     }
                 }
                 is ArrayType, is RowType, is MapType -> {
-                    // ARRAY arrives as Arrow List (or FixedSizeList — how lance materializes
-                    // embeddings), ROW as Struct (fields positional), MAP as Map (list of key/value
-                    // entry structs). Contents go through the recursive appendNestedValue machinery.
                     writeComplexColumn(type, vector, builder, rowCount)
                 }
                 else -> {
-                    // JSON: DuckDB exports JSON columns as Utf8 (the JSON text) over Arrow, same
-                    // as VARCHAR. Wrap the bytes into the JSON Slice via the SPI writeSlice.
+                    // DuckDB exports JSON columns as Utf8 text.
                     if (isJsonType(type)) {
                         writeVariableWidthColumn(vector as VarCharVector, builder, rowCount)
                     }
@@ -294,8 +285,6 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             (builder as VariableWidthBlockBuilder).writeEntry(bytes, 0, bytes.size)
         }
 
-        /** Writes a whole complex (ARRAY/ROW/MAP) column: one entry per row, null-aware at the
-         * top level; entry contents go through the recursive [appendNestedValue] machinery. */
         private fun writeComplexColumn(type: Type, vector: FieldVector, builder: BlockBuilder, rowCount: Int) {
             for (row in 0 until rowCount) {
                 appendNestedValue(type, vector, row, builder)
@@ -397,16 +386,13 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                 type is TimestampWithTimeZoneType -> appendTimestampTzValue(type, vector, i, builder)
                 type is TimeType -> DuckBridgeArrowTemporal.appendTime(type, vector, i, builder)
                 type == UuidType.UUID -> {
-                    // Utf8-encoded over the Arrow exchange, like the column-level path.
                     val s = String((vector as VarCharVector).get(i), Charsets.UTF_8)
-                    UuidType.UUID.writeSlice(builder, UuidType.javaUuidToTrinoUuid(java.util.UUID.fromString(s)))
+                    UuidType.UUID.writeSlice(builder, UuidType.javaUuidToTrinoUuid(UUID.fromString(s)))
                 }
                 else -> appendScalarElement(type, vector, i, builder)
             }
         }
 
-        /** Appends one (non-null) primitive value. Split from [appendNestedValue] to keep each
-         * dispatch's cyclomatic complexity in check. */
         private fun appendScalarElement(type: Type, vector: FieldVector, i: Int, builder: BlockBuilder) {
             when {
                 type == BOOLEAN -> BOOLEAN.writeBoolean(builder, (vector as BitVector).get(i) != 0)
@@ -472,7 +458,6 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             }
         }
 
-        /** Appends one (non-null) decimal element, short or long form. */
         private fun appendDecimalElement(type: DecimalType, vector: DecimalVector, i: Int, builder: BlockBuilder) {
             val value = vector.getObject(i)
             if (type.isShort) {
@@ -500,7 +485,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             }
         }
 
-        @Suppress("CyclomaticComplexMethod") // dispatch over Arrow timestamp precision variants
+        @Suppress("CyclomaticComplexMethod")
         private fun writeTimestampColumn(type: TimestampType, vector: FieldVector, builder: BlockBuilder, rowCount: Int) {
             // Trino stores TIMESTAMP at micros-since-epoch in a long for precision <= 6,
             // and as LongTimestamp(micros, picosOfMicro) for precision <= 9.
@@ -565,25 +550,11 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             }
         }
 
-        @Suppress("CyclomaticComplexMethod") // dispatch over Arrow timestamptz precision variants
+        @Suppress("CyclomaticComplexMethod")
         private fun writeTimestampTzColumn(type: TimestampWithTimeZoneType, vector: FieldVector, builder: BlockBuilder, rowCount: Int) {
-            // Resolve the time zone ONCE per column from the Arrow schema. DuckDB
-            // sets the Arrow timestamp vector's TZ field to the session TimeZone at
-            // export time (probed across IANA / Etc/GMT± / fractional-offset-via-named
-            // zones — every shape comes through). Chunk 2 set DuckDB's session
-            // TimeZone to match Trino's session zone on attach, so the schema TZ
-            // arriving here IS the session zone the user wants. Pre-3.5 the code
-            // hardcoded UTC_KEY, which made Trino's above-scan year() always UTC-
-            // aligned regardless of session — that was an outlier vs. other Trino
-            // connectors (Iceberg, Hive, Parquet `isAdjustedToUtc=true` all return
-            // WTZ in session zone) and blocked Tier C pushdown over WTZ columns
-            // because DuckDB-side eval (session zone) and Trino above-scan eval
-            // (UTC) disagreed.
-            //
-            // Fallback to UTC_KEY when the schema TZ is missing or unparseable
-            // (one-shot WARN per zone string). Should not happen on the read path
-            // we control, but the converter stays robust for any future Arrow
-            // producer that didn't set the field.
+            // DuckDB stamps the Arrow vector with its session TimeZone, which is set to Trino's session
+            // zone, so values come back in the session zone like other Trino connectors. Falls back to
+            // UTC if the field is missing or unparseable.
             val zone = resolveTimeZoneKey(vector)
             when (vector) {
                 is TimeStampSecTZVector -> {
@@ -637,11 +608,9 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             }
         }
 
-        private val UNPARSEABLE_TZ_WARNED: java.util.concurrent.ConcurrentHashMap<String, Boolean> =
-                java.util.concurrent.ConcurrentHashMap()
+        private val UNPARSEABLE_TZ_WARNED: ConcurrentHashMap<String, Boolean> = ConcurrentHashMap()
 
-        // Intentional log-and-fallback-to-UTC for an unparseable Arrow zone string; the exception
-        // carries no extra actionable info beyond the zone string we already log.
+        // The exception carries nothing beyond the zone string, which is logged.
         @Suppress("SwallowedException")
         private fun resolveTimeZoneKey(vector: FieldVector): TimeZoneKey {
             val arrowType = vector.field.type
@@ -657,7 +626,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                     log.warn("Arrow schema TimeZone '%s' is not a recognised Trino TimeZoneKey; "
                                     + "falling back to UTC for incoming TIMESTAMP WITH TIME ZONE values "
                                     + "of this column. Subsequent occurrences of the same zone string "
-                                    + "use UTC without re-warning. See dev-docs/archive/REPORT-datetime-tz-handling.md.",
+                                    + "use UTC without re-warning.",
                             tzString)
                 }
                 return UTC_KEY
@@ -667,7 +636,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                     log.warn("Arrow schema TimeZone '%s' is not a recognised Trino TimeZoneKey; "
                                     + "falling back to UTC for incoming TIMESTAMP WITH TIME ZONE values "
                                     + "of this column. Subsequent occurrences of the same zone string "
-                                    + "use UTC without re-warning. See dev-docs/archive/REPORT-datetime-tz-handling.md.",
+                                    + "use UTC without re-warning.",
                             tzString)
                 }
                 return UTC_KEY

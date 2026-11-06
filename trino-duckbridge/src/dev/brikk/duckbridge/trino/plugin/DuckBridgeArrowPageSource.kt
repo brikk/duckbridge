@@ -14,7 +14,10 @@
 package dev.brikk.duckbridge.trino.plugin
 
 import io.airlift.log.Logger
+import io.trino.plugin.jdbc.JdbcErrorCode.JDBC_ERROR
 import io.trino.spi.Page
+import io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR
+import io.trino.spi.TrinoException
 import io.trino.spi.connector.ConnectorPageSource
 import io.trino.spi.connector.SourcePage
 import org.apache.arrow.memory.BufferAllocator
@@ -24,18 +27,14 @@ import org.duckdb.DuckDBConnection
 import org.duckdb.DuckDBResultSet
 import java.io.IOException
 import java.sql.PreparedStatement
+import java.sql.SQLException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * T2 Arrow page source: streams `DuckDBResultSet.arrowExportStream` batches from a prepared DuckDB
- * connection and decodes each to a Trino [Page] via [DuckBridgeArrowToPageConverter].
- *
- * The [preparedStatement] is produced by base-jdbc's `JdbcClient.buildSql` on [connection], so the
- * projection and bound parameters are exactly what the default JDBC path would use — no manual SQL
- * rendering. This is the DUCKDB_LOCAL data plane; the loop mirrors the DuckLake connector's
- * `DuckDbFilePageSource`.
+ * Streams `DuckDBResultSet.arrowExportStream` batches from a statement built by base-jdbc's
+ * `JdbcClient.buildSql` and decodes each to a Trino [Page]. The query runs lazily on first read.
  */
 class DuckBridgeArrowPageSource(
     private val connection: DuckDBConnection,
@@ -71,8 +70,7 @@ class DuckBridgeArrowPageSource(
             val root = reader.vectorSchemaRoot
             val page: Page =
                 if (projectedColumnCount == 0) {
-                    // Empty projection (e.g. count(*)): base-jdbc's buildSql emits a single dummy
-                    // column so positions flow; we only need the row count, not the dummy values.
+                    // Empty projection: base-jdbc emits a dummy column; only the row count matters.
                     Page(root.rowCount)
                 } else {
                     converter.convert(root)
@@ -81,10 +79,10 @@ class DuckBridgeArrowPageSource(
             return@withLock SourcePage.create(page)
         } catch (e: IOException) {
             closeResources()
-            throw io.trino.spi.TrinoException(io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR, "DuckBridge Arrow read failed", e)
-        } catch (e: java.sql.SQLException) {
+            throw TrinoException(GENERIC_INTERNAL_ERROR, "DuckBridge Arrow read failed", e)
+        } catch (e: SQLException) {
             closeResources()
-            throw io.trino.spi.TrinoException(io.trino.plugin.jdbc.JdbcErrorCode.JDBC_ERROR, "DuckBridge Arrow query failed", e)
+            throw TrinoException(JDBC_ERROR, "DuckBridge Arrow query failed", e)
         } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) {
             // Cleanup only: preserve the original conversion failure unchanged.
             closeResources()

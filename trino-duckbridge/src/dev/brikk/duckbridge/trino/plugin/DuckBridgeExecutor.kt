@@ -19,21 +19,9 @@ import java.io.IOException
 import java.sql.SQLException
 
 /**
- * T2 execution-engine strategy for the Arrow data plane. Owns the JDBC / RPC client used to run a
- * fully-rendered SQL query and stream rows back as Arrow.
- *
- * Ported from the DuckLake connector's `DucklakeDuckDbExecutor`, but adapted to the base-jdbc seam:
- * the query SQL is already rendered by base-jdbc's `QueryBuilder`/`PreparedQuery` from the
- * `JdbcTableHandle` (see [DuckBridgeArrowPageSourceProvider]), so this interface takes a plain SQL
- * string rather than DuckLake's `ExecutionRequest` + `DuckDbAttachTarget` + `DuckDbSelectSqlBuilder`
- * (all of which encode DuckLake's file-scan / schema-evolution model and are intentionally NOT
- * ported — see dev-docs/archive/P3-NOTES.md "Dropped from the ported executor surface").
- *
- * Two concrete shapes:
- *  - [InProcessDuckBridgeExecutor]: embedded DuckDB via `jdbc:duckdb:`.
- *  - [QuackDuckBridgeExecutor]: remote DuckDB reached via the `quack` DuckDB extension +
- *    `quack_query_by_name` wrapper (the DuckDB JDBC driver keeps `arrowExportStream`, which
- *    gizmo's quack-jdbc — the T3 transport — does not expose).
+ * Runs a SQL query already rendered by base-jdbc and streams the result back as Arrow. The remote
+ * implementation goes through the `quack` DuckDB extension rather than quack-jdbc because only the
+ * DuckDB JDBC driver exposes `arrowExportStream`.
  */
 interface DuckBridgeExecutor {
     /**
@@ -63,7 +51,7 @@ interface DuckBridgeExecutor {
      *                     split's JdbcTableHandle; predicate/limit/parity pushdown already inlined).
      * @param duckDbTimeZone optional DuckDB-acceptable zone (Trino session zone normalised via
      *                     [TrinoTimeZoneNormaliser]); applied with `SET TimeZone` before the query.
-     *                     Failure is logged once and tolerated (Tier C pushdown degrades).
+     *                     Failure is logged once and tolerated.
      */
     @JvmRecord
     data class ExecutionRequest(val sql: String, val duckDbTimeZone: String?)

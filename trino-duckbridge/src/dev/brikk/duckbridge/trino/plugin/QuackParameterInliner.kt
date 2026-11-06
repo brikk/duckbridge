@@ -39,19 +39,11 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /**
- * Inlines base-jdbc's [PreparedQuery] parameters into a literal SQL string for the T2 QUACK engine.
- *
- * `quack_query_by_name(catalog, sql)` takes a literal SQL string with no parameter binding, so the
- * `?` placeholders base-jdbc emits for pushed-down predicates must be rendered as DuckDB literals
- * before the query is shipped server-side.
- *
- * **Fail loud, never silently wrong.** Only types with an unambiguous DuckDB literal form are
- * rendered; anything else throws (the caller can fall back to `execution-engine=JDBC`). This keeps a
- * wrong-literal from ever producing wrong rows. The type set intentionally starts small and grows as
- * we prove each rendering against the parity suite.
+ * Inlines base-jdbc's [PreparedQuery] parameters as DuckDB literals, because `quack_query_by_name`
+ * takes a literal SQL string with no parameter binding. Only types with an unambiguous DuckDB
+ * literal form are rendered; anything else throws rather than risk a wrong literal.
  */
 object QuackParameterInliner {
-    /** Render [prepared] to a literal SQL string. No-op fast path when there are no parameters. */
     fun inline(prepared: PreparedQuery): String {
         val params = prepared.parameters()
         if (params.isEmpty()) {
@@ -61,7 +53,7 @@ object QuackParameterInliner {
         return substitutePlaceholders(prepared.query(), literals)
     }
 
-    @Suppress("CyclomaticComplexMethod") // A flat Trino-type → DuckDB-literal dispatch; one arm per type.
+    @Suppress("CyclomaticComplexMethod")
     private fun renderLiteral(param: QueryParameter): String {
         val value = param.value.orElse(null) ?: return "NULL"
         val type = param.type
@@ -80,9 +72,9 @@ object QuackParameterInliner {
 
     /** REAL native value is the float's int bits packed in a long (Trino's REAL javaType). */
     private fun renderReal(intBits: Long): String {
-        val f = java.lang.Float.intBitsToFloat(intBits.toInt())
+        val f = Float.fromBits(intBits.toInt())
         if (f.isNaN()) {
-            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a NaN REAL parameter")
+            throw TrinoException(NOT_SUPPORTED, "QUACK execution engine: cannot inline a NaN REAL parameter")
         }
         return "CAST('$f' AS REAL)"
     }
@@ -107,7 +99,7 @@ object QuackParameterInliner {
         if (!type.isShort) {
             throw TrinoException(
                 NOT_SUPPORTED,
-                "QUACK T2: cannot inline a TIMESTAMP($type) parameter with sub-microsecond precision",
+                "QUACK execution engine: cannot inline a TIMESTAMP($type) parameter with sub-microsecond precision",
             )
         }
         val micros = value as Long
@@ -127,7 +119,7 @@ object QuackParameterInliner {
                 is String -> value
                 else -> throw TrinoException(
                     NOT_SUPPORTED,
-                    "QUACK T2: cannot inline a string parameter of runtime type ${value.javaClass.name}",
+                    "QUACK execution engine: cannot inline a string parameter of runtime type ${value.javaClass.name}",
                 )
             }
         return "'" + text.replace("'", "''") + "'"
@@ -135,7 +127,7 @@ object QuackParameterInliner {
 
     private fun renderDouble(d: Double): String {
         if (d.isNaN()) {
-            throw TrinoException(NOT_SUPPORTED, "QUACK T2: cannot inline a NaN DOUBLE parameter")
+            throw TrinoException(NOT_SUPPORTED, "QUACK execution engine: cannot inline a NaN DOUBLE parameter")
         }
         if (d.isInfinite()) return "CAST('$d' AS DOUBLE)"
         return d.toString()
@@ -144,7 +136,7 @@ object QuackParameterInliner {
     private fun unsupported(type: Type) =
         TrinoException(
             NOT_SUPPORTED,
-            "QUACK T2 (execution-engine=QUACK) cannot yet inline a pushed-down predicate parameter of type '$type' " +
+            "The QUACK execution engine cannot yet inline a pushed-down predicate parameter of type '$type' " +
                 "into the quack_query_by_name literal. Run this query with execution-engine=JDBC (the default), or " +
                 "add a proven rendering for this type in QuackParameterInliner.",
         )
@@ -166,7 +158,7 @@ object QuackParameterInliner {
                 }
                 c == '?' && !inQuote -> {
                     if (next >= literals.size) {
-                        throw TrinoException(NOT_SUPPORTED, "QUACK T2: more '?' placeholders than parameters while inlining")
+                        throw TrinoException(NOT_SUPPORTED, "QUACK execution engine: more '?' placeholders than parameters while inlining")
                     }
                     sb.append(literals[next])
                     next++
@@ -177,7 +169,7 @@ object QuackParameterInliner {
         if (next != literals.size) {
             throw TrinoException(
                 NOT_SUPPORTED,
-                "QUACK T2: rendered query consumed $next of ${literals.size} parameters — placeholder/parameter mismatch",
+                "QUACK execution engine: rendered query consumed $next of ${literals.size} parameters — placeholder/parameter mismatch",
             )
         }
         return sb.toString()

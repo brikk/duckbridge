@@ -14,15 +14,8 @@
 package dev.brikk.duckbridge.trino.plugin
 
 /**
- * Which JDBC transport the connector talks over, derived from the `connection-url` prefix:
- *
- *  - `jdbc:duckdb:...`  → [EMBEDDED] (T1): an in-process DuckDB opened by the DuckDB JDBC driver.
- *  - `jdbc:quack://...` → [QUACK]    (T3): a remote DuckDB reached over the Quack RPC protocol via
- *    gizmo's `quack-jdbc` driver (pass-through — every statement runs directly server-side).
- *
- * The prefix fully determines transport, so there is no separate transport config knob (URL-first,
- * per the plan). Auth/tuning that a given transport needs comes from the `duckbridge.quack.*`
- * config; the URL carries host/port.
+ * The JDBC transport, determined solely by the `connection-url` prefix: `jdbc:duckdb:` is an
+ * in-process DuckDB, `jdbc:quack://` a remote DuckDB over the Quack RPC protocol.
  */
 enum class DuckBridgeTransport {
     EMBEDDED,
@@ -35,10 +28,6 @@ enum class DuckBridgeTransport {
         private const val EMBEDDED_PREFIX = "jdbc:duckdb:"
         private const val QUACK_PREFIX = "jdbc:quack:"
 
-        /**
-         * Classify a base-jdbc `connection-url`. Throws [IllegalArgumentException] for anything the
-         * connector can't route — fail loud rather than silently defaulting a typo'd URL to embedded.
-         */
         fun fromConnectionUrl(connectionUrl: String): DuckBridgeTransport =
             when {
                 connectionUrl.startsWith(EMBEDDED_PREFIX) -> EMBEDDED

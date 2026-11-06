@@ -20,7 +20,7 @@ import io.trino.plugin.jdbc.JdbcTransactionManager
 import io.trino.spi.function.table.ConnectorTableFunction
 
 /**
- * Guice providers for the P5 lance/vortex scan + search table functions. Each wraps its PTF in a
+ * Guice providers for the lance/vortex scan + search table functions. Each wraps its PTF in a
  * [ClassLoaderSafeConnectorTableFunction] (the same wrapping base-jdbc's `query` PTF uses) so the
  * plugin classloader is active during analyze. [JdbcTransactionManager] is bound by the base
  * `JdbcModule`; [DuckBridgeScanExtensions] is bound in [DuckBridgeClientModule].

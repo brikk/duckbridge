@@ -31,10 +31,7 @@ import io.trino.spi.type.VarcharType.VARCHAR
  * `system.lance_vector_search(path => ..., column => ..., query_vector => ARRAY[...], k => 10,
  * prefilter => false)` — approximate-nearest-neighbor search over a lance dataset directory, via
  * DuckDB's `lance_vector_search`. Returns the dataset's columns plus `_distance` (ascending).
- *
- * Ported from the DuckLake connector; path-based (no catalog table resolution). The DuckDB function
- * validates that `column` is an embedding column and appends `_distance`, so the output layout comes
- * back from the metadata probe — no connector-side type check needed.
+ * DuckDB validates that `column` is an embedding column, so no connector-side type check is needed.
  */
 class LanceVectorSearchTableFunction(
     private val scanExtensions: DuckBridgeScanExtensions,
@@ -78,7 +75,7 @@ class LanceVectorSearchTableFunction(
 /**
  * `system.lance_fts(path => ..., column => ..., query => 'text', k => 10, prefilter => false)` —
  * BM25 full-text search over a lance dataset directory via DuckDB's `lance_fts`. Returns matching
- * rows plus `_score` (descending). Works on unindexed datasets (brute-force). Ported from DuckLake.
+ * rows plus `_score` (descending). Works on unindexed datasets (brute-force).
  */
 class LanceFtsTableFunction(
     private val scanExtensions: DuckBridgeScanExtensions,
@@ -119,8 +116,8 @@ class LanceFtsTableFunction(
  * `system.lance_hybrid_search(path => ..., vector_column => ..., query_vector => ARRAY[...],
  * text_column => ..., query => 'text', k => 10, alpha => NULL, prefilter => false)` — combined
  * vector + full-text search via DuckDB's `lance_hybrid_search`. Returns the dataset's columns plus
- * `_distance`, `_score` (NULL for rows with no text match), `_hybrid_score` (descending). Ported
- * from DuckLake. `alpha` (vector-vs-text weight in [0,1]) is optional — NULL lets the extension pick.
+ * `_distance`, `_score` (NULL for rows with no text match), `_hybrid_score` (descending).
+ * `alpha` (vector-vs-text weight in [0,1]) is optional; NULL lets the extension pick.
  */
 class LanceHybridSearchTableFunction(
     private val scanExtensions: DuckBridgeScanExtensions,

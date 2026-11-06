@@ -23,6 +23,7 @@ import io.airlift.configuration.AbstractConfigurationAwareModule
 import io.airlift.configuration.ConfigBinder.configBinder
 import io.opentelemetry.api.OpenTelemetry
 import io.trino.plugin.base.expression.ConnectorExpressionRewriter
+import io.trino.plugin.base.session.SessionPropertiesProvider
 import io.trino.plugin.jdbc.BaseJdbcConfig
 import io.trino.plugin.jdbc.ConnectionFactory
 import io.trino.plugin.jdbc.DriverConnectionFactory
@@ -34,18 +35,14 @@ import io.trino.plugin.jdbc.credential.CredentialProvider
 import io.trino.plugin.jdbc.expression.JdbcConnectorExpressionRewriterBuilder
 import io.trino.plugin.jdbc.expression.ParameterizedExpression
 import io.trino.plugin.jdbc.ptf.Query
+import io.trino.spi.connector.ConnectorPageSourceProvider
 import io.trino.spi.function.table.ConnectorTableFunction
 import com.gizmodata.quack.jdbc.sql.QuackDriver
 import org.duckdb.DuckDBDriver
 import java.sql.Driver
 import java.util.Properties
 
-/**
- * Guice wiring for the DuckBridge connector: binds the [DuckBridgeClient], the transport
- * [DuckBridgeTransport] (derived from the connection-url), a [DriverConnectionFactory] over the
- * transport's JDBC driver ([DuckDBDriver] embedded / [QuackDriver] remote), the config, and the
- * `query` passthrough table function.
- */
+/** Guice wiring for the DuckBridge connector. */
 class DuckBridgeClientModule(
     /** Test seam for end-to-end pushed-vs-local row-set parity; production always uses the default. */
     private val expressionPushdownEnabled: Boolean = true,
@@ -60,24 +57,18 @@ class DuckBridgeClientModule(
         binder.bind(DuckBridgeParity::class.java).`in`(Scopes.SINGLETON)
         binder.bind(DuckBridgeScanExtensions::class.java).`in`(Scopes.SINGLETON)
         binder.bind(DuckBridgeExecutorFactory::class.java).`in`(Scopes.SINGLETON)
-        // Override base-jdbc's default ConnectorPageSourceProvider with our gating one. It delegates
-        // to the default JdbcPageSourceProvider for the JDBC engine (production) and only diverts to
-        // the T2 Arrow page source for the DUCKDB_LOCAL engine. JdbcPageSourceProvider's own deps
-        // (JdbcClient, executor, retry policy) are bound by the base JdbcModule.
         binder.bind(JdbcPageSourceProvider::class.java).`in`(Scopes.SINGLETON)
-        newOptionalBinder(binder, io.trino.spi.connector.ConnectorPageSourceProvider::class.java)
+        newOptionalBinder(binder, ConnectorPageSourceProvider::class.java)
             .setBinding()
             .to(DuckBridgePageSourceProvider::class.java)
             .`in`(Scopes.SINGLETON)
-        newSetBinder(binder, io.trino.plugin.base.session.SessionPropertiesProvider::class.java)
+        newSetBinder(binder, SessionPropertiesProvider::class.java)
             .addBinding()
             .to(DuckBridgeSessionProperties::class.java)
             .`in`(Scopes.SINGLETON)
         val tableFunctions = newSetBinder(binder, ConnectorTableFunction::class.java)
         tableFunctions.addBinding().toProvider(Query::class.java).`in`(Scopes.SINGLETON)
-        // lance / vortex scan + search PTFs (P5). They're always registered (so a clear
-        // "extension not enabled" error fires at analyze time); the per-connection extension load is
-        // config-gated in DuckBridgeClient.getConnection.
+        // Always registered so a clear "extension not enabled" error fires at analyze time.
         tableFunctions.addBinding().toProvider(LanceScanFunctionProvider::class.java).`in`(Scopes.SINGLETON)
         tableFunctions.addBinding().toProvider(VortexScanFunctionProvider::class.java).`in`(Scopes.SINGLETON)
         tableFunctions.addBinding().toProvider(LanceVectorSearchFunctionProvider::class.java).`in`(Scopes.SINGLETON)
@@ -86,19 +77,8 @@ class DuckBridgeClientModule(
     }
 
     /**
-     * The parity expression rewriter. base-jdbc's [JdbcConnectorExpressionRewriterBuilder]
-     * `addStandardRules` covers variables/constants/comparisons/arithmetic/AND/OR with parameterized
-     * SQL; we deliberately do NOT use those and instead supply ONE whole-expression rule
-     * ([DuckBridgeParityExpressionRule]) that runs the ported translator, which already covers those
-     * shapes AND the `trino_*` parity catalog with identical, verified semantics. Building via the
-     * jdbc builder (rather than `new ConnectorExpressionRewriter(...)`) keeps us on the supported seam
-     * and the [ParameterizedExpression] result type base-jdbc's `convertPredicate` expects.
-     *
-     * The rule is ALWAYS registered; the trust axes are resolved per-session from the string-pushdown
-     * mode inside the rule (so the `string_pushdown_mode` session override applies). The
-     * Bare/Rename/Operator/Inline emission classes push in every mode when they don't compare a string
-     * operand; only PARITY mode unlocks the extension-backed ALIAS functions, and only modes >= BINARY
-     * unlock string-comparing conjuncts.
+     * Deliberately omits base-jdbc's `addStandardRules`: the single [DuckBridgeParityExpressionRule]
+     * covers those shapes too, and resolves the string-pushdown mode per session.
      */
     @Provides
     @Singleton
@@ -110,7 +90,6 @@ class DuckBridgeClientModule(
             builder.build()
         }
 
-    /** Transport is fully determined by the connection-url prefix (see [DuckBridgeTransport]). */
     @Provides
     @Singleton
     fun transport(config: BaseJdbcConfig): DuckBridgeTransport =
@@ -135,16 +114,12 @@ class DuckBridgeClientModule(
             DuckBridgeTransport.EMBEDDED -> {
                 driver = DuckDBDriver()
                 if (duckBridgeConfig.isAllowUnsignedExtensions) {
-                    // DuckDB JDBC connection property. Required so the in-process DuckDB can LOAD
-                    // the locally-built (unsigned) trino_parity.duckdb_extension.
                     connectionProperties.setProperty("allow_unsigned_extensions", "true")
                 }
             }
             DuckBridgeTransport.QUACK -> {
                 driver = QuackDriver()
-                // Host/port come from the URL; credentials + tls come from config, kept out of the
-                // copy-pasteable URL. Token resolution order (token → tokenEnv → tokenFile) is the
-                // driver's; we only forward whichever the operator set.
+                // Credentials and TLS come from config so they stay out of the copy-pasteable URL.
                 duckBridgeConfig.quackToken?.let { connectionProperties.setProperty("token", it) }
                 duckBridgeConfig.quackTokenEnv?.let { connectionProperties.setProperty("tokenEnv", it) }
                 duckBridgeConfig.quackTokenFile?.let { connectionProperties.setProperty("tokenFile", it) }
@@ -158,9 +133,6 @@ class DuckBridgeClientModule(
                 .setConnectionProperties(connectionProperties)
                 .setOpenTelemetry(openTelemetry)
                 .build()
-        // Decorate so parity + lance/vortex extensions load on EVERY connection — including
-        // base-jdbc's metadata probes (getTableHandle/getColumns) that bypass
-        // DuckBridgeClient.getConnection. Session-specific SET TimeZone stays in getConnection.
         return DuckBridgeExtensionConnectionFactory(base, parity, scanExtensions)
     }
 }

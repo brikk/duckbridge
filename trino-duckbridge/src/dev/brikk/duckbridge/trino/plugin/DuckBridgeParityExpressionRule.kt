@@ -23,36 +23,10 @@ import io.trino.spi.expression.Call
 import java.util.Optional
 
 /**
- * A single base-jdbc [ConnectorExpressionRule] that delegates a whole [Call] conjunct to the
- * [DuckBridgeExpressionTranslator], preserving the translator's hard-won semantics verbatim rather
- * than re-deriving them as a pile of `GenericRewrite` string patterns.
- *
- * Both trust axes come from the per-session [DuckBridgeStringPushdownMode] (read at rewrite time, so
- * the `string_pushdown_mode` session override is honored): only PARITY makes the extension-backed
- * [DuckBridgeExpressionTranslator.Emission.Alias] entries pushable, and only modes >= BINARY allow
- * conjuncts that COMPARE a string operand. The Bare/Rename/Operator/Inline classes push in every
- * mode when they don't compare a string (their correctness is fixture-proven against a bare DuckDB).
- * This is why the rule is ALWAYS registered.
- *
- * Why one whole-expression rule instead of `addStandardRules(...)` + per-function rules:
- *
- *  - The translator is a self-contained ConnectorExpression → DuckDB-SQL compiler that already
- *    handles variables, constants, comparisons, arithmetic, AND/OR/NOT/IS NULL/LIKE, CAST, coalesce,
- *    nullif, the `concat → ||` NULL-semantics rewrite, and the full `trino_*` parity catalog with
- *    its per-argument type gates (Tier A/B/C, the `pushdown_timestamp_with_timezone` gate). Every one
- *    of those encodes a correctness edge case discovered in the DuckLake work.
- *  - It emits fully-inlined SQL (literals rendered directly, identifiers quoted) with NO bound
- *    parameters, so the produced [ParameterizedExpression] carries an empty parameter list. That's
- *    intentional and safe: the translator only inlines constants it can render losslessly (integers,
- *    finite doubles, escaped varchar, in-range dates) and refuses everything else, returning null so
- *    the conjunct stays above the scan.
- *  - base-jdbc splits the constraint into conjuncts before calling `convertPredicate`, so returning
- *    [Optional.empty] here leaves exactly that conjunct for Trino while other conjuncts still push —
- *    the same per-conjunct partial-pushdown model the DuckLake translator relied on.
- *
- * The rule matches any [Call]; the top-level predicate Trino hands `applyFilter` is a boolean-typed
- * Call (comparison, AND, IS NULL, LIKE, ...), so matching `Call` covers the pushable shapes. Bare
- * Variable/Constant conjuncts are not independently pushable predicates and are correctly skipped.
+ * A single base-jdbc [ConnectorExpressionRule] that hands a whole [Call] conjunct to
+ * [DuckBridgeExpressionTranslator], with both trust axes read from the session's
+ * [DuckBridgeStringPushdownMode]. The translator inlines only constants it can render losslessly, so
+ * the resulting [ParameterizedExpression] intentionally has no bound parameters.
  */
 class DuckBridgeParityExpressionRule : ConnectorExpressionRule<Call, ParameterizedExpression> {
     override fun getPattern(): Pattern<Call> = PATTERN

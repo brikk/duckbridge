@@ -37,29 +37,9 @@ import io.trino.spi.type.DoubleType.DOUBLE
 import java.util.Optional
 
 /**
- * Shared machinery for the DuckBridge scan + lance-search table functions
- * (`lance_scan`, `vortex_scan`, `lance_vector_search`, `lance_fts`, `lance_hybrid_search`) under
- * `<catalog>.system.*`.
- *
- * Ported from the DuckLake connector's `AbstractLanceSearchTableFunction`, but **path-based** rather
- * than catalog-resolved: a duckbridge catalog has no DuckLake table→dataset-directory mapping, so
- * these PTFs take the dataset `PATH` directly. The DuckLake v1-scope guards (all-lance-format,
- * no-deletes, s3-only-on-Quack) resolved a *catalog table*'s files and are dropped — there is no
- * table to resolve; the user names a path.
- *
- * Execution reuses base-jdbc's `query` PTF pattern (the cleanest self-contained seam in the JdbcPlugin
- * frame): [analyzeScanQuery] builds the DuckDB scan/search SQL, wraps it in a [PreparedQuery], and
- * calls [JdbcMetadata.getTableHandle] to resolve the output columns — which runs the query's metadata
- * on a connection that has the lance/vortex extension loaded (see [DuckBridgeScanExtensions] wired into
- * `DuckBridgeClient.getConnection`). The returned [Query.QueryFunctionHandle] then flows through
- * base-jdbc's existing `applyTableFunction` → scan → split → page-source path. No custom
- * ConnectorMetadata / split / processor is needed.
- *
- * Consequence (be truthful): domain predicates over the PTF are NOT pushed into the generated scan
- * SQL (the DuckLake `LanceSearchTableHandle` / `applyFilter` / `applyTopN` machinery that did that
- * needs a custom ConnectorMetadata, which the JdbcPlugin frame doesn't expose for PTFs). A `WHERE` /
- * `ORDER BY ... LIMIT` over the PTF is applied by Trino ABOVE the function. `DuckDbWhereClauseTranslator`
- * was therefore NOT ported (see dev-docs/archive/P5-NOTES.md).
+ * Shared machinery for the path-based lance/vortex scan and search table functions under
+ * `<catalog>.system.*`. Execution reuses base-jdbc's `query` table function path, so a `WHERE` or
+ * `ORDER BY ... LIMIT` over these functions is applied by Trino above the function, not pushed.
  */
 abstract class AbstractDuckBridgeScanFunction(
     private val transactionManager: JdbcTransactionManager,
@@ -67,11 +47,6 @@ abstract class AbstractDuckBridgeScanFunction(
     functionName: String,
     arguments: List<ArgumentSpecification>,
 ) : AbstractConnectorTableFunction(SYSTEM_SCHEMA, functionName, arguments, GENERIC_TABLE, "") {
-    /**
-     * Build the analysis for a scan/search whose DuckDB SQL is [scanSql]. Resolves the output layout
-     * by probing the query metadata (which loads/uses the extension on the connection) and returns a
-     * [Query.QueryFunctionHandle] so base-jdbc's scan path executes it.
-     */
     protected fun analyzeScanQuery(
         session: ConnectorSession,
         transaction: ConnectorTransactionHandle,
@@ -90,7 +65,6 @@ abstract class AbstractDuckBridgeScanFunction(
             .build()
     }
 
-    /** The DuckDB extension this PTF needs (for the enabled-check message). */
     protected val requiredExtension: String get() = extension
 
     companion object {
@@ -119,7 +93,6 @@ abstract class AbstractDuckBridgeScanFunction(
 
         fun booleanArgument(arguments: Map<String, Argument>, name: String): Boolean = scalarValue(arguments, name) as Boolean
 
-        /** Extract `K`, validating positivity. */
         fun kArgument(arguments: Map<String, Argument>): Long {
             val k: Long = scalarValue(arguments, ARG_K) as Long
             if (k <= 0) {
@@ -128,10 +101,7 @@ abstract class AbstractDuckBridgeScanFunction(
             return k
         }
 
-        /**
-         * The `ARRAY(DOUBLE)` constant arrives as a [Block] of double elements. Reject NULL elements
-         * and non-finite values — the vector is rendered as a SQL list literal for DuckDB.
-         */
+        /** Rejects NULL and non-finite elements because the vector is rendered as a SQL list literal. */
         fun queryVectorArgument(arguments: Map<String, Argument>, name: String): List<Double> {
             val block: Block = scalarValue(arguments, name) as Block
             if (block.positionCount == 0) {

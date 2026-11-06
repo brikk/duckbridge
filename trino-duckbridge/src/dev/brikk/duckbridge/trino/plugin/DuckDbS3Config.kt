@@ -16,16 +16,8 @@ package dev.brikk.duckbridge.trino.plugin
 import java.util.Locale
 
 /**
- * S3 settings read from the catalog's connector-properties map for DuckDB's httpfs extension on the
- * T2 read path. Reuses the standard `s3.*` keys (`s3.endpoint`, `s3.region`, `s3.aws-access-key`,
- * `s3.aws-secret-key`, `s3.path-style-access`). Ported from the DuckLake connector.
- *
- * All fields are optional; when [endpoint] is absent the connector falls back to AWS-default
- * endpoint resolution. [useSsl] is derived from the endpoint URL scheme (defaults to true).
- *
- * P3 status: no S3/MinIO in the current test env, so this ships as a ported-but-unexercised knob —
- * see the P3 dev-doc note. It exists so the T2 executors can attach `s3://` URLs when an operator
- * configures object storage.
+ * S3 settings for DuckDB's httpfs extension on the Arrow read path, read from the standard `s3.*`
+ * catalog keys. When [endpoint] is absent DuckDB uses AWS-default endpoint resolution.
  */
 @JvmRecord
 data class DuckDbS3Config(
@@ -43,17 +35,17 @@ data class DuckDbS3Config(
      * races with in-flight scans, while `IF NOT EXISTS` on an existing secret performs no catalog
      * write. First-contact creates can still conflict and are retried by [DuckDbCatalogWriteRetry].
      */
-    fun renderCreateSecretSql(): String {
-        val sql = StringBuilder("CREATE SECRET IF NOT EXISTS duckbridge_s3 (TYPE S3")
-        endpoint?.let { e -> sql.append(", ENDPOINT '").append(stripScheme(e).replace("'", "''")).append("'") }
-        region?.let { r -> sql.append(", REGION '").append(r.replace("'", "''")).append("'") }
-        accessKey?.let { k -> sql.append(", KEY_ID '").append(k.replace("'", "''")).append("'") }
-        secretKey?.let { s -> sql.append(", SECRET '").append(s.replace("'", "''")).append("'") }
-        sql.append(", URL_STYLE '").append(if (pathStyleAccess) "path" else "vhost").append("'")
-        sql.append(", USE_SSL ").append(useSsl)
-        sql.append(")")
-        return sql.toString()
-    }
+    fun renderCreateSecretSql(): String =
+        buildString {
+            append("CREATE SECRET IF NOT EXISTS duckbridge_s3 (TYPE S3")
+            endpoint?.let { e -> append(", ENDPOINT '").append(stripScheme(e).replace("'", "''")).append("'") }
+            region?.let { r -> append(", REGION '").append(r.replace("'", "''")).append("'") }
+            accessKey?.let { k -> append(", KEY_ID '").append(k.replace("'", "''")).append("'") }
+            secretKey?.let { s -> append(", SECRET '").append(s.replace("'", "''")).append("'") }
+            append(", URL_STYLE '").append(if (pathStyleAccess) "path" else "vhost").append("'")
+            append(", USE_SSL ").append(useSsl)
+            append(")")
+        }
 
     companion object {
         fun fromCatalogConfig(config: Map<String, String>): DuckDbS3Config {
@@ -69,10 +61,7 @@ data class DuckDbS3Config(
             )
         }
 
-        private fun trimmed(value: String?): String? {
-            val t = (value ?: return null).trim()
-            return t.ifEmpty { null }
-        }
+        private fun trimmed(value: String?): String? = value?.trim()?.ifEmpty { null }
 
         private fun stripScheme(url: String): String {
             // DuckDB's S3 ENDPOINT field expects host:port, not a full URL.
