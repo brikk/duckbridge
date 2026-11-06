@@ -26,6 +26,7 @@ import org.apache.doris.connector.spi.pushdown.ConnectorLiteral
 import org.apache.doris.connector.spi.pushdown.ConnectorOr
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.LocalDate
 
 class TestDuckBridgeQueryBuilder {
@@ -78,6 +79,19 @@ class TestDuckBridgeQueryBuilder {
                 ConnectorComparison(ConnectorComparison.Operator.NE, colRef("id"), ConnectorLiteral.ofLong(3)),
             ),
         ).contains(""""id" <> 3""")
+    }
+
+    @Test
+    fun decimalLiteralsRenderInPlainForm() {
+        val price = colRef("price", ConnectorType.of("DECIMALV3", 38, 30))
+        fun sql(text: String) = build(listOf(intCol("id")), eq(price, ConnectorLiteral.ofDecimal(BigDecimal(text), 38, 30)))
+
+        assertThat(sql("0.000000100000000000000000000001"))
+            .contains(""""price" = 0.000000100000000000000000000001)""")
+        assertThat(sql("1E+3")).contains(""""price" = 1000)""")
+        assertThat(sql("-1.23E-7")).contains(""""price" = -0.000000123)""")
+        assertThat(sql("0E-10")).contains(""""price" = 0.0000000000)""")
+        assertThat(sql("123.4500")).contains(""""price" = 123.4500)""")
     }
 
     @Test

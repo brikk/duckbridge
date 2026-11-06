@@ -239,8 +239,11 @@ internal object DuckBridgeQueryBuilder {
         return when (val v = lit.value) {
             is String -> quoteString(v)
             is Boolean -> if (v) "TRUE" else "FALSE"
-            is Int, is Long, is BigDecimal -> v.toString()
-            is Double -> if (v.isFinite()) v.toString() else null // ±Inf/NaN: not a safe literal
+            is Int, is Long -> v.toString()
+            // toString() switches to exponent form (1E-7, 1E+3), which DuckDB types as DOUBLE and
+            // compares in floating point; the plain form is typed DECIMAL and compares exactly.
+            is BigDecimal -> v.toPlainString()
+            is Double -> if (v.isFinite()) v.toString() else null
             is Float -> if (v.isFinite()) v.toString() else null
             is LocalDate -> renderDate(v, temporalClass)
             is LocalDateTime -> renderDatetime(v, temporalClass)
