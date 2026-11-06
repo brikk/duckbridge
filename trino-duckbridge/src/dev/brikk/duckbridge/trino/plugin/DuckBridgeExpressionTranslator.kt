@@ -325,7 +325,8 @@ object DuckBridgeExpressionTranslator {
     ): String? {
         val pattern = varcharConstant(patternArg) ?: return null
         val escape = escapeArg?.let { varcharConstant(it) ?: return null }
-        if (escape != null && escape.codePointCount(0, escape.length) != 1) {
+        // DuckDB measures the escape in bytes, so only a single ASCII character is accepted.
+        if (escape != null && (escape.length != 1 || escape[0].code >= ASCII_LIMIT)) {
             return null
         }
         val translatedValue = translateOrNull(value, assignments, session, ctx) ?: return null
@@ -340,6 +341,8 @@ object DuckBridgeExpressionTranslator {
     }
 
     private fun quoteLiteral(text: String): String = "'" + text.replace("'", "''") + "'"
+
+    private const val ASCII_LIMIT = 0x80
 
     private fun translateCast(
         call: Call,

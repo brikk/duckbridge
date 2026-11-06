@@ -2,7 +2,7 @@
 
 This is the read-only Doris connector's current renderer, not the Trino function
 catalog. It requires the matching pinned Doris runtime and DuckDB 2.0.0/Quack
-JDBC 0.13.0. Admission is conditional on the actual expression and column types;
+JDBC 0.14.0. Admission is conditional on the actual expression and column types;
 a function name alone is not a guarantee for every overload/input.
 
 ## Predicates and projection

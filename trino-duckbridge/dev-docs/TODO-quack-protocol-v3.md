@@ -2,7 +2,7 @@
 
 ## Maintained contract
 
-The connectors use Quack JDBC 0.13.0 with DuckDB 2.0.0 and assert actual v3
+The connectors use Quack JDBC 0.14.0 with DuckDB 2.0.0 and assert actual v3
 negotiation. Ordinary cancellation/SQLState 57014, recovery, bounded partition
 CANCEL/DISCONNECT and healthy heartbeat/close cases have consumer regressions.
 They do not prove every blocked I/O operation can be forcibly interrupted.

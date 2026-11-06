@@ -38,7 +38,7 @@ see below).
 
 The plugin bundles its JDBC drivers. Driver versions are pinned in
 [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
-Quack JDBC **0.13.0** finishes unread results before closing or superseding them.
+Quack JDBC **0.14.0** finishes unread results before closing or superseding them.
 Closing an unfinished result can wait for the remaining execution and transfer;
 closing FETCH failures are reported rather than silently aborting the next operation.
 

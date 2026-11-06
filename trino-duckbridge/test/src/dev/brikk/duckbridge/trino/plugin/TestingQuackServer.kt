@@ -54,7 +54,7 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
         ).stdout.trim()
         check(version == "v2.0.0") { "Quack test server version is '$version', expected v2.0.0" }
         quackConnection().use { connection ->
-            val expected = System.getProperty("duckbridge.qualification.quack.version", "0.13.0")
+            val expected = System.getProperty("duckbridge.qualification.quack.version", "0.14.0")
             check(connection.metaData.driverVersion == expected) {
                 "Expected Quack JDBC $expected, got ${connection.metaData.driverVersion}"
             }

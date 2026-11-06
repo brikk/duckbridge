@@ -1,5 +1,15 @@
 # Trino connector release notes
 
+## Unreleased
+
+- Quack JDBC **0.14.0**: `ResultSet` getters are strict (`SQLException` instead of
+  a leaked `NumberFormatException`/`IllegalArgumentException` for unconvertible
+  values), and an HTTP POST is no longer replayed at another resolved address after
+  a closed channel. No wire-format or server change.
+- `LIKE`/`NOT LIKE` with wildcards now push down; previously every such conjunct
+  stayed in Trino.
+- Arrow string and binary columns are copied once per value instead of three times.
+
 ## 0.3.0 — Trino 483 and 484
 
 Compatibility: DuckDB **2.0.0**, native JDBC **2.0.0.0**, Quack JDBC **0.13.0**,

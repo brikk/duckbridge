@@ -430,11 +430,13 @@ class TestDuckBridgeExpressionTranslator {
     }
 
     @Test
-    fun testLikeWithSupplementaryEscape() {
-        val expression: ConnectorExpression =
-            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("a\uD83D\uDE00_%"), varcharConst("\uD83D\uDE00"))
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
-            .containsExactly("(\"name\" LIKE 'a\uD83D\uDE00_%' ESCAPE '\uD83D\uDE00')")
+    fun testLikeWithNonAsciiEscapeNotPushed() {
+        // DuckDB measures ESCAPE in bytes; Trino accepts any single code point.
+        for (escape in listOf("é", "\uD83D\uDE00")) {
+            val expression: ConnectorExpression =
+                call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("a${escape}_%"), varcharConst(escape))
+            assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
+        }
     }
 
     @Test

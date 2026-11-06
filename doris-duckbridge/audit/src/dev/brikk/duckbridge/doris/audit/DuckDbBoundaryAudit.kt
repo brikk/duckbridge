@@ -47,7 +47,7 @@ object DuckDbBoundaryAudit {
             "0fa0cc634d35cb2a77ff88232fe1f6a3fd1570ba54729c9cc50005c7b575f1cf")
             else "5170daa90a43296705127ef3c80834ba1cd275ec9d765a9f7eee346ab0087186"
         check(sha256 == expected) { "Unqualified $transport driver bytes: $jar ($sha256)" }
-        if (transport == "quack") check(driver == System.getProperty("duckbridge.qualification.quack.version", "0.13.0")) {
+        if (transport == "quack") check(driver == System.getProperty("duckbridge.qualification.quack.version", "0.14.0")) {
             "Unexpected Quack driver: $driver"
         }
         connection.createStatement().use { statement ->
