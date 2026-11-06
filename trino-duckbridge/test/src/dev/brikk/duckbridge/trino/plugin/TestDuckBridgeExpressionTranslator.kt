@@ -39,8 +39,6 @@ import io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MILLIS
 import io.trino.spi.type.Type
 import io.trino.spi.type.VarcharType.VARCHAR
 import io.trino.testing.TestingConnectorSession
-import io.trino.type.LikePattern
-import io.trino.type.LikePatternType
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.sql.Types
@@ -369,7 +367,7 @@ class TestDuckBridgeExpressionTranslator {
     @Test
     fun testLikeNoEscape() {
         val expression: ConnectorExpression =
-            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), likeConst("App%", Optional.empty()))
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("App%"))
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
             .containsExactly("(\"name\" LIKE 'App%')")
     }
@@ -381,7 +379,8 @@ class TestDuckBridgeExpressionTranslator {
                 StandardFunctions.LIKE_FUNCTION_NAME,
                 BOOLEAN,
                 Variable("name", VARCHAR),
-                likeConst("A\\%", Optional.of('\\')),
+                varcharConst("A\\%"),
+                varcharConst("\\"),
             )
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
             .containsExactly("(\"name\" LIKE 'A\\%' ESCAPE '\\')")
@@ -390,7 +389,7 @@ class TestDuckBridgeExpressionTranslator {
     @Test
     fun testLikePatternEscapesSingleQuote() {
         val expression: ConnectorExpression =
-            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), likeConst("o'%", Optional.empty()))
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("o'%"))
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
             .containsExactly("(\"name\" LIKE 'o''%')")
     }
@@ -398,7 +397,7 @@ class TestDuckBridgeExpressionTranslator {
     @Test
     fun testLikeEscapeCharIsSingleQuote() {
         val expression: ConnectorExpression =
-            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), likeConst("a'%", Optional.of('\'')))
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("a'%"), varcharConst("'"))
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
             .containsExactly("(\"name\" LIKE 'a''%' ESCAPE '''')")
     }
@@ -407,7 +406,7 @@ class TestDuckBridgeExpressionTranslator {
     fun testLikeOnPushableFunctionExpression() {
         val lowerCall: ConnectorExpression = call(FunctionName("lower"), VARCHAR, Variable("name", VARCHAR))
         val expression: ConnectorExpression =
-            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, lowerCall, likeConst("app%", Optional.empty()))
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, lowerCall, varcharConst("app%"))
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
             .containsExactly("(trino_lower(\"name\") LIKE 'app%')")
     }
@@ -415,7 +414,7 @@ class TestDuckBridgeExpressionTranslator {
     @Test
     fun testNotLikeRecursesThroughNotBranch() {
         val like: ConnectorExpression =
-            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), likeConst("App%", Optional.empty()))
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("App%"))
         val notLike: ConnectorExpression = call(StandardFunctions.NOT_FUNCTION_NAME, BOOLEAN, like)
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(notLike, ASSIGNMENTS))
             .containsExactly("(NOT (\"name\" LIKE 'App%'))")
@@ -425,6 +424,28 @@ class TestDuckBridgeExpressionTranslator {
     fun testLikeWithNonConstantPatternNotPushed() {
         val expression: ConnectorExpression =
             call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), Variable("name", VARCHAR))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
+    }
+
+    @Test
+    fun testLikeWithMultiCharEscapeNotPushed() {
+        val expression: ConnectorExpression =
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("a%"), varcharConst("!!"))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
+    }
+
+    @Test
+    fun testLikeWithSupplementaryEscape() {
+        val expression: ConnectorExpression =
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("a\uD83D\uDE00_%"), varcharConst("\uD83D\uDE00"))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
+            .containsExactly("(\"name\" LIKE 'a\uD83D\uDE00_%' ESCAPE '\uD83D\uDE00')")
+    }
+
+    @Test
+    fun testLikeWithNulInPatternNotPushed() {
+        val expression: ConnectorExpression =
+            call(StandardFunctions.LIKE_FUNCTION_NAME, BOOLEAN, Variable("name", VARCHAR), varcharConst("a\u0000%"))
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
     }
 
@@ -724,7 +745,5 @@ class TestDuckBridgeExpressionTranslator {
 
         private fun varcharConst(s: String): ConnectorExpression = Constant(Slices.utf8Slice(s), VARCHAR)
 
-        private fun likeConst(pattern: String, escape: Optional<Char>): ConnectorExpression =
-            Constant(LikePattern.compile(pattern, escape), LikePatternType.LIKE_PATTERN)
     }
 }

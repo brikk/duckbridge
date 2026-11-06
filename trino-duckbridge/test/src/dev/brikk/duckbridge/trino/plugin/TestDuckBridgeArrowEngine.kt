@@ -15,6 +15,7 @@ package dev.brikk.duckbridge.trino.plugin
 
 import io.trino.testing.AbstractTestQueryFramework
 import io.trino.testing.QueryRunner
+import java.sql.DriverManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -29,10 +30,13 @@ import org.junit.jupiter.api.TestInstance
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeArrowEngine : AbstractTestQueryFramework() {
+    private lateinit var connectionUrl: String
+
     override fun createQueryRunner(): QueryRunner {
+        connectionUrl = DuckBridgeQueryRunner.freshDatabaseUrl()
         val runner =
             DuckBridgeQueryRunner.create(
-                DuckBridgeQueryRunner.freshDatabaseUrl(),
+                connectionUrl,
                 mapOf("duckbridge.execution-engine" to "DUCKDB_LOCAL"),
             )
         runner.execute("CREATE SCHEMA ${DuckBridgeQueryRunner.CATALOG}.${DuckBridgeQueryRunner.SCHEMA}")
@@ -80,6 +84,34 @@ class TestDuckBridgeArrowEngine : AbstractTestQueryFramework() {
                 .materializedRows
                 .map { it.getField(0) as Long }
         assertThat(ids).containsExactly(4L)
+    }
+
+    @Test
+    fun variableWidthValuesThroughArrowEngine() {
+        val long = "x".repeat(5000)
+        val schema = DuckBridgeQueryRunner.SCHEMA
+        DriverManager.getConnection(connectionUrl, DuckBridgeQueryRunner.duckJdbcProperties()).use { duck ->
+            duck.createStatement().use { statement ->
+                statement.execute("CREATE TABLE $schema.varlen (id BIGINT, s VARCHAR, b BLOB, tags VARCHAR[])")
+                statement.execute(
+                    "INSERT INTO $schema.varlen VALUES " +
+                        "(1, '', ''::BLOB, ['', 'a']), " +
+                        "(2, NULL, NULL, NULL), " +
+                        "(3, '$long', '\\x00\\xFF\\x10'::BLOB, ['$long', NULL, 'ü']), " +
+                        "(4, 'short', '\\x7F'::BLOB, [])",
+                )
+            }
+        }
+        try {
+            val rows = computeActual("SELECT s, b, tags FROM varlen ORDER BY id").materializedRows
+            assertThat(rows.map { it.getField(0) }).containsExactly("", null, long, "short")
+            assertThat(rows.map { (it.getField(1) as ByteArray?)?.toList() })
+                .containsExactly(listOf(), null, listOf<Byte>(0, -1, 16), listOf<Byte>(127))
+            assertThat(rows.map { it.getField(2) })
+                .containsExactly(listOf("", "a"), null, listOf(long, null, "ü"), emptyList<String>())
+        } finally {
+            computeActual("DROP TABLE varlen")
+        }
     }
 
     @Test

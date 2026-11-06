@@ -14,7 +14,6 @@
 package dev.brikk.duckbridge.trino.plugin
 
 import io.airlift.log.Logger
-import io.airlift.slice.Slices
 import io.trino.spi.Page
 import io.trino.spi.StandardErrorCode.NOT_SUPPORTED
 import io.trino.spi.TrinoException
@@ -23,6 +22,7 @@ import io.trino.spi.block.Block
 import io.trino.spi.block.BlockBuilder
 import io.trino.spi.block.MapBlockBuilder
 import io.trino.spi.block.RowBlockBuilder
+import io.trino.spi.block.VariableWidthBlockBuilder
 import io.trino.spi.type.ArrayType
 import io.trino.spi.type.BigintType.BIGINT
 import io.trino.spi.type.BooleanType.BOOLEAN
@@ -50,6 +50,7 @@ import io.trino.spi.type.Type
 import io.trino.spi.type.UuidType
 import io.trino.spi.type.VarbinaryType.VARBINARY
 import io.trino.spi.type.VarcharType
+import org.apache.arrow.vector.BaseVariableWidthVector
 import org.apache.arrow.vector.BigIntVector
 import org.apache.arrow.vector.BitVector
 import org.apache.arrow.vector.DateDayVector
@@ -109,6 +110,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
 
     companion object {
         private val log: Logger = Logger.get(DuckBridgeArrowToPageConverter::class.java)
+        private const val INITIAL_SCRATCH_BYTES = 256
 
         // DuckDB exports JSON columns as Utf8 (the JSON text) over Arrow. Inlined from the DuckLake
         // connector's DucklakeJsonSupport.isJson to avoid porting that whole helper.
@@ -208,28 +210,8 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                         }
                     }
                 }
-                VARBINARY -> {
-                    val v = vector as VarBinaryVector
-                    for (i in 0 until rowCount) {
-                        if (v.isNull(i)) {
-                            builder.appendNull()
-                        }
-                        else {
-                            VARBINARY.writeSlice(builder, Slices.wrappedBuffer(*v.get(i)))
-                        }
-                    }
-                }
-                is VarcharType -> {
-                    val v = vector as VarCharVector
-                    for (i in 0 until rowCount) {
-                        if (v.isNull(i)) {
-                            builder.appendNull()
-                        }
-                        else {
-                            type.writeSlice(builder, Slices.wrappedBuffer(*v.get(i)))
-                        }
-                    }
-                }
+                VARBINARY -> writeVariableWidthColumn(vector as VarBinaryVector, builder, rowCount)
+                is VarcharType -> writeVariableWidthColumn(vector as VarCharVector, builder, rowCount)
                 is DecimalType -> {
                     writeDecimalColumn(type, vector as DecimalVector, builder, rowCount)
                 }
@@ -271,15 +253,7 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                     // JSON: DuckDB exports JSON columns as Utf8 (the JSON text) over Arrow, same
                     // as VARCHAR. Wrap the bytes into the JSON Slice via the SPI writeSlice.
                     if (isJsonType(type)) {
-                        val v = vector as VarCharVector
-                        for (i in 0 until rowCount) {
-                            if (v.isNull(i)) {
-                                builder.appendNull()
-                            }
-                            else {
-                                type.writeSlice(builder, Slices.wrappedBuffer(*v.get(i)))
-                            }
-                        }
+                        writeVariableWidthColumn(vector as VarCharVector, builder, rowCount)
                     }
                     else {
                         throw TrinoException(
@@ -289,6 +263,35 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                 }
             }
             return builder.build()
+        }
+
+        /**
+         * Copies each value straight from the Arrow data buffer into the block builder through one
+         * reused scratch array: `vector.get(i)` would allocate a fresh array per row, and spreading
+         * it into `Slices.wrappedBuffer(vararg)` would copy it a second time.
+         */
+        private fun writeVariableWidthColumn(vector: BaseVariableWidthVector, builder: BlockBuilder, rowCount: Int) {
+            val out = builder as VariableWidthBlockBuilder
+            val data = vector.dataBuffer
+            var scratch = ByteArray(INITIAL_SCRATCH_BYTES)
+            for (i in 0 until rowCount) {
+                if (vector.isNull(i)) {
+                    out.appendNull()
+                    continue
+                }
+                val start = vector.getStartOffset(i)
+                val length = vector.getEndOffset(i) - start
+                if (length > scratch.size) {
+                    scratch = ByteArray(maxOf(length, scratch.size * 2))
+                }
+                data.getBytes(start.toLong(), scratch, 0, length)
+                out.writeEntry(scratch, 0, length)
+            }
+        }
+
+        private fun writeVariableWidthValue(vector: BaseVariableWidthVector, i: Int, builder: BlockBuilder) {
+            val bytes = vector.get(i)
+            (builder as VariableWidthBlockBuilder).writeEntry(bytes, 0, bytes.size)
         }
 
         /** Writes a whole complex (ARRAY/ROW/MAP) column: one entry per row, null-aware at the
@@ -414,8 +417,8 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
                 type == REAL -> REAL.writeLong(builder, (vector as Float4Vector).get(i).toRawBits().toLong())
                 type == DOUBLE -> DOUBLE.writeDouble(builder, (vector as Float8Vector).get(i))
                 type == DATE -> DATE.writeLong(builder, (vector as DateDayVector).get(i).toLong())
-                type == VARBINARY -> VARBINARY.writeSlice(builder, Slices.wrappedBuffer(*(vector as VarBinaryVector).get(i)))
-                type is VarcharType -> type.writeSlice(builder, Slices.wrappedBuffer(*(vector as VarCharVector).get(i)))
+                type == VARBINARY -> writeVariableWidthValue(vector as VarBinaryVector, i, builder)
+                type is VarcharType -> writeVariableWidthValue(vector as VarCharVector, i, builder)
                 else -> throw TrinoException(
                         NOT_SUPPORTED,
                         "DuckBridge Arrow reader does not yet support nested value type: $type")

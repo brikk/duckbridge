@@ -117,7 +117,7 @@ Catalog property: `duckbridge.string-pushdown.mode`. Per-query override:
 | String-source casts | VARCHAR/CHAR to a non-string target remains **local**: DuckDB's parsers accept inputs Trino rejects. A VARCHAR target can be admitted; bounded lengths have the limitation above. |
 | Casts to VARCHAR | Admitted from integer-family values, BOOLEAN, DATE and string sources. DOUBLE/REAL, DECIMAL, timestamp/time and other non-string sources are not admitted to VARCHAR by this rule. |
 | DATE to unbounded VARCHAR | Uses an explicit Trino-style year/month/day formatter, including BCE/year zero and expanded years. Native BC display text is not used. This is an explicit user-requested cast, not a conversion of stored DATE columns to text. |
-| `LIKE` / `NOT LIKE` | Conditional on string mode and a constant non-NULL pattern readable from Trino's compiled LikePattern. Optional ESCAPE is supported when the translator can extract its single-character representation. Dynamic/NULL/unreadable patterns stay local unless the planner simplifies them. |
+| `LIKE` / `NOT LIKE` | Conditional on string mode and a constant non-NULL pattern. Optional ESCAPE is supported when it is a single-character constant. Dynamic/NULL patterns and literals containing NUL stay local unless the planner simplifies them. |
 
 The **expression translator's** literal renderer accepts SQL NULL, booleans,
 integer-family values, finite DOUBLE values, VARCHAR strings without U+0000,

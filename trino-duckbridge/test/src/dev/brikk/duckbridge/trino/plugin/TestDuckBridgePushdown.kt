@@ -84,6 +84,33 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
     }
 
     @Test
+    fun likePredicateIsFullyPushedDown() {
+        assertThat(query("SELECT id FROM people WHERE name LIKE 'str%'"))
+            .isFullyPushedDown()
+            .matches("VALUES BIGINT '4'")
+        assertThat(query("SELECT id FROM people WHERE name LIKE '%o_'"))
+            .isFullyPushedDown()
+            .matches("VALUES BIGINT '2'")
+    }
+
+    @Test
+    fun likeWithEscapeIsFullyPushedDown() {
+        assertThat(query("SELECT id FROM people WHERE name LIKE 'b!_%' ESCAPE '!'"))
+            .isFullyPushedDown()
+            .returnsEmptyResult()
+        assertThat(query("SELECT id FROM people WHERE name LIKE '%δ%' ESCAPE '!'"))
+            .isFullyPushedDown()
+            .matches("VALUES BIGINT '5'")
+    }
+
+    @Test
+    fun notLikePredicateIsFullyPushedDown() {
+        assertThat(query("SELECT id FROM people WHERE name NOT LIKE '%o%'"))
+            .isFullyPushedDown()
+            .matches("VALUES BIGINT '1', BIGINT '3', BIGINT '4', BIGINT '5'")
+    }
+
+    @Test
     fun partialPushdownLeavesUnsupportedConjunctAboveScan() {
         // length(name)=5 pushes; the divide predicate is intentionally NOT pushed (Trino/DuckDB
         // integer-division divergence), so a FilterNode must remain above the scan. This proves the

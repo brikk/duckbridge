@@ -35,9 +35,6 @@ import io.trino.spi.type.TinyintType
 import io.trino.spi.type.Type
 import io.trino.spi.type.VarcharType
 import java.time.LocalDate
-import java.util.Optional
-import java.util.concurrent.ConcurrentHashMap
-import java.lang.reflect.Method
 
 /**
  * Translates a Trino [ConnectorExpression] predicate into DuckDB SQL fragments that the connector
@@ -222,16 +219,8 @@ object DuckBridgeExpressionTranslator {
             return d.toString()
         }
         if (type is VarcharType) {
-            if (value !is Slice) {
-                return null
-            }
-            val s = value.toStringUtf8()
-            // A literal containing U+0000 cannot be spelled as a plain quoted string (DuckDB's parser
-            // stops at the NUL byte: "unterminated quoted string"); leave the conjunct in Trino.
-            if (s.indexOf('\u0000') >= 0) {
-                return null
-            }
-            return "'" + s.replace("'", "''") + "'"
+            // DuckDB's parser stops at a NUL byte inside a quoted literal; leave the conjunct in Trino.
+            return varcharConstant(constant)?.let(::quoteLiteral)
         }
         if (type is DateType) {
             val days = value as Long
@@ -275,12 +264,12 @@ object DuckBridgeExpressionTranslator {
                 val inner = translateOrNull(args[0], assignments, session, ctx)
                 return if (inner == null) null else "($inner IS NULL)"
             }
-            name == StandardFunctions.LIKE_FUNCTION_NAME && args.size == 2 -> {
+            name == StandardFunctions.LIKE_FUNCTION_NAME && args.size in 2..3 -> {
                 // LIKE is inherently a string comparison — requires >= BINARY string-comparison trust.
                 if (!ctx.stringComparisonAllowed) {
                     return null
                 }
-                return translateLike(args[0], args[1], assignments, session, ctx)
+                return translateLike(args[0], args[1], args.getOrNull(2), assignments, session, ctx)
             }
         }
 
@@ -443,44 +432,39 @@ object DuckBridgeExpressionTranslator {
     }
 
     /**
-     * Trino delivers LIKE as `Call($like, [value, Constant(LikePattern)])`. `io.trino.type.LikePattern`
-     * lives in `trino-main`, not `trino-spi`, so it isn't on the production classpath — accessed
-     * reflectively via [LikePatternAccessor]. NOT LIKE arrives as `Call($not, [Call($like, ...)])` and
-     * is handled by the `$not` branch recursing into us. Returns null when value/pattern is not
-     * translatable (including NULL pattern, dynamic pattern expression, etc.).
+     * Trino's planner unpacks a compiled LikePattern before it reaches the connector: the call is
+     * `$like(value, pattern)` or `$like(value, pattern, escape)` with VARCHAR [Constant] pattern and
+     * single-character escape. `NOT LIKE` arrives as `$not($like(...))` and reaches us through the
+     * `$not` branch. A non-constant or NULL pattern, or a NUL byte in either literal, stays unpushed.
      */
     private fun translateLike(
         value: ConnectorExpression,
         patternArg: ConnectorExpression,
+        escapeArg: ConnectorExpression?,
         assignments: Map<String, ColumnHandle>,
         session: ConnectorSession?,
         ctx: Ctx,
     ): String? {
-        if (patternArg !is Constant) {
+        val pattern = varcharConstant(patternArg) ?: return null
+        val escape = escapeArg?.let { varcharConstant(it) ?: return null }
+        if (escape != null && escape.codePointCount(0, escape.length) != 1) {
             return null
         }
-        val patternValue: Any = patternArg.value ?: return null
-        val extracted = LikePatternAccessor.extract(patternValue) ?: return null
         val translatedValue = translateOrNull(value, assignments, session, ctx) ?: return null
-        val out =
-            StringBuilder("(")
-                .append(translatedValue)
-                .append(" LIKE '")
-                .append(extracted.pattern.replace("'", "''"))
-                .append('\'')
-        if (extracted.escape != null) {
-            val escape: Char = extracted.escape
-            out.append(" ESCAPE '")
-            if (escape == '\'') {
-                out.append("''")
-            } else {
-                out.append(escape)
-            }
-            out.append('\'')
+        val sql = StringBuilder("(").append(translatedValue).append(" LIKE ").append(quoteLiteral(pattern))
+        if (escape != null) {
+            sql.append(" ESCAPE ").append(quoteLiteral(escape))
         }
-        out.append(')')
-        return out.toString()
+        return sql.append(')').toString()
     }
+
+    private fun varcharConstant(expression: ConnectorExpression): String? {
+        if (expression !is Constant || expression.type !is VarcharType) return null
+        val value = expression.value as? Slice ?: return null
+        return value.toStringUtf8().takeIf { it.indexOf('\u0000') < 0 }
+    }
+
+    private fun quoteLiteral(text: String): String = "'" + text.replace("'", "''") + "'"
 
     private fun translateCast(
         call: Call,
@@ -626,55 +610,5 @@ object DuckBridgeExpressionTranslator {
          * session; may return null to decline the push (e.g. no usable session zone).
          */
         class Contextual(val template: (List<String>, List<ConnectorExpression>, ConnectorSession?) -> String?) : Emission
-    }
-
-    /**
-     * Reflective bridge to `io.trino.type.LikePattern` (which lives in `trino-main`, not `trino-spi`,
-     * so it isn't importable on the plugin's compile classpath). The runtime instance arrives via the
-     * SPI as a `Constant` of `LikePatternType`; we reflect on the instance's own class to read its
-     * pattern string and optional escape character. If the upstream class shape changes, [extract]
-     * returns null and the LIKE conjunct stays unpushed.
-     */
-    private object LikePatternAccessor {
-        private val CACHE: ConcurrentHashMap<Class<*>, MethodPair> = ConcurrentHashMap()
-        private val MISSING: MethodPair = MethodPair(null, null)
-
-        fun extract(likePattern: Any): Extracted? {
-            val methods = CACHE.computeIfAbsent(likePattern.javaClass) { resolve(it) }
-            if (methods.getPattern == null || methods.getEscape == null) {
-                return null
-            }
-            return try {
-                val pattern = methods.getPattern.invoke(likePattern) as String? ?: return null
-                val escapeOpt = methods.getEscape.invoke(likePattern)
-                var escape: Char? = null
-                if (escapeOpt is Optional<*> && escapeOpt.isPresent) {
-                    val inner = escapeOpt.get()
-                    if (inner is Char) {
-                        escape = inner
-                    } else {
-                        return null
-                    }
-                }
-                Extracted(pattern, escape)
-            } catch (@Suppress("SwallowedException") ignored: ReflectiveOperationException) {
-                null
-            }
-        }
-
-        private fun resolve(clazz: Class<*>): MethodPair {
-            if ("io.trino.type.LikePattern" != clazz.name) {
-                return MISSING
-            }
-            return try {
-                MethodPair(clazz.getMethod("getPattern"), clazz.getMethod("getEscape"))
-            } catch (@Suppress("SwallowedException") ignored: NoSuchMethodException) {
-                MISSING
-            }
-        }
-
-        private data class MethodPair(val getPattern: Method?, val getEscape: Method?)
-
-        data class Extracted(val pattern: String, val escape: Char?)
     }
 }
