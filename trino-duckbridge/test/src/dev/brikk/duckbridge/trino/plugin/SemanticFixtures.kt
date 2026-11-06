@@ -473,7 +473,7 @@ object SemanticFixtures {
             }
             add(
                 fx(
-                    "hmac_sha256", 2, "empty key: both error (EV-E2)", call("hmac_sha256", VARCHAR, str(""), str("")),
+                    "hmac_sha256", 2, "empty key: both error", call("hmac_sha256", VARCHAR, str(""), str("")),
                     wrapBoth = { "to_hex($it)" }, trinoSql = "hmac_sha256(from_hex('61'), from_hex(''))",
                     duckSqlOverride = "trino_hmac_sha256(unhex('61'), unhex(''))",
                 ),

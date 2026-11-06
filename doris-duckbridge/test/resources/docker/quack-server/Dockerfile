@@ -1,9 +1,8 @@
 # DuckDB CLI hosting a Quack RPC listener — the remote DuckDB server the doris-duckbridge
 # metadata plane (and, later, the BE scan) talks to via quack-jdbc (jdbc:quack://host:port).
 #
-# Module-local COPY of the compose fixture (compose/docker/duckdb-quack/) per the repo's
-# copy-don't-share posture: tests must not depend on trino-duckbridge or the compose tree at
-# runtime. Lean — no parity extension (the P4 probe is pure metadata; parity is P1's output).
+# Module-local copy of compose/docker/duckdb-quack/: tests must not depend on trino-duckbridge
+# or the compose tree at runtime. No parity extension; these tests only probe metadata.
 #
 # Base trixie-slim (GLIBC 2.41): matches the trino fixture. duckdb pinned to the repo-wide
 # duckdb version (libs.versions.toml: duckdb = 2.0.0.0) so the server matches the quack-jdbc
