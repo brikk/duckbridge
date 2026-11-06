@@ -15,7 +15,6 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** Real native statements/C-data readers. Barriers instrument call ordering, never fabricate rows. */
 class TestArrowSourceLifecycle {
     private data class Owned(val connection: DuckDBConnection, val statement: PreparedStatement, val source: DuckBridgeArrowPageSource)
 

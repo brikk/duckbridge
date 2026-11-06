@@ -21,18 +21,7 @@ import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * Trino ↔ DuckDB arithmetic-parity tests, ported from the DuckLake connector's
- * `TestDucklakeArithmeticPushdownParity`. The DuckLake version proved that pushing bare `/` and `%`
- * onto the `.db` read path silently diverges (integer truncation + divide-by-zero suppression).
- *
- * In this base-jdbc connector the translator refuses `$divide`/`$modulo` outright, so the divergence
- * cannot occur: the predicate stays above the scan (a FilterNode remains) and Trino evaluates it
- * natively — including throwing DIVISION_BY_ZERO. These tests pin BOTH the plan shape (not pushed)
- * AND the end-to-end semantics, so a future change that started pushing divide/modulo would go RED.
- *
- * Additions (`+`, `-`, `*`) DO push; a companion assertion pins that they push fully.
- */
+/** Division and modulo stay in Trino because integer truncation and divide-by-zero semantics differ. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeArithmeticPushdownParity : AbstractTestQueryFramework() {
     override fun createQueryRunner(): QueryRunner {
@@ -51,8 +40,6 @@ class TestDuckBridgeArithmeticPushdownParity : AbstractTestQueryFramework() {
     @Test
     fun integerDividePredicateStaysAboveScanAndMatchesTrino() {
         withTable("div_trunc", "SELECT * FROM (VALUES (4), (5), (3), (6)) AS t(id)") {
-            // Not pushed → FilterNode remains; Trino evaluates `id / 2 = 2` with truncating
-            // integer division (4/2=2, 5/2=2), returning 4 and 5.
             assertThat(query("SELECT id FROM div_trunc WHERE id / 2 = 2"))
                 .isNotFullyPushedDown(FilterNode::class.java)
             val ids =

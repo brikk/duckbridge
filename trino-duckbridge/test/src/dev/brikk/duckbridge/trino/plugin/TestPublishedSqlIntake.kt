@@ -13,11 +13,6 @@ import java.sql.SQLException
 import java.util.Locale
 import kotlin.io.path.writeText
 
-/**
- * Discovery, not a parity gate: execute the published generator's frozen SQL on both real engines,
- * retain value/type/error differences, and prove none of these unqualified calls becomes pushable.
- * The opt-in metadata audit separately verifies this module-local corpus against the actual library.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestPublishedSqlIntake : AbstractTestQueryFramework() {
     private val duckDelegate = lazy { DriverManager.getConnection("jdbc:duckdb:") }
@@ -35,8 +30,7 @@ class TestPublishedSqlIntake : AbstractTestQueryFramework() {
 
     @Test
     fun recordsPublishedRegexLoweringsWithoutAuthorizingGenericPatterns() {
-        // Availability is now bounded by the qualified positive-atom gate; generic published SQL
-        // still does not authorize lookarounds or the other unqualified pattern shapes.
+        // Generic published SQL does not authorize lookarounds or other unqualified pattern shapes.
         assertThat(RegexpCountSafety.isSafe("(?<=a)b")).isFalse()
         assertThat(RegexpCountSafety.isSafe("(?=a)")).isFalse()
         val lines = checkNotNull(javaClass.getResourceAsStream("/function-intake/brikk-sql-regexp-count.tsv"))

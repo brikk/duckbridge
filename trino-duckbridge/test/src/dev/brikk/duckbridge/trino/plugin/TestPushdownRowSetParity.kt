@@ -27,19 +27,8 @@ import org.junit.jupiter.api.TestInstance
 import java.sql.DriverManager
 
 /**
- * End-to-end pushed-vs-local row-set parity (EV-B2).
- *
- * Two catalogs point at the SAME DuckDB file. [PUSHED] is the production connector; [LOCAL] uses
- * the same client/data path but an empty expression rewriter, so every function predicate remains a
- * Trino filter. Safe predicates must remove the production filter; unsupported planner overloads
- * explicitly retain it. The baseline always retains its filter, then we compare sorted row IDs.
- * This covers the complete WHERE path — planner
- * conversion, per-conjunct split, SQL emission, connection init, remote evaluation, JDBC decoding
- * and SQL three-valued logic over rows containing NULL — which scalar fixtures cannot prove.
- *
- * The corpus is deliberately risk-focused: every emission class and every EV-A rewrite/gate that is
- * reachable through table columns has an end-to-end representative. [TestPushdownSemanticFixtures]
- * remains the exhaustive per-entry scalar semantic proof.
+ * Both catalogs share a DuckDB file; [LOCAL] disables expression pushdown so Trino evaluates the
+ * baseline predicates over the same data.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestPushdownRowSetParity : AbstractTestQueryFramework() {
@@ -53,7 +42,7 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
             testSessionBuilder()
                 .setCatalog(PUSHED)
                 .setSchema(SCHEMA)
-                // Fixed offset: to_unixtime(TIMESTAMP) is safely pushable (EV-A4/A13).
+                // A fixed offset avoids DST ambiguity in to_unixtime(TIMESTAMP).
                 .setTimeZoneKey(TimeZoneKey.UTC_KEY)
                 .build()
         val runner = io.trino.testing.DistributedQueryRunner.builder(session).build()

@@ -16,7 +16,6 @@ package dev.brikk.duckbridge.trino.plugin
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/** The RE2-safe pattern allowlist that gates regex pushdown (EV-A8). */
 class TestRe2Safety {
     @Test
     fun acceptsSharedCore() {
@@ -35,21 +34,15 @@ class TestRe2Safety {
         for (p in listOf(
             // `$` matches before a trailing newline in Joni, not in RE2
             "c$", "^a$",
-            // lookaround, inline flags, named / atomic groups
             "a(?=b)", "a(?!b)", "(?<=a)b", "(?i)abc", "(?<name>a)", "(?>a)", "(?x) a b",
-            // backreferences
             "(a)\\1", "\\k<n>",
-            // Java-only escapes / classes
             "\\Zx", "\\Gx", "\\v", "\\h", "\\R", "\\X", "\\N{LATIN}", "\\e", "\\a", "\\cA", "\\u0041", "\\0101",
-            // possessive quantifiers
             "a*+", "a++", "a?+", "a{2}+",
             // `{` that is not a bounded quantifier (Java errors; RE2 takes it literally)
             "a{", "a{x}", "a{,3}", "a{5,2}",
-            // class features with different meaning
             "[a-z&&[^b]]", "[[:alpha:]]", "[a[b]]", "[]", "[^]", "[\\b]",
             // property names RE2 does not know / Java POSIX and script forms
             "\\p{Alpha}", "\\p{IsLatin}", "\\p{javaLowerCase}", "\\pL",
-            // unterminated
             "[abc", "\\", "\\x{41", "\\p{L",
         )) {
             assertThat(Re2Safety.isSafe(p)).`as`("should reject: %s", p).isFalse()

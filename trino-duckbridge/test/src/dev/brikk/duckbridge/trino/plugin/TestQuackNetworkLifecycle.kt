@@ -37,7 +37,6 @@ private fun control(connection: Connection) {
     }
 }
 
-/** Actual TCP faults. No fake ResultSet, transparent SQL retry or shared/user service interruption. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestQuackNetworkLifecycle {
     private lateinit var network: Network
@@ -101,7 +100,6 @@ class TestQuackNetworkLifecycle {
         connection().use { control(it) }
     }
 
-    /** Strict acceptance gate; run :qualifyQuackStreaming. Published 0.10 failed this contract. */
     fun qualifyPartialResultNeverBecomesSuccessfulEofAfterConnectionLoss(bridgeControl: Boolean = false) {
         val started = System.nanoTime()
         println("STREAM route=${if (bridgeControl) "direct-bridge-diagnostic-control" else "published-port-acceptance"}")
@@ -192,7 +190,6 @@ class TestQuackNetworkLifecycle {
         }
     }
 
-    /** Deferred peer acceptance gate, assertions unchanged; run :qualifyQuackLeaseReaping. */
     fun qualifyHardPartitionClosesTheCallerAndLeaseExpiryReapsTheOrphan() {
         var id = ""
         withActiveQuery("quack_hard_partition_lease_cleanup") { connection, _, query, workers ->

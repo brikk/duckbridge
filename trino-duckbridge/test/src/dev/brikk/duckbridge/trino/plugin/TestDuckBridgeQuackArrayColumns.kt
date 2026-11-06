@@ -24,19 +24,6 @@ import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import java.util.Properties
 
-/**
- * Retest of the two quack-jdbc ARRAY follow-ups formerly open in TODO-upstream-quack-jdbc.md:
- *
- *  1. **parametric element types** (`DECIMAL(5,2)[]`) resolve over Quack — the connector's
- *     [DuckBridgeArrayColumnMapping] element-name parser used to map only scalar element names.
- *  2. **declared array *table* columns** resolve via the `DatabaseMetaData.getColumns` metadata path
- *     over Quack — distinct from the query/result-describe path that gizmodata/quack-jdbc#6 fixed.
- *
- * The connector can't CREATE array columns (writes are unsupported), so the fixture table is created
- * out-of-band on the shared server DuckDB via a raw quack-jdbc connection, then read back through the
- * connector — which resolves columns via base-jdbc's `getColumns` → [DuckBridgeClient.toColumnMapping].
- * Requires Docker.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeQuackArrayColumns : AbstractTestQueryFramework() {
     private lateinit var server: TestingQuackServer
@@ -80,7 +67,6 @@ class TestDuckBridgeQuackArrayColumns : AbstractTestQueryFramework() {
 
     @Test
     fun scalarArrayTableColumnsResolveViaGetColumns() {
-        // Follow-up 2: declared INTEGER[] / VARCHAR[] table columns resolve over Quack's getColumns path.
         val row = computeActual("SELECT tags, labels FROM arr_t WHERE id = 1").materializedRows.single()
         @Suppress("UNCHECKED_CAST")
         assertThat(row.getField(0) as List<Int>).containsExactly(1, 2, 3)
@@ -90,7 +76,6 @@ class TestDuckBridgeQuackArrayColumns : AbstractTestQueryFramework() {
 
     @Test
     fun parametricDecimalArrayElementResolvesOverQuack() {
-        // Follow-up 1: DECIMAL(5,2)[] element type resolves end-to-end.
         val row = computeActual("SELECT vals FROM arr_t WHERE id = 1").materializedRows.single()
         @Suppress("UNCHECKED_CAST")
         assertThat(row.getField(0) as List<BigDecimal>)

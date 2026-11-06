@@ -13,7 +13,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** Real QUACK executor, native Arrow reader and server-side session diagnostics. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestQuackArrowSourceLifecycle {
     private lateinit var server: TestingQuackServer

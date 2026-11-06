@@ -19,13 +19,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * Unicode round-trip + pushdown fidelity through the duckbridge catalog on plain DuckDB tables
- * (ported from the DuckLake connector's `TestDucklakeUnicodeStringRoundTrip`; rewritten against
- * base-jdbc tables, semantic case matrix preserved). The "nasty strings" exercise multibyte UTF-8,
- * combining marks, supplementary-plane emoji, regional-indicator flags, and ZWJ sequences — if any
- * mutate on WRITE→READ or through a pushed predicate, the transport/predicate encoding is broken.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeUnicodeStringRoundTrip : AbstractTestQueryFramework() {
     override fun createQueryRunner(): QueryRunner {
@@ -104,7 +97,6 @@ class TestDuckBridgeUnicodeStringRoundTrip : AbstractTestQueryFramework() {
             assertThat(len7.materializedRows.map { it.getField(0) }).containsExactly(1)
             val len5 = computeActual("SELECT id FROM unicode_fn WHERE length(s) = 5")
             assertThat(len5.materializedRows.map { it.getField(0) }).containsExactly(3)
-            // starts_with over a multibyte prefix.
             val startsCjk = computeActual("SELECT id FROM unicode_fn WHERE starts_with(s, '世')")
             assertThat(startsCjk.materializedRows.map { it.getField(0) }).containsExactly(2)
         } finally {

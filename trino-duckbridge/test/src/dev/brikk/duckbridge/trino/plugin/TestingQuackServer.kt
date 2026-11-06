@@ -25,16 +25,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
 
-/**
- * A real out-of-process DuckDB hosting a Quack RPC listener — the remote server the T3
- * (quack-jdbc) transport connects to. The test JVM's `quack-jdbc` driver speaks the Quack wire
- * protocol to it via `jdbc:quack://host:port`.
- *
- * Uses a `debian:trixie-slim` (GLIBC 2.41) base. [installParityExtension] copies the bundled binary
- * into the running container so a subsequent server-side load works.
- * Signature verification stays enabled for signed release binaries; local unsigned builds opt in
- * explicitly before DuckDB starts.
- */
 internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable {
     data class ParityInstallation(val serverPath: String?)
 
@@ -80,7 +70,6 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
     val mappedPort: Int get() = container.currentContainerInfo.networkSettings.ports.bindings
         .getValue(ExposedPort.tcp(CONTAINER_PORT)).first().hostPortSpec.toInt()
 
-    /** `jdbc:quack://host:mappedPort` — the base-jdbc `connection-url` for the T3 catalog. */
     fun connectionUrl(): String = "jdbc:quack://$host:$mappedPort"
 
     fun proxyTarget(): String = "quack:$CONTAINER_PORT"
@@ -88,7 +77,6 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
     /** Read before fixture teardown so a failed HTTP body cannot erase its server evidence. */
     fun diagnostics(): String = "state=${container.currentContainerInfo.state}\n${container.logs}"
 
-    /** Restart only this fixture's server, preserving its mapped port, never a user's container. */
     fun restart() { container.dockerClient.restartContainerCmd(container.containerId).withTimeout(0).exec() }
 
     /**
@@ -122,10 +110,7 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
     }
 
     /**
-     * Server-side count of currently-active Quack connections, read via `quack_active_connections()`
-     * over a short-lived quack-jdbc connection. Lets a test replace the inherited "pool exhaustion"
-     * fear with an actual number: how many server threads the connector's per-query churn holds.
-     * Note the reading connection itself counts as one while open.
+     * The short-lived observer connection itself counts as one while open.
      */
     fun activeConnectionCount(): Int {
         quackConnection().use { conn ->
@@ -157,11 +142,9 @@ internal class TestingQuackServer(testNetwork: Network? = null) : AutoCloseable 
         private const val TOKEN = "duckbridge-test-token"
         private const val CONTAINER_EXTENSION_ROOT = "/root/.duckdb/extensions"
 
-        /** Server-side path where [installParityExtension] drops the binary for a server-side LOAD. */
         const val IN_CONTAINER_PARITY_PATH: String = "/opt/duckdb-extensions/trino_parity.duckdb_extension"
 
         private fun buildImage(): ImageFromDockerfile =
-            // Testcontainers content-hashes the Dockerfile + files, so this builds once per test JVM.
             ImageFromDockerfile("duckbridge-quack-server", false)
                 .withFileFromClasspath("Dockerfile", "docker/quack-server/Dockerfile")
                 .withFileFromClasspath("entrypoint.sh", "docker/quack-server/entrypoint.sh")

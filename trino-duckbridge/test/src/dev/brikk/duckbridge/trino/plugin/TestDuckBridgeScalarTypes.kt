@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.sql.DriverManager
 
-/** End-to-end lossless scalar mappings and newly-reachable BLOB hash pushdown (EV-C5). */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeScalarTypes {
     private lateinit var connectionUrl: String
@@ -283,7 +282,6 @@ class TestDuckBridgeScalarTypes {
         // DuckDB TIMESTAMP_S rounds the inserted fractional value; TIMESTAMP_MS rounds to millis.
         assertThat(row.getField(0).toString()).isEqualTo("2024-01-02T03:04:06")
         assertThat(row.getField(1).toString()).isEqualTo("2024-01-02T03:04:05.988")
-        // This older fixture inserted through a microsecond TIMESTAMP literal before storing ns.
         assertThat(row.getField(2).toString()).isEqualTo("2024-01-02T03:04:05.987654")
     }
 

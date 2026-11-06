@@ -9,7 +9,6 @@ import io.trino.spi.type.Type
 import io.trino.spi.type.VarcharType.VARCHAR
 import java.sql.Connection
 
-/** Controlled scalar workloads only; this is not a new production type/transport contract. */
 internal object ScanBenchmarkData {
     enum class Shape { NUMERIC, TEXT, WIDE }
     data class Workload(val name: String, val shape: Shape, val lower: Long, val upper: Long,

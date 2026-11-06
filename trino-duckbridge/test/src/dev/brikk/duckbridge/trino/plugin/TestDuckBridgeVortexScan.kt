@@ -24,11 +24,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 
-/**
- * Integration tests for the P5 `vortex_scan` PTF. Ported from the DuckLake `TestDucklakeVortex*`
- * suites; rewritten against a plain vortex file written directly via DuckDB, then queried through the
- * duckbridge PTF. Requires the DuckDB `vortex` extension (network-gated). Skips cleanly when absent.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeVortexScan : AbstractTestQueryFramework() {
     private lateinit var vortexFile: Path
@@ -84,7 +79,6 @@ class TestDuckBridgeVortexScan : AbstractTestQueryFramework() {
     @Test
     fun vortexScanProjectionAndFilter() {
         assumeTrue(vortexAvailable, "DuckDB vortex extension not installable — skipping")
-        // Filter applied above the PTF (no domain pushdown into the scan SQL).
         val names =
             computeActual("SELECT name FROM ${scan()} WHERE id >= 2 ORDER BY id").materializedRows.map { it.getField(0) as String }
         assertThat(names).containsExactly("bänana", "çherry 世界")

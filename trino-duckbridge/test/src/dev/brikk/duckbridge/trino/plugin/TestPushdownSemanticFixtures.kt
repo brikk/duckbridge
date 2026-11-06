@@ -31,16 +31,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
- * Cross-engine differential harness for [SemanticFixtures] (EV-B1 in
- * dev-docs/archive/TODO-rectify-from-eval.md).
- *
- * For each [SemanticFixtures.Fixture] the SAME Trino expression is evaluated on **Trino** (the
- * authoritative expected value — never hand-written) and on **DuckDB** via the SQL the PRODUCTION
- * translator emits. Outcomes must agree: identical canonical value, or both engines error. A
- * value-vs-error split is a failure too (a pushed predicate would fail a query Trino runs, or run one
- * Trino fails). [SemanticFixtures.NotPushed] cases assert the translator declines the shape.
- *
- * Both engines run in [SemanticFixtures.ZONE] so session-zone-sensitive emissions are exercised.
+ * Trino supplies the expected values; DuckDB evaluates SQL emitted by the production translator.
+ * Both engines use the same session zone to exercise zone-sensitive expressions.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestPushdownSemanticFixtures : AbstractTestQueryFramework() {
@@ -90,7 +82,6 @@ class TestPushdownSemanticFixtures : AbstractTestQueryFramework() {
             .isEqualTo(expected)
     }
 
-    /** Canonical outcome of one engine: a normalised value string, or `ERROR` (message kept for the report). */
     private sealed interface Outcome {
         data class Value(val canonical: String) : Outcome
 

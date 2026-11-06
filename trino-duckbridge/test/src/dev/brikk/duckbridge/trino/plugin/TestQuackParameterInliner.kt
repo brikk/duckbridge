@@ -125,7 +125,6 @@ class TestQuackParameterInliner {
 
     @Test
     fun inlinesShortDecimalAsCast() {
-        // DECIMAL(5,2) unscaled 12345 = 123.45
         val q = PreparedQuery("SELECT * FROM t WHERE d = ?", listOf(param(createDecimalType(5, 2), 12345L)))
         assertThat(QuackParameterInliner.inline(q)).isEqualTo("SELECT * FROM t WHERE d = CAST('123.45' AS DECIMAL(5, 2))")
     }

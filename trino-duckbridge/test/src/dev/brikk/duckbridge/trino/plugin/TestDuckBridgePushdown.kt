@@ -24,12 +24,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * Provable pushdown tests: assert the PLAN SHAPE (via `isFullyPushedDown` / the plan matchers),
- * not just result correctness, so a regression that silently stops pushing predicates/limits is a
- * RED test. Runs the whole thing against a real embedded DuckDB with the built trino_parity
- * extension LOADed (parity enabled by default).
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgePushdown : AbstractTestQueryFramework() {
     override fun createQueryRunner(): QueryRunner {
@@ -62,11 +56,9 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
         computeActual("DROP TABLE IF EXISTS people")
     }
 
-    // ---- Function-shape (parity) pushdown ----------------------------------
 
     @Test
     fun lengthPredicateIsFullyPushedDown() {
-        // length(name) is a BARE emission (bare DuckDB built-in) → the whole filter pushes into DuckDB.
         assertThat(query("SELECT id FROM people WHERE length(name) = 5"))
             .isFullyPushedDown()
     }
@@ -112,21 +104,17 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
 
     @Test
     fun partialPushdownLeavesUnsupportedConjunctAboveScan() {
-        // length(name)=5 pushes; the divide predicate is intentionally NOT pushed (Trino/DuckDB
-        // integer-division divergence), so a FilterNode must remain above the scan. This proves the
-        // per-conjunct partial-pushdown split works end to end.
+        // Integer division differs between Trino and DuckDB, so id / 2 must leave a FilterNode above the scan.
         assertThat(query("SELECT id FROM people WHERE length(name) = 5 AND id / 2 = 1"))
             .isNotFullyPushedDown(FilterNode::class.java)
     }
 
     @Test
     fun unsupportedFunctionPredicateStaysAboveScan() {
-        // No parity function for `to_iso8601` → filter remains in Trino.
         assertThat(query("SELECT id FROM people WHERE to_iso8601(birth) = '2000-01-15'"))
             .isNotFullyPushedDown(FilterNode::class.java)
     }
 
-    // ---- Session-zone alignment (fail loud) ---------------------------------
 
     @Test
     fun unsettableSessionZoneFailsLoudWhenTzPushdownEnabled() {
@@ -149,8 +137,6 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
 
     @Test
     fun unsettableSessionZoneIsToleratedWhenTzPushdownDisabled() {
-        // Same zone, but with tz pushdown off nothing tz-sensitive is pushed — the SET failure is
-        // warned and the query runs correctly.
         val session =
             io.trino.testing.TestingSession.testSessionBuilder()
                 .setCatalog(DuckBridgeQueryRunner.CATALOG)
@@ -161,13 +147,6 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
         assertQuery(session, "SELECT id FROM people WHERE id = 1", "VALUES 1")
     }
 
-    // ---- LIMIT / TopN pushdown ---------------------------------------------
-    //
-    // LIMIT is pushed AND guaranteed (a remote `LIMIT n` returns at most n rows, which is Trino's
-    // whole LIMIT contract — determinism is not required), so no LimitNode survives above the scan.
-    // TopN is pushed but NOT guaranteed (DuckDB's ordering — e.g. varchar collation — is not proven
-    // identical to Trino's), so Trino keeps its own TopN on top while still pushing the bound into
-    // the remote scan; we prove that push by asserting `limit=`/`sortOrder=` on the TableScan.
 
     @Test
     fun limitIsPushedIntoTableScan() {
@@ -194,11 +173,9 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
             .materializedRows
             .joinToString("\n") { it.getField(0).toString() }
 
-    // ---- Correctness alongside the plan shape ------------------------------
 
     @Test
     fun pushedPredicateReturnsCorrectRows() {
-        // Alice(5), CAROL(5) are length 5; straße(6), δοκιμή(6) are not.
         val ids =
             computeActual("SELECT id FROM people WHERE length(name) = 5 ORDER BY id")
                 .materializedRows
@@ -215,8 +192,6 @@ class TestDuckBridgePushdown : AbstractTestQueryFramework() {
         assertThat(names).containsExactly("δοκιμή", "bob")
     }
 
-    // Reference the imported plan-node classes so a stale import is a compile error, keeping the
-    // matcher classes discoverable for future TopN/Limit-specific plan assertions.
     @Suppress("unused")
     private val planNodeClasses = listOf(LimitNode::class.java, TopNNode::class.java)
 }

@@ -20,12 +20,6 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.sql.DriverManager
 
-/**
- * Server-free integration test of the T2 in-process executor + Arrow→Page converter: writes a temp
- * `.db`, runs a SELECT through [InProcessDuckBridgeExecutor], and decodes the Arrow batches to Trino
- * Pages via [DuckBridgeArrowToPageConverter]. Exercises the full DUCKDB_LOCAL data plane without any
- * Quack server. Parity LOAD is included so the `arrowExportStream` + tuning + parity path is real.
- */
 class TestDuckBridgeInProcessExecutor {
     @Test
     fun executeAndDecodeArrowBatches() {
@@ -94,7 +88,6 @@ class TestDuckBridgeInProcessExecutor {
                     DuckBridgeQueryRunner.bundledParityIsUnsigned(),
                     parityExtension.extensionDirectory,
                 )
-            // The T2 SQL carries the parity function; the extension LOADed by the executor resolves it.
             val request = DuckBridgeExecutor.ExecutionRequest("SELECT trino_upper(name) AS u FROM t ORDER BY name", null)
             val converter = DuckBridgeArrowToPageConverter(listOf(VARCHAR))
             val out = mutableListOf<String>()

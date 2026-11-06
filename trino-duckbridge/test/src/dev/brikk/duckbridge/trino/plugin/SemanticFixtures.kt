@@ -38,25 +38,6 @@ import java.sql.Types
 import java.time.LocalDate
 import java.util.Optional
 
-/**
- * Cross-engine semantic fixtures for every non-ALIAS [DuckBridgeExpressionTranslator.Emission] entry,
- * plus the ALIAS natives.
- *
- * Each [Fixture] is a Trino [Call] over literal [Constant] arguments (or a bound `ts` / `tstz`
- * variable). The harness ([TestPushdownSemanticFixtures]) evaluates it TWICE:
- *  1. on **Trino itself** — the Call is rendered to Trino SQL ([trinoSql]) and run through the
- *     Trino query runner, producing the authoritative expected value (or an error);
- *  2. on **DuckDB** — the Call is run through the PRODUCTION translator to obtain the exact SQL the
- *     connector would push, which is executed on embedded DuckDB (extension LOADed for ALIAS).
- * The two outcomes must agree: same value, or both errors. No expectation is hand-written, so a
- * wrong belief about Trino cannot make a fixture green (the failure mode behind EV-A1..A5 and EV-E1
- * in dev-docs/archive/TODO-rectify-from-eval.md).
- *
- * [NotPushed] fixtures pin the gates: the translator must decline them (they'd be wrong if pushed).
- *
- * Both engines run in the same non-UTC session zone ([ZONE]) so zone-sensitive emissions are
- * exercised honestly.
- */
 object SemanticFixtures {
     /** Session zone for both engines. Non-UTC on purpose (to_unixtime, with_timezone). */
     const val ZONE: String = "America/New_York"
@@ -103,7 +84,6 @@ object SemanticFixtures {
         constructor(both: String) : this(both, both)
     }
 
-    /** The translator must refuse to push this shape (a gate is doing its job). */
     class NotPushed(
         override val name: String,
         override val arity: Int,
@@ -125,7 +105,6 @@ object SemanticFixtures {
             addAll(aliasFixtures())
         }
 
-    // ---- String ------------------------------------------------------------------------------
 
     @Suppress("LongMethod")
     private fun stringFixtures(): List<Case> =
@@ -177,7 +156,6 @@ object SemanticFixtures {
             add(np("hamming_distance", 2, "not pushed (DuckDB counts bytes)", call("hamming_distance", BIGINT, str("äö"), str("ab"))))
         }
 
-    // ---- Numeric -----------------------------------------------------------------------------
 
     @Suppress("LongMethod")
     private fun numericFixtures(): List<Case> =
@@ -234,7 +212,6 @@ object SemanticFixtures {
             add(fx("bitwise_not", 1, "~0", call("bitwise_not", BIGINT, int(0))))
         }
 
-    // ---- Regex -------------------------------------------------------------------------------
 
     private fun regexFixtures(): List<Case> =
         buildList {
@@ -271,7 +248,6 @@ object SemanticFixtures {
             add(np("regexp_count", 2, "dynamic pattern stays local", call("regexp_count", BIGINT, str("abc"), Variable("pattern", VARCHAR))))
         }
 
-    // ---- Date / time -------------------------------------------------------------------------
 
     @Suppress("LongMethod")
     private fun dateTimeFixtures(): List<Case> =
@@ -358,7 +334,7 @@ object SemanticFixtures {
             add(fx("millisecond", 1, "millis-of-second (seconds≠0)", call("millisecond", BIGINT, tsVar()), fromClause = fromTs("2024-01-01 00:00:05.123")))
             add(fx("millisecond", 1, "zero", call("millisecond", BIGINT, tsVar()), fromClause = fromTs("2024-01-01 00:00:59")))
             // Naive TIMESTAMP under a DST zone is declined (Trino and ICU disagree on the ambiguous
-            // autumn hour); fixed-offset sessions push — pinned in TestDuckBridgeExpressionTranslator.
+            // autumn hour); fixed-offset sessions push.
             add(np("to_unixtime", 1, "naive TIMESTAMP under DST session zone not pushed", call("to_unixtime", DOUBLE, tsVar())))
             if (DuckBridgeTrinoTarget.VERSION >= 484) {
                 add(np("to_unixtime", 1, "484 compensated rounding stays local", call("to_unixtime", DOUBLE, tstzVar())))
@@ -387,7 +363,6 @@ object SemanticFixtures {
             )
         }
 
-    // ---- Encoding / hash ---------------------------------------------------------------------
 
     private fun encodingAndHashFixtures(): List<Case> =
         buildList {
@@ -416,7 +391,6 @@ object SemanticFixtures {
             )
         }
 
-    // ---- CAST / conditional ------------------------------------------------------------------
 
     private fun castAndMiscFixtures(): List<Case> =
         buildList {
@@ -439,7 +413,6 @@ object SemanticFixtures {
             add(fx("\$try_cast", 1, "DOUBLE→INTEGER overflow → NULL", tryCast(io.trino.spi.type.IntegerType.INTEGER, dbl(1e12))))
         }
 
-    // ---- ALIAS natives (extension) — the EV-E corpus ----------------------------------------
 
     @Suppress("LongMethod")
     private fun aliasFixtures(): List<Case> =
@@ -507,7 +480,6 @@ object SemanticFixtures {
             )
         }
 
-    // ---- builders ----------------------------------------------------------------------------
 
     @Suppress("LongParameterList")
     private fun fx(

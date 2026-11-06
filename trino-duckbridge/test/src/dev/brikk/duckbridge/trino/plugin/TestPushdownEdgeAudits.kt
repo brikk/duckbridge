@@ -20,7 +20,6 @@ import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.DriverManager
 
-/** Each audit writes complete observations before asserting; a divergence stays red pending disposition. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestPushdownEdgeAudits : AbstractTestQueryFramework() {
     private lateinit var duck: Connection
@@ -121,7 +120,6 @@ class TestPushdownEdgeAudits : AbstractTestQueryFramework() {
         listOf("math", "real_numbers").flatMap { table ->
             predicates.mapIndexedNotNull { index, predicate ->
                 // Accepted Trino 483 limitation: compiled REAL IN distinguishes -0 bits, while equality/domains do not.
-                // The dedicated diagnostic below still asserts that raw IN discrepancy; no IN case or source bit is removed.
                 val oracleQuery = if (table == "real_numbers" && predicate == "x IN (0,1)")
                     PushdownEdgeFixtures.realMembershipEqualitySql(negated = false) else null
                 val row = context.predicate(table, predicate, "$table-$index", oracleInput = PushdownEdgeFixtures.runtimeFloatingInput(table),
@@ -136,7 +134,6 @@ class TestPushdownEdgeAudits : AbstractTestQueryFramework() {
     @Test
     fun testRealSignedZeroInCompilationDiagnostic() = audit("trino-real-in-diagnostic") { context ->
         // Trino 483's InCodeGenerator DIRECT_SWITCH compares long-backed REAL bit patterns.
-        // A native UNNEST proves the runtime difference without a connector; neither input value is changed.
         check(context.verifyInput("real_numbers").isEmpty()) { "REAL source values/types changed" }
         val negativeZeros = PushdownEdgeFixtures.math.mapIndexedNotNull { id, pair ->
             if (pair.first?.toFloat()?.toRawBits() == (-0.0f).toRawBits()) listOf("I:$id") else null

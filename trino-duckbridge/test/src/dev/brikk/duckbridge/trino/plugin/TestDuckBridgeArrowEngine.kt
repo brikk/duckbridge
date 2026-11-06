@@ -21,13 +21,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * End-to-end test of the T2 DUCKDB_LOCAL Arrow data plane through a Trino QueryRunner
- * (`duckbridge.execution-engine=DUCKDB_LOCAL`): [DuckBridgePageSourceProvider] diverts scans to the
- * in-process executor + [DuckBridgeArrowToPageConverter] instead of the default JDBC record set.
- * Proves the channel with real queries — projection, predicate pushdown, and unicode fidelity all
- * come back through the Arrow path.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeArrowEngine : AbstractTestQueryFramework() {
     private lateinit var connectionUrl: String
@@ -75,10 +68,8 @@ class TestDuckBridgeArrowEngine : AbstractTestQueryFramework() {
 
     @Test
     fun parityPredicatePushdownThroughArrowEngine() {
-        // upper(name) pushes as trino_upper server-side (the executor LOADs the extension); the Arrow
-        // result comes back through the T2 page source. Trino's upper() is a simple per-code-point
-        // mapping, so upper('straße') = 'STRAßE' (ß has no simple uppercase); DuckDB's built-in would
-        // give 'STRAẞE' and miss the row — matching row 4 proves the extension path was taken.
+        // Trino's upper('straße') is 'STRAßE'; DuckDB's built-in gives 'STRAẞE' and would miss row 4.
+        // Matching it distinguishes the extension path from the built-in.
         val ids =
             computeActual("SELECT id FROM nums WHERE upper(name) = 'STRAßE' ORDER BY id")
                 .materializedRows

@@ -1,6 +1,5 @@
 package dev.brikk.duckbridge.trino.plugin
 
-/** Unicode 14/16 additions that the old ICU 66.1 baseline could not evaluate correctly. */
 internal object UnicodeVersionCases {
     fun text(vararg points: Int): String = buildString { points.forEach { appendCodePoint(it) } }
 

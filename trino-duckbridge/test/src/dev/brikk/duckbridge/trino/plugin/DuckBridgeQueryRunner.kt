@@ -18,19 +18,13 @@ import io.trino.testing.QueryRunner
 import io.trino.testing.TestingSession.testSessionBuilder
 import java.nio.file.Files
 
-/**
- * Test harness for the DuckBridge connector. Cribbed from upstream Trino 476's
- * `DuckDbQueryRunner` / `TestingDuckDb`: a [DistributedQueryRunner] whose catalog points at a
- * freshly-created temp `.db` file via the standard `connection-url` property.
- */
 object DuckBridgeQueryRunner {
     const val CATALOG = "duckbridge"
     const val SCHEMA = "test_schema"
 
     /**
-     * Creates a temp DuckDB database file path and returns its `jdbc:duckdb:` URL. The file
-     * itself is created by DuckDB on first connect; we delete the empty placeholder so DuckDB
-     * initialises a fresh database.
+     * DuckDB creates the file on first connect; delete the empty placeholder so it can initialise
+     * a fresh database.
      */
     fun freshDatabaseUrl(): String {
         val path = Files.createTempFile("duckbridge-", ".db")
@@ -40,11 +34,9 @@ object DuckBridgeQueryRunner {
 
     fun create(connectionUrl: String): QueryRunner = create(connectionUrl, emptyMap())
 
-    /** True iff the bundled trino_parity binary for this host is a local (unsigned) build. */
     fun bundledParityIsUnsigned(): Boolean =
         TrinoParityExtensionResolver.resolveBundledExtensionPath()?.let(TrinoParityExtensionResolver::isUnsigned) == true
 
-    /** JDBC connection properties for opening an embedded DuckDB that will LOAD the bundled binary. */
     fun duckJdbcProperties(): java.util.Properties =
         java.util.Properties().also { p ->
             if (bundledParityIsUnsigned()) {
@@ -52,12 +44,6 @@ object DuckBridgeQueryRunner {
             }
         }
 
-    /**
-     * @param connectionUrl the base-jdbc `connection-url` (`jdbc:duckdb:...` embedded or
-     *        `jdbc:quack://host:port` remote).
-     * @param extraProperties additional catalog properties (e.g. `duckbridge.quack.token`,
-     *        `duckbridge.parity-extension-path`).
-     */
     fun create(connectionUrl: String, extraProperties: Map<String, String>): QueryRunner {
         val session =
             testSessionBuilder()
@@ -72,9 +58,7 @@ object DuckBridgeQueryRunner {
                 "duckbridge",
                 buildMap {
                     put("connection-url", connectionUrl)
-                    // The connector verifies extension signatures by default (EV-C4). A developer's
-                    // Opt in ONLY for a local unsigned development build. Release bundles retain
-                    // community provenance and run with signature verification enabled.
+                    // Only local unsigned builds need the opt-in; release bundles retain signature verification.
                     if (bundledParityIsUnsigned()) {
                         put("duckbridge.allow-unsigned-extensions", "true")
                     }

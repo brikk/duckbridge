@@ -21,27 +21,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 import java.sql.Statement
 
-/**
- * SQL-level acceptance + parity tests for the emission-class rework, run against the REAL built
- * `trino_parity.duckdb_extension` binary (resolved and extracted by [TrinoParityExtensionResolver],
- * the same path the production client uses).
- *
- * Two obligations, post "alias only what diverges":
- *
- *  (a) [testAliasSetEqualsMeta] — ALIAS LOCKSTEP: the translator's [Emission.Alias] subset (the
- *      10 native-C++ divergence-fixers that must route through the extension) must EQUAL the loaded
- *      binary's `trino_meta()` catalog, exactly. The extension shed its 85 passthrough macros at
- *      0d531cc ("shrink to the 10 native divergence-fixing functions"), so any extra or missing
- *      entry on either side is a hard failure again.
- *
- *  (b) [testEveryNonAliasEntryHasAFixture] — FIXTURE COVERAGE: every non-ALIAS entry
- *      (Bare/Rename/Operator/Inline) has at least one [SemanticFixtures.Fixture]. The fixtures
- *      themselves run in [TestPushdownSemanticFixtures], which evaluates each expression on Trino AND
- *      on DuckDB (via the production translator's SQL) and requires the outcomes to agree — the canary
- *      that re-proves native alignment on DuckDB / Trino pin bumps.
- */
 class TestTrinoFunctionAliases {
-    // ---- (a) ALIAS lockstep -------------------------------------------------
 
     @Test
     @Throws(Exception::class)
@@ -53,8 +33,6 @@ class TestTrinoFunctionAliases {
                     DuckBridgeExpressionTranslator.ALIAS_FUNCTIONS
                         .map { MetaEntry(it.name, it.arity) }
                         .toHashSet()
-                // Strict equality since the extension shrink (0d531cc): the binary catalogs exactly
-                // the 10 ALIAS natives — an extra macro on either side is drift and fails hard.
                 assertThat(meta)
                     .`as`("trino_meta() must catalog exactly the translator's ALIAS set (10 natives)")
                     .isEqualTo(aliasSet)
@@ -65,8 +43,6 @@ class TestTrinoFunctionAliases {
     @Test
     @Throws(Exception::class)
     fun testAliasSetIsExactlyTheTenNatives() {
-        // The keep-list handed to the parity-extension maintainers: exactly these 10 native C++
-        // entries route through the extension. If this drifts, the ANSWER doc + README are stale.
         val expected =
             setOf(
                 NameArity("lower", 1),
@@ -96,7 +72,6 @@ class TestTrinoFunctionAliases {
             .containsAll(nonAlias)
     }
 
-    // ---- representative extension-macro semantics (loaded binary sanity) ----
 
     @Test
     fun newDuckDbJsonFunctionsAreNotAutomaticallyPredicateAliases() {
@@ -113,11 +88,8 @@ class TestTrinoFunctionAliases {
     fun testRepresentativeAliasSemantics() {
         openConnectionWithExtension().use { conn ->
             conn.createStatement().use { stmt ->
-                // The ALIAS class is where DuckDB's built-in diverges; prove the loaded binary
-                // actually evaluates the Trino-aligned semantics (SIMPLE per-code-point case mapping —
-                // Trino's StringFunctions go through airlift SliceUtf8 / Character.toUpperCase(int),
-                // so upper('ß') stays 'ß' and lower('İ') is a bare 'i'; code-point reverse; NULL
-                // propagation). Values verified against Trino 483 (EV-E1 in TODO-rectify-from-eval.md).
+                // Trino uses simple per-code-point case mapping through SliceUtf8 / Character.toUpperCase(int),
+                // so upper('ß') stays 'ß' and lower('İ') is a bare 'i'.
                 assertThat(scalar(stmt, "SELECT trino_lower('HeLLo')")).isEqualTo("hello")
                 assertThat(scalar(stmt, "SELECT trino_upper('ß')")).isEqualTo("ß")
                 assertThat(scalar(stmt, "SELECT trino_upper('straße')")).isEqualTo("STRAßE")

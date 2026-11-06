@@ -23,16 +23,8 @@ import java.sql.DriverManager
 import java.sql.Statement
 
 /**
- * Version-pin canary for the DuckDB `lance` / `vortex` extensions the P5 PTFs render against. Ported
- * from the DuckLake connector's `TestLanceExtensionCanary`, trimmed to duckbridge's surface.
- *
- * lance-duckdb ships ~daily and has churned our surface before (`lance_scan` → `__lance_scan`). A
- * hard INSTALL-time version pin isn't possible (extensions.duckdb.org serves only the latest build
- * per DuckDB version + platform), so the connector INSTALLs floating-latest and this test is the
- * tripwire that makes churn loud. It `FORCE INSTALL`s to observe today's served build, then asserts
- * the exact call shapes the connector renders (`__lance_scan`, `lance_vector_search` +
- * `k`/`prefilter`, `read_vortex`) still resolve, and finally the served version equals the pin.
- *
+ * extensions.duckdb.org serves only the latest build per DuckDB version and platform, so FORCE INSTALL
+ * checks the served build rather than a cached copy.
  * Skips when an extension can't be downloaded (offline / unsupported platform).
  */
 class TestLanceVortexExtensionCanary {
@@ -43,9 +35,7 @@ class TestLanceVortexExtensionCanary {
             connection.createStatement().use { statement ->
                 val version = queryString(statement, "SELECT extension_version FROM duckdb_extensions() WHERE extension_name='lance'")
 
-                // __lance_scan('<dir>') — path-only positional (read path).
                 assertSignature(statement, "__lance_scan", "parameter_types[1] = 'VARCHAR'")
-                // lance_vector_search('<path>','<col>',[..]::DOUBLE[], k := n, prefilter := b)
                 assertSignature(
                     statement,
                     "lance_vector_search",
@@ -54,7 +44,6 @@ class TestLanceVortexExtensionCanary {
                 assertSignature(statement, "lance_fts", "parameter_types[1] = 'VARCHAR' AND parameter_types[2] = 'VARCHAR'")
                 assertSignature(statement, "lance_hybrid_search", "parameter_types[1] = 'VARCHAR'")
 
-                // Behavior: write a lance dataset + read it back + one vector search.
                 val ds = tempDir.resolve("canary.lance").toString().replace("'", "''")
                 statement.execute(
                     "COPY (SELECT * FROM (VALUES (1,'a',[1.0,0.0]::FLOAT[2]),(2,'b',[0.0,1.0]::FLOAT[2])) AS t(id,txt,emb)) " +
@@ -116,7 +105,6 @@ class TestLanceVortexExtensionCanary {
         }
 
     private companion object {
-        /** The lance-duckdb build this connector's surface was last verified against (DuckDB v2.0.0). */
         private const val PINNED_LANCE_VERSION = "86118537da"
     }
 }

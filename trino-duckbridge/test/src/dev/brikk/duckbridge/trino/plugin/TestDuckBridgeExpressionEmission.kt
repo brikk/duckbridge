@@ -33,15 +33,7 @@ import org.junit.jupiter.api.Test
 import java.sql.Types
 import java.util.Optional
 
-/**
- * Emission-class unit tests for [DuckBridgeExpressionTranslator], covering the "alias only what
- * diverges" rework: BARE / RENAME / OPERATOR / INLINE / ALIAS emission shapes, the aliasAvailable
- * gate (ALIAS drops when the extension is unavailable; the rest still push), and the new lpad/rpad
- * (constant non-empty pad) and substring (constant start ≥ 1) gates. Split out of
- * TestDuckBridgeExpressionTranslator to keep each class under the detekt LargeClass threshold.
- */
 class TestDuckBridgeExpressionEmission {
-    // --- emission-class tests (BARE / RENAME / OPERATOR / INLINE / ALIAS) ---
 
     @Test
     fun testBareEmitsPlainBuiltinName() {
@@ -58,7 +50,6 @@ class TestDuckBridgeExpressionEmission {
 
     @Test
     fun testRenameEmitsDuckDbName() {
-        // to_hex → hex ; regexp_like → regexp_matches ; truncate → trunc ; bitwise_xor → xor
         val toHex =
             call(
                 StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME,
@@ -112,7 +103,7 @@ class TestDuckBridgeExpressionEmission {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(bnot, ASSIGNMENTS))
             .containsExactly("((~\"id\") = -1)")
 
-        // EV-A3 / EV-A12: shifts are not pushed — Trino's bitwise_right_shift is logical (zero-fill)
+        // Shifts are not pushed: Trino's bitwise_right_shift is logical (zero-fill)
         // where DuckDB's >> is arithmetic, and Trino's left shift wraps to the operand width / yields 0
         // for shift >= width where DuckDB throws.
         val bshift =
@@ -127,7 +118,6 @@ class TestDuckBridgeExpressionEmission {
 
     @Test
     fun testInlineEmitsTransformTemplate() {
-        // regexp_replace/2 forces '' + 'g'
         val rr2 =
             call(
                 StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME,
@@ -138,7 +128,6 @@ class TestDuckBridgeExpressionEmission {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(rr2, ASSIGNMENTS))
             .containsExactly("(regexp_replace(\"name\", 'x', '', 'g') = 'y')")
 
-        // regexp_replace/3 forces 'g'
         val rr3 =
             call(
                 StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME,
@@ -149,7 +138,6 @@ class TestDuckBridgeExpressionEmission {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(rr3, ASSIGNMENTS))
             .containsExactly("(regexp_replace(\"name\", 'x', 'z', 'g') = 'y')")
 
-        // md5 → unhex(md5(x))
         val md5 =
             call(
                 StandardFunctions.IS_NULL_FUNCTION_NAME,
@@ -159,7 +147,6 @@ class TestDuckBridgeExpressionEmission {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(md5, ASSIGNMENTS))
             .containsExactly("(unhex(md5(\"name\")) IS NULL)")
 
-        // if/2 → if(c, t, NULL)
         val if2 =
             call(
                 StandardFunctions.IS_NULL_FUNCTION_NAME,
@@ -176,7 +163,6 @@ class TestDuckBridgeExpressionEmission {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(if2, ASSIGNMENTS))
             .containsExactly("(if((\"id\" = 1), 9, NULL) IS NULL)")
 
-        // if/3 is BARE
         val if3 =
             call(
                 StandardFunctions.EQUAL_OPERATOR_FUNCTION_NAME,
@@ -218,7 +204,6 @@ class TestDuckBridgeExpressionEmission {
                 call(FunctionName("lower"), VARCHAR, Variable("name", VARCHAR)),
                 varcharConst("apple"),
             )
-        // aliasAvailable=false → ALIAS-class lower drops out entirely.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expr, ASSIGNMENTS, null, false)).isEmpty()
     }
 
@@ -231,12 +216,10 @@ class TestDuckBridgeExpressionEmission {
                 call(FunctionName("length"), BIGINT, Variable("name", VARCHAR)),
                 Constant(5L, BIGINT),
             )
-        // BARE never touches the extension → pushes regardless of aliasAvailable.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expr, ASSIGNMENTS, null, false))
             .containsExactly("(length(\"name\") = 5)")
     }
 
-    // --- new lpad/rpad + substring constant gates ---------------------------
 
     @Test
     fun testLpadPushesWithConstantNonEmptyPad() {

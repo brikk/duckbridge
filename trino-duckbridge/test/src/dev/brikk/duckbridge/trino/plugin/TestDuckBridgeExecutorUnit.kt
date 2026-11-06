@@ -18,10 +18,6 @@ import io.airlift.units.DataSize.Unit.GIGABYTE
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/**
- * Server-free unit tests for the T2 executor machinery: tuning-SQL rendering, catalog-write-conflict
- * classification, the S3 secret SQL, and the execution-engine enum. These need no DuckDB/Quack.
- */
 class TestDuckBridgeExecutorUnit {
     @Test
     fun tuningSqlDefaultsRenderMandatorySettings() {
@@ -89,9 +85,9 @@ class TestDuckBridgeExecutorUnit {
         )
         val sql = s3.renderCreateSecretSql()
         assertThat(sql).startsWith("CREATE SECRET IF NOT EXISTS duckbridge_s3 (TYPE S3")
-        assertThat(sql).contains("ENDPOINT 'minio:9000'") // scheme stripped
+        assertThat(sql).contains("ENDPOINT 'minio:9000'")
         assertThat(sql).contains("URL_STYLE 'path'")
-        assertThat(sql).contains("USE_SSL false") // http endpoint → no ssl
+        assertThat(sql).contains("USE_SSL false")
     }
 
     @Test
@@ -112,8 +108,6 @@ class TestDuckBridgeExecutorUnit {
 
     @Test
     fun executionEngineDefaultsToJdbc() {
-        // QUACK is no longer rejected at config time — it is wired (experimental) through the
-        // quack_query_by_name pushdown path. JDBC remains the default production engine.
         assertThat(DuckBridgeConfig().executionEngine).isEqualTo(DuckBridgeExecutionEngine.JDBC)
         assertThat(DuckBridgeConfig().setExecutionEngine(DuckBridgeExecutionEngine.QUACK).executionEngine)
             .isEqualTo(DuckBridgeExecutionEngine.QUACK)

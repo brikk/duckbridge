@@ -22,7 +22,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 
 /**
- * EV-C4: the bundled native extension is extracted to a process-private directory (never a fixed,
+ * The bundled native extension is extracted to a process-private directory (never a fixed,
  * predictable path another local user could pre-create or swap), and signature verification stays
  * ON by default — an unsigned local build is refused unless the operator opts in explicitly.
  */
@@ -36,7 +36,7 @@ class TestTrinoParityExtensionResolver {
         val root = Path.of(extension.extractionRoot)
         assertThat(file).startsWith(root)
         assertThat(root.fileName.toString()).startsWith("trino-duckbridge-")
-        assertThat(root.fileName.toString()).isNotEqualTo("trino-duckbridge") // the old fixed, shared path
+        assertThat(root.fileName.toString()).isNotEqualTo("trino-duckbridge")
         assertThat(root.parent).isEqualTo(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath())
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             val perms = Files.getPosixFilePermissions(root)
@@ -49,7 +49,6 @@ class TestTrinoParityExtensionResolver {
                     ),
                 )
         }
-        // Idempotent within the process: the same path comes back, no second extraction root.
         assertThat(TrinoParityExtensionResolver.resolveBundledExtensionPath()).isEqualTo(extension.path)
         if (extension.infoPath != null) {
             assertThat(Path.of(extension.infoPath)).isRegularFile()
@@ -84,7 +83,6 @@ class TestTrinoParityExtensionResolver {
 
     @Test
     fun allowUnsignedExtensionsDefaultsToFalse() {
-        // Signature verification is ON unless an operator opts out (EV-C4).
         assertThat(DuckBridgeConfig().isAllowUnsignedExtensions).isFalse()
         assertThat(DuckBridgeConfig().setAllowUnsignedExtensions(true).isAllowUnsignedExtensions).isTrue()
     }

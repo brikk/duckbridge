@@ -13,7 +13,6 @@ import java.sql.SQLException
 import java.util.Properties
 import kotlin.io.path.writeText
 
-/** Read-only transport inventory. This probe does not grant a type mapping or equate errors. */
 class TestNanosTransportProbe {
     @Test
     fun recordsRawGettersAndArrowSchemas() {

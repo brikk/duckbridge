@@ -44,11 +44,6 @@ import org.junit.jupiter.api.Test
 import java.sql.Types
 import java.util.Optional
 
-/**
- * Unit tests for [DuckBridgeExpressionTranslator], ported from the DuckLake connector's
- * `TestDuckDbExpressionTranslator`. Column handles are base-jdbc [JdbcColumnHandle]s (the P2 change
- * from DuckLake's own handle); every SQL-shape assertion is preserved verbatim.
- */
 class TestDuckBridgeExpressionTranslator {
     @Test
     fun testEqualOnPushableFunction() {
@@ -318,7 +313,7 @@ class TestDuckBridgeExpressionTranslator {
 
     @Test
     fun testTryCastFromVarcharStaysInTrino() {
-        // EV-A9: DuckDB's string parsers are more lenient than Trino's (TRY_CAST('1.0' AS INTEGER) is 1
+        // DuckDB's string parsers are more lenient than Trino's (TRY_CAST('1.0' AS INTEGER) is 1
         // in DuckDB, NULL in Trino; '2020/01/01' → DATE; 'yes' → BOOLEAN), so string-sourced casts are
         // never pushed — neither TRY_CAST nor CAST.
         val tryCast: ConnectorExpression =
@@ -338,7 +333,7 @@ class TestDuckBridgeExpressionTranslator {
 
     @Test
     fun testCastDoubleToVarcharStaysInTrino() {
-        // EV-A10: Java Double.toString renders 1.0E7 where DuckDB renders 10000000.0.
+        // Java Double.toString renders 1.0E7 where DuckDB renders 10000000.0.
         val cast: ConnectorExpression =
             Call(VARCHAR, StandardFunctions.CAST_FUNCTION_NAME, listOf(Variable("weight", DOUBLE)))
         val expression: ConnectorExpression =
@@ -485,7 +480,6 @@ class TestDuckBridgeExpressionTranslator {
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
     }
 
-    // --- date/time type-gate tests -----------------------------------------
 
     @Test
     fun testYearOnDatePushes() {
@@ -522,7 +516,6 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("year"), BIGINT, Variable("tstz", TIMESTAMP_TZ_MILLIS)),
                 Constant(2024L, BIGINT),
             )
-        // Session-less overload reads pushdown_timestamp_with_timezone as OFF → not pushed.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
     }
 
@@ -573,7 +566,7 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("date_diff"), BIGINT, varcharConst("day"), Variable("d", DATE), Variable("d", DATE)),
                 Constant(0L, BIGINT),
             )
-        // EV-A2: Trino's date_diff counts complete units (DuckDB's date_sub), not boundaries crossed.
+        // Trino's date_diff counts complete units (DuckDB's date_sub), not boundaries crossed.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS))
             .containsExactly("(date_sub('day', \"d\", \"d\") = 0)")
     }
@@ -587,16 +580,15 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("to_unixtime"), DOUBLE, Variable("ts", TIMESTAMP_MILLIS)),
                 Constant(0.0, DOUBLE),
             )
-        // EV-A4: a naive TIMESTAMP is interpreted in the SESSION zone by Trino; DuckDB's epoch() treats
+        // A naive TIMESTAMP is interpreted in the SESSION zone by Trino; DuckDB's epoch() treats
         // it as UTC, so the translator re-anchors via timezone(<session zone>, ts). Without a session
         // there is no zone → stays in Trino.
         assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS)).isEmpty()
         val expected = if (DuckBridgeTrinoTarget.VERSION >= 484) emptyArray() else
             arrayOf(DuckBridgeFloatingExpressions.comparison("CAST(epoch(timezone('UTC', \"ts\")) AS DOUBLE)", "=", "0.0"))
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true))).containsExactly(*expected)
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTimestampTzPushdown(true))).containsExactly(*expected)
     }
 
-    // --- TIMESTAMP WITH TIME ZONE gated by session property -----------------
 
     @Test
     fun testYearOnTimestampWithTimeZonePushesWhenPropertyOn() {
@@ -607,7 +599,7 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("year"), BIGINT, Variable("tstz", TIMESTAMP_TZ_MILLIS)),
                 Constant(2024L, BIGINT),
             )
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTimestampTzPushdown(true)))
             .containsExactly("(${DuckBridgeTimestampTruncation.year("\"tstz\"", Variable("tstz", TIMESTAMP_TZ_MILLIS))} = 2024)")
     }
 
@@ -620,7 +612,7 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("year"), BIGINT, Variable("tstz", TIMESTAMP_TZ_MILLIS)),
                 Constant(2024L, BIGINT),
             )
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(false)))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTimestampTzPushdown(false)))
             .isEmpty()
     }
 
@@ -635,7 +627,7 @@ class TestDuckBridgeExpressionTranslator {
             )
         val expected = if (DuckBridgeTrinoTarget.VERSION >= 484) emptyArray() else
             arrayOf(DuckBridgeFloatingExpressions.comparison("CAST(epoch(\"tstz\") AS DOUBLE)", "=", "0.0"))
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true))).containsExactly(*expected)
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTimestampTzPushdown(true))).containsExactly(*expected)
     }
 
     @Test
@@ -647,7 +639,7 @@ class TestDuckBridgeExpressionTranslator {
                 call(FunctionName("day_of_week"), BIGINT, Variable("tstz", TIMESTAMP_TZ_MILLIS)),
                 Constant(7L, BIGINT),
             )
-        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTierC(true)))
+        assertThat(DuckBridgeExpressionTranslator.translateConjuncts(expression, ASSIGNMENTS, sessionWithTimestampTzPushdown(true)))
             .isEmpty()
     }
 
@@ -732,7 +724,7 @@ class TestDuckBridgeExpressionTranslator {
             return JdbcColumnHandle(name, typeHandle, type)
         }
 
-        private fun sessionWithTierC(value: Boolean): ConnectorSession =
+        private fun sessionWithTimestampTzPushdown(value: Boolean): ConnectorSession =
             TestingConnectorSession.builder()
                 .setPropertyMetadata(DuckBridgeSessionProperties(DuckBridgeConfig()).getSessionProperties())
                 .setPropertyValues(

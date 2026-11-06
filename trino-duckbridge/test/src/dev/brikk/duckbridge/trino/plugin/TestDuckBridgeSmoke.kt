@@ -20,11 +20,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * P1 smoke tests: prove the `duckbridge` connector attaches an embedded (`jdbc:duckdb:`)
- * DuckDB, round-trips the standard scalar types through a Trino [QueryRunner], and exposes the
- * base-jdbc `query` passthrough table function.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeSmoke {
     private lateinit var queryRunner: QueryRunner

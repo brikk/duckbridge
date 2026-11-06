@@ -23,18 +23,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.util.Properties
 
-/**
- * Stage 1 (T3) integration test: the duckbridge connector talking to a REAL remote DuckDB over the
- * Quack protocol via gizmo's `quack-jdbc` driver (`connection-url=jdbc:quack://host:port`).
- *
- * The server is a testcontainer ([TestingQuackServer]) hosting `quack_serve`; the bundled
- * signed `trino_parity` binary + provenance are copied into DuckDB's installed-extension tree and
- * LOADed by name, so the parity pushdown path is genuinely exercised over the wire with signature
- * verification enabled — not just result correctness.
- *
- * Signed release binaries are loaded with signature verification enabled. Local unsigned builds
- * require the test fixture's explicit development opt-in.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
     private lateinit var server: TestingQuackServer
@@ -229,8 +217,6 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
         assertThat(explain(goodSql)).doesNotContain("filterPredicate")
         assertThat(computeActual(goodSql).onlyValue).isEqualTo(1L)
 
-        // Write the empty key through the new BLOB mapping, then prove the same column-key predicate
-        // remains fully pushed and fails remotely with Trino's message.
         computeActual("INSERT INTO native_types (id, b, key) VALUES (2, X'64617461', X'')")
         try {
             val emptyKeySql = "SELECT id FROM native_types WHERE to_hex(hmac_sha256(b, key)) = '00'"
@@ -274,7 +260,6 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
 
     @Test
     fun domainPushdownIsProvenOverQuack() {
-        // A simple range predicate pushes through base-jdbc's domain path onto the remote TableScan.
         val plan = explain("SELECT id FROM t WHERE id >= 3")
         assertThat(plan).contains("TableScan")
         val ids =
@@ -291,20 +276,16 @@ class TestDuckBridgeQuackTransport : AbstractTestQueryFramework() {
 
     @Test
     fun bareFunctionPushdownOverQuack() {
-        // length is now a BARE emission (no extension needed) — it pushes as the bare built-in name
-        // even over Quack, independent of the parity extension's availability on the server.
         val ids =
             computeActual("SELECT id FROM t WHERE length(name) = 5 ORDER BY id").materializedRows.map { it.getField(0) as Long }
-        // Alice (5), straße (6→no), δοκιμή (6→no), bob (3→no) → Alice only.
         assertThat(ids).containsExactly(1L)
     }
 
     @Test
     fun parityUnicodeCaseFoldOverQuack() {
         org.junit.jupiter.api.Assumptions.assumeTrue(parityAvailable, "parity not available")
-        // upper is an ALIAS emission → trino_upper server-side: Trino's simple per-code-point mapping
-        // gives upper('straße') = 'STRAßE' (DuckDB's built-in would give 'STRAẞE'). The predicate
-        // pushes and matches row 3 only when the extension is available.
+        // Trino's simple case mapping gives upper('straße') = 'STRAßE'; DuckDB's built-in gives 'STRAẞE'.
+        // Row 3 only matches when the extension is used.
         val ids =
             computeActual("SELECT id FROM t WHERE upper(name) = 'STRAßE'").materializedRows.map { it.getField(0) as Long }
         assertThat(ids).containsExactly(3L)

@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Timeout
 import org.rnorth.ducttape.unreliables.Unreliables
 import java.util.concurrent.TimeUnit
 
-/** Real elapsed lease time, server snapshots, and the driver's actual heartbeat worker threads. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestQuackHeartbeatAndSessions {
     private lateinit var server: TestingQuackServer
@@ -44,8 +43,7 @@ class TestQuackHeartbeatAndSessions {
                 statement.execute("INSERT INTO lifecycle_heartbeat_marker VALUES (42)")
             }
             assertThat(sessionSnapshots(server).map { it.id }).contains(id)
-            // Published 0.11 requests a 60s v3 lease and renews it every 20s. Do not send
-            // target-session SQL while idle: the heartbeat alone must preserve the lease.
+            // Do not send target-session SQL while idle: the heartbeat alone must preserve the lease.
             Thread.sleep(65_000)
             assertThat(connection.session().connectionId()).isEqualTo(id)
             assertThat(sessionSnapshots(server).map { it.id }).contains(id)
@@ -73,7 +71,7 @@ class TestQuackHeartbeatAndSessions {
                     statement.executeQuery("SELECT * FROM range(100000)").use { rows -> assertThat(rows.next()).isTrue() }
                 }
             } finally { connection.close() }
-            connection.close() // idempotent physical close must not resurrect work
+            connection.close()
             assertGone(id, workers)
         }
         assertThat(sessionSnapshots(server)).hasSize(1) // only the observer, no orphan idle/cache rows

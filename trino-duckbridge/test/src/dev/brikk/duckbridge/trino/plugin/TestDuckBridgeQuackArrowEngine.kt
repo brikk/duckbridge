@@ -23,19 +23,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * End-to-end test of the T2 QUACK Arrow data plane (`duckbridge.execution-engine=QUACK`) against a
- * REAL remote DuckDB over the Quack RPC protocol ([TestingQuackServer]).
- *
- * The read path: base-jdbc renders the split query → [QuackParameterInliner] inlines its parameters
- * → [QuackDuckBridgeExecutor] ships it server-side via `quack_query_by_name` and returns Arrow. This
- * is the pushdown model (single server-side execution per split), so it does NOT hit the ATTACH-mode
- * "multiple streaming scans" wall (duckdb-quack#150).
- *
- * Requires Docker. This is the experiment behind "let execution-engine=QUACK in and feel the pain":
- * it exercises scan, projection, count(*), and parameter-inlined predicates (bigint / varchar / date)
- * over the wire; predicate types the inliner can't yet render fail loud rather than return wrong rows.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
     private lateinit var server: TestingQuackServer
@@ -182,13 +169,6 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
         assertThat(ids).containsExactly(3L)
     }
 
-    /**
-     * Replaces the inherited "Quack pool exhausts under per-split churn" fear with a measured number.
-     * duckbridge is single-split-per-query in pushdown mode, so a burst of sequential scans should
-     * leave only a handful of server-side connections live (each scan's connection is closed when its
-     * page source closes; a few may linger up to the server's 10s keep-alive) — nowhere near the
-     * hardcoded 128-thread ceiling. The reading connection itself counts as one.
-     */
     @Test
     fun perQueryChurnDoesNotAccumulateServerConnections() {
         repeat(20) {
@@ -196,8 +176,7 @@ class TestDuckBridgeQuackArrowEngine : AbstractTestQueryFramework() {
         }
         val active = server.activeConnectionCount()
         log.info("quack_active_connections after 20 sequential QUACK Arrow scans: %d (server ceiling 128)", active)
-        // Generous bound for keep-alive lingering; the point is it does NOT grow with query count
-        // toward the 128 ceiling. Empirically this settles to a small single-digit number.
+        // Generous bound for keep-alive lingering; the observer connection itself also counts as one.
         assertThat(active).isLessThan(32)
     }
 

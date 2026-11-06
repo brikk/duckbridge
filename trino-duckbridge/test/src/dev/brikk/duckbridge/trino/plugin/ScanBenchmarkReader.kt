@@ -19,7 +19,6 @@ import java.sql.ResultSet
 import java.util.Properties
 import kotlin.math.min
 
-/** Test-only scalar Page materialization. No registration in a connector or transport default changes. */
 internal object ScanBenchmarkReader {
     const val PAGE_ROWS = 2048
     enum class Mode(val streamed: Boolean, val arrow: Boolean = false) {

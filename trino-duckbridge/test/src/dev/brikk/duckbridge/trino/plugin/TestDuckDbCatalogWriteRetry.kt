@@ -11,7 +11,6 @@ import java.sql.SQLException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** Actual held catalog transactions, including the native quack_query_by_name path used by LOAD retry. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckDbCatalogWriteRetry {
     private enum class Mode { EMBEDDED, QUACK_JDBC, QUACK_ARROW_WRAPPER }

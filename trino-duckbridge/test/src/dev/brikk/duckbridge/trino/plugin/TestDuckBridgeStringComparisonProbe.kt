@@ -27,15 +27,6 @@ import java.lang.reflect.Proxy
 import java.util.Properties
 import java.util.concurrent.atomic.AtomicInteger
 
-/**
- * Runs the [DuckBridgeStringComparisonProbe] canary matrix (the same predicates the connection-init
- * fail-loud probe uses) against BOTH embedded DuckDB and the out-of-process Quack server, and writes
- * the verdicts to `dev-docs/REPORT-string-comparison-probe-duckdb-2.0.0.md`.
- *
- * If any hazard-class canary FAILS on a transport, this test fails — the connector's BINARY/PARITY
- * byte-semantics contract is not paper-able. (It doesn't; DuckDB is binary-collated by default on
- * both transports — see the generated report.)
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeStringComparisonProbe {
     private var quack: TestingQuackServer? = null
@@ -75,7 +66,6 @@ class TestDuckBridgeStringComparisonProbe {
     @Test
     fun probeVerifyOrThrowPassesOnBinaryDuckDb() {
         embeddedConnection().use { conn ->
-            // Should not throw on a clean binary-collated DuckDB.
             DuckBridgeStringComparisonProbe.verifyOrThrow(conn, DuckBridgeStringPushdownMode.BINARY)
             DuckBridgeStringComparisonProbe.verifyOrThrow(conn, DuckBridgeStringPushdownMode.PARITY)
         }
@@ -105,7 +95,6 @@ class TestDuckBridgeStringComparisonProbe {
     fun probeVerifyOrThrowFailsLoudOnNonBinaryCollation() {
         embeddedConnection().use { conn ->
             conn.createStatement().use { it.execute("SET default_collation = 'nocase'") }
-            // The case-pair canary (and the collation check) must trip → fail loud.
             org.assertj.core.api.Assertions.assertThatThrownBy {
                 DuckBridgeStringComparisonProbe.verifyOrThrow(conn, DuckBridgeStringPushdownMode.BINARY)
             }.hasMessageContaining("string-pushdown mode BINARY")
@@ -150,7 +139,6 @@ class TestDuckBridgeStringComparisonProbe {
         return DriverManager.getConnection("jdbc:duckdb:", props)
     }
 
-    /** JDBC dynamic proxy that counts Statement.executeQuery calls while delegating everything else. */
     private fun countingConnection(delegate: Connection, queries: AtomicInteger): Connection =
         Proxy.newProxyInstance(
             Connection::class.java.classLoader,

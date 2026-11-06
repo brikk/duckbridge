@@ -10,7 +10,6 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 
-/** Real connector DML and engine triggers. Trigger DDL is deliberately native, not a claimed Trino API. */
 class TestTriggeredWrites : AbstractTestQueryFramework() {
     private lateinit var server: TestingQuackServer
     private lateinit var url: String

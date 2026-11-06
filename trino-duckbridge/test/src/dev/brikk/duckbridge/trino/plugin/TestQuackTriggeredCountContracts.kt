@@ -4,7 +4,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.sql.DriverManager
 
-/** Independent protocol/client observations; never synthesize affected counts from a second SELECT. */
 class TestQuackTriggeredCountContracts {
     @Test
     fun testJdbcCursorAndNativeWrapperExposeTheActualCountContract() {

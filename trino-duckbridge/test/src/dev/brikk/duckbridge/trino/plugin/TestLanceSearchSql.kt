@@ -16,11 +16,6 @@ package dev.brikk.duckbridge.trino.plugin
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/**
- * Unit tests for [LanceSearchSql] rendering (no DuckDB needed). Ported from the DuckLake
- * `renderExtraArgsSql` coverage; pins the exact call shapes the canary asserts against
- * `duckdb_functions()`.
- */
 class TestLanceSearchSql {
     @Test
     fun lanceScanRendersPathOnly() {

@@ -26,7 +26,6 @@ import java.sql.DriverManager
 import java.sql.Types
 import java.util.Optional
 
-/** Raw native counterexamples remain visible while production must preserve exact local Trino evaluation. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestPowerEdgeAudit : AbstractTestQueryFramework() {
     private lateinit var duck: Connection
@@ -214,7 +213,7 @@ class TestPowerEdgeAudit : AbstractTestQueryFramework() {
     }
 
     private fun scalarAudit(): List<Long> {
-        // Diagnostic native SQL only: production must NOT emit it. Original emitted-SQL red evidence is retained separately.
+        // Diagnostic native SQL only: production must not emit it.
         val expression = "power(\"b\",\"e\")"
         val host = computeActual("SELECT id,power(b,e) FROM power_local.audit.cases ORDER BY id")
         val production = computeActual("SELECT id,power(b,e) FROM power_pushed.audit.cases ORDER BY id")

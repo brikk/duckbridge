@@ -24,17 +24,6 @@ import org.junit.jupiter.api.TestInstance
 import java.sql.DriverManager
 import java.util.Properties
 
-/**
- * The Trino base-jdbc `query()` pass-through table function over the T2 QUACK engine
- * (`duckbridge.execution-engine=QUACK`): raw DuckDB SQL is handed straight to the source, bypassing
- * Trino's planner, and executed server-side through `quack_query_by_name`.
- *
- * This is the interesting case for duckdb-quack#150: pass-through is the one place a user can send
- * multi-scan SQL (joins, DuckDB-native constructs). Because the QUACK executor ships the whole query
- * server-side (PUSHDOWN mode), the join runs remotely as a single local table-function scan and does
- * NOT hit the ATTACH-mode "multiple streaming scans" wall — so joins that DNF in attach mode complete
- * here. Requires Docker.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
     private lateinit var server: TestingQuackServer
@@ -84,7 +73,7 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
     @Test
     fun quoteAndUnicodeSurviveNestedWrapping() {
         // The user SQL becomes a single-quoted argument to quack_query_by_name, so its embedded quote
-        // is doubled once more. This canary proves that nested escaping (and unicode) round-trips.
+        // is doubled once more.
         val names =
             computeActual(passThrough("SELECT name FROM $schema.t WHERE name = 'straße'"))
                 .materializedRows
@@ -94,8 +83,6 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
 
     @Test
     fun duckDbNativeScalarThroughPassThrough() {
-        // DuckDB's printf — a construct Trino would not push down — proves the escape hatch delivers
-        // native DuckDB SQL through the Arrow data plane (result is a plain VARCHAR).
         val labels =
             computeActual(passThrough("SELECT printf('%d=%s', id, name) AS label FROM $schema.t ORDER BY id"))
                 .materializedRows
@@ -136,8 +123,6 @@ class TestDuckBridgeQuackPassThroughQuery : AbstractTestQueryFramework() {
 
     @Test
     fun joinThroughPassThroughCompletesInPushdownMode() {
-        // A self-join: multiple streaming scans in ATTACH mode would DNF (duckdb-quack#150), but here
-        // the whole join runs server-side via quack_query_by_name, so it completes.
         val ids =
             computeActual(
                 passThrough(

@@ -28,7 +28,6 @@ internal object DecimalEdgeAudit {
             val actual = context.native("SELECT id,$expression FROM audit.decimals ORDER BY id")
             scalars.add(listOf(expression, "ALL", host.describe(), local.describe(), actual.describe(), host.types.toString(), actual.types.toString()))
             if (!local.sameContract(host)) findings.add("DECIMAL local read/TRY_CAST differs: $target")
-            // Source DECIMAL -> primitive targets may emit, but VARCHAR/scaled DECIMAL targets remain guarded.
             val suffix = if (target == "BOOLEAN") " = TRUE" else if (target == "VARCHAR") " = '0.500000000000000000'" else " > 0"
             for ((shape, predicate) in listOf("$expression$suffix", "$expression IS NULL").withIndex()) {
                 val row = context.predicate("decimals", predicate, "try-$targetIndex-$shape")
