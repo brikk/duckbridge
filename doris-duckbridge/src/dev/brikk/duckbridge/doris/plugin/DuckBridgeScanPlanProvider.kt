@@ -11,18 +11,8 @@ import org.apache.doris.connector.spi.scan.ConnectorScanRequest
 import java.util.Optional
 
 /**
- * The scan-plan seam for duckbridge: composes the projected columns + domain-floor predicate into a
- * DuckDB `SELECT` ([DuckBridgeQueryBuilder]) and emits ONE JDBC scan range ([DuckBridgeJdbcScanRange])
- * carrying `{query_sql, jdbc_url, jdbc_user, jdbc_password, jdbc_driver_class, jdbc_driver_url,
- * table_type=DUCKDB, catalog_id}` for the BE's `JdbcJniScanner` to run via quack-jdbc.
- *
- * The FE re-evaluates every conjunct above the scan (see
- * `dev-docs/DESIGN-jdbc-scan-contract.md`; we do NOT
- * implement `applyFilter`), so the WHERE we render is a pure optimization — dropped conjuncts are
- * safe, but a PUSHED conjunct must be exactly faithful (the builder enforces the domain floor +
- * NUL refusal). Probe P2: exactly one range per query (a JDBC scan is un-partitionable).
- *
- * Scope: the domain floor plus the small audited function allowlist.
+ * Plans one JDBC scan range per DuckDB query.
+ * Pushed predicates must be exact: re-filtering cannot recover rows excluded remotely.
  */
 internal class DuckBridgeScanPlanProvider(
     private val config: DuckBridgeConnectorConfig,
@@ -30,19 +20,8 @@ internal class DuckBridgeScanPlanProvider(
 ) : ConnectorScanPlanProvider {
 
     /**
-     * Single scan entry point. The SPI (upstream #66135-era) collapsed the former 4-arg/5-arg
-     * `planScan` overloads — and the separate `getScanRangeType()` / `estimateScanRangeCount()`
-     * methods — into one `planScan(session, ConnectorScanRequest)`: the request carries the table
-     * handle, projected columns, remaining filter, row limit, pruned partitions and the COUNT(*)
-     * signal. We consume exactly the fields the old overrides did (handle, columns, filter, limit),
-     * so behaviour is byte-identical to the previous no-limit (4-arg) and limit (5-arg) paths.
-     *
-     * `requiredPartitions` and `isCountPushdown` are ignored: a JDBC scan is un-partitionable
-     * (probe P2 — always exactly one range) and duckbridge has no FE-servable metadata count (the
-     * BE counts by reading; an empty projection already renders `SELECT 1`, see the builder).
-     *
-     * `getScanRangeType()` is gone from the SPI — every range is a file scan now (the JDBC path
-     * rides `getTableFormatType() == "jdbc"` on the range; see [DuckBridgeJdbcScanRange]).
+     * Partitions and metadata count pushdown are unsupported: JDBC queries cannot be partitioned,
+     * and row counts require reading the source.
      */
     override fun planScan(
         session: ConnectorSession?,
@@ -71,8 +50,7 @@ internal class DuckBridgeScanPlanProvider(
             .querySql(querySql)
             .jdbcUrl(config.jdbcUrl)
             .jdbcUser(config.user ?: "")
-            // quack-jdbc reads `password` as the auth-token alias (verified in its
-            // getPropertyInfo). The BE maps jdbc_password → HikariCP password → the token.
+            // quack-jdbc accepts the BE's HikariCP password as an auth-token alias.
             .jdbcPassword(config.password ?: "")
             .driverClass(config.driverClass)
             // The BE resolves driver_url: a "file://…"/scheme URL is used as-is (no checksum gate
@@ -82,15 +60,9 @@ internal class DuckBridgeScanPlanProvider(
             .catalogId(catalogId)
             .build()
 
-        // Exactly one range: a JDBC scan is un-partitionable (probe P2).
         return listOf(range)
     }
 
-    /**
-     * EXPLAIN surfaces the composed query so a "stopped pushing" regression is visible in the plan
-     * (the Doris analogue of asserting on the generated query_sql). Mirrors the in-tree JDBC
-     * connector's `getScanNodeProperties` "query" key.
-     */
     override fun getScanNodeProperties(
         session: ConnectorSession?,
         handle: ConnectorTableHandle,
@@ -110,12 +82,6 @@ internal class DuckBridgeScanPlanProvider(
         return mapOf("query" to querySql)
     }
 
-    /**
-     * columnName → raw DuckDB `TYPE_NAME` for the columns the FE handed us (the scan's slots, which
-     * include filter-referenced columns that must materialize for BE re-evaluation). Powers the
-     * builder's zone-safe temporal rendering (probe P3/P6). A filter column NOT in this set drops its
-     * temporal predicate (fail-safe) — never rendered zone-dependently.
-     */
     private fun columnDuckdbTypes(columns: List<ConnectorColumnHandle>): Map<String, String> =
         columns.filterIsInstance<DuckBridgeColumnHandle>()
             .associate { it.columnName to it.duckdbType }

@@ -18,10 +18,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/**
- * Fast (no-Docker) unit tests pinning [DuckDbToDorisTypeMapper] to the P4-decided map. The integration
- * test proves quack-jdbc reports these exact `TYPE_NAME` strings; this proves the mapping of them.
- */
 class TestDuckDbToDorisTypeMapper {
 
     private fun map(t: String) = DuckDbToDorisTypeMapper.toDorisType(t, "col")
@@ -53,7 +49,6 @@ class TestDuckDbToDorisTypeMapper {
         assertThat(t.typeName).isEqualTo("DECIMALV3")
         assertThat(t.precision).isEqualTo(38)
         assertThat(t.scale).isEqualTo(10)
-        // Whitespace variant (defensive).
         assertThat(map("DECIMAL(9, 2)").precision).isEqualTo(9)
     }
 
@@ -92,10 +87,7 @@ class TestDuckDbToDorisTypeMapper {
         assertThat(ints.typeName).isEqualTo("ARRAY")
         assertThat(ints.children.single().typeName).isEqualTo("INT")
         assertThat(map("VARCHAR[]").children.single().typeName).isEqualTo("STRING")
-        // Nested list of largeint (HUGEINT[]).
         assertThat(map("HUGEINT[]").children.single().typeName).isEqualTo("LARGEINT")
-        // Parametric element type: DECIMAL(5,2)[] → ARRAY<DECIMALV3(5,2)> (element precision/scale
-        // survive the recursion, the quack-jdbc array follow-up for parametric elements).
         val decs = map("DECIMAL(5,2)[]")
         assertThat(decs.typeName).isEqualTo("ARRAY")
         val element = decs.children.single()
@@ -113,7 +105,7 @@ class TestDuckDbToDorisTypeMapper {
                 .hasMessageContaining("untyped SQL NULL")
                 .hasMessageContaining("typed CAST")
         }
-        assertThat(map("INTEGER").typeName).isEqualTo("INT") // typed NULL keeps its declared type
+        assertThat(map("INTEGER").typeName).isEqualTo("INT")
     }
 
     @Test
@@ -130,10 +122,11 @@ class TestDuckDbToDorisTypeMapper {
     fun temporaryBoundaryGuardsHaveAnExplicitRevisitAndNoImplicitCast() {
         for (type in listOf("VARIANT", "VARIANT[]", "TUPLE(INTEGER, VARCHAR)", "TUPLE(INTEGER, VARCHAR)[]")) {
             assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType(type, "boundary") }
-                .hasMessageContaining("temporary boundary guard").hasMessageContaining("5bdd9ba4")
+                .hasMessageContaining("temporary boundary guard")
+                .hasMessageContaining("no qualified dynamic/positional host carrier")
                 .hasMessageContaining("explicit source CAST")
         }
-        assertThat(map("STRUCT(a INTEGER)").typeName).isEqualTo("STRING") // existing documented policy is unchanged
+        assertThat(map("STRUCT(a INTEGER)").typeName).isEqualTo("STRING")
     }
 
     @Test
@@ -145,10 +138,8 @@ class TestDuckDbToDorisTypeMapper {
         assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType("UHUGEINT", "big") }
             .isInstanceOf(DorisConnectorException::class.java)
             .hasMessageContaining("big")
-        // An unmappable ARRAY element propagates the fail-loud.
         assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType("INTERVAL[]", "spans") }
             .isInstanceOf(DorisConnectorException::class.java)
-        // New DuckDB-2 type spellings must not fall through to an accidental string/nanos downgrade.
         for (type in listOf("SQLNULL", "TIMESTAMPTZ_NS", "VARIANT", "BIGNUM", "TUPLE(INTEGER, VARCHAR)")) {
             assertThatThrownBy { DuckDbToDorisTypeMapper.toDorisType(type, "new_type", enableTimestampTz = true) }
                 .isInstanceOf(DorisConnectorException::class.java)

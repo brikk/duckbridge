@@ -40,7 +40,7 @@ object DuckDbBoundaryAudit {
     private fun capture(connection: Connection, transport: String): JsonObject {
         GeneratedSqlAudit.verifyDuck(connection)
         val driver = connection.metaData.driverVersion
-        // duckdb_jdbc 2.0.0.0 still reports the metadata stub "1.0"; pin the real artifact bytes.
+        // duckdb_jdbc reports the metadata stub "1.0", so identify the driver by its artifact bytes.
         val jar = Path.of(connection.javaClass.protectionDomain.codeSource.location.toURI())
         val sha256 = MessageDigest.getInstance("SHA-256").digest(jar.readBytes()).joinToString("") { "%02x".format(it) }
         val expected = if (transport == "quack") System.getProperty("duckbridge.qualification.quack.sha256",

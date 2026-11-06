@@ -1,18 +1,8 @@
 package dev.brikk.duckbridge.doris.plugin
 
 /**
- * Immutable holder for the catalog properties duckbridge reads off `CREATE CATALOG`.
- *
- * @property jdbcUrl the quack-jdbc URL for the user's DuckDB/Quack server (`jdbc:quack://host:port`).
- * @property driverClass the JDBC driver class name (defaults to quack-jdbc's driver).
- * @property driverUrl optional BE driver jar URL, validated against Doris's CREATE/ALTER operator
- *   policy; no checksum gate on the JNI scan path. Null when no explicit driver URL is supplied.
- * @property user optional DuckDB/Quack user.
- * @property password optional DuckDB/Quack credential / Quack token.
- * @property enableTimestampTz preserves DuckDB TIMESTAMPTZ as native Doris TIMESTAMPTZ when true;
- *   false retains the legacy DATETIMEV2 UTC carrier
- *   (default false). API 13 / JNI 5 provides the native UTC-field carrier used by the opt-in;
- *   predicate rendering remains explicit-UTC and session-zone independent.
+ * Catalog properties for the read-only DuckDB connector.
+ * With [enableTimestampTz] disabled, timezone-aware values use a DATETIMEV2 UTC carrier.
  */
 data class DuckBridgeConnectorConfig(
     val jdbcUrl: String,
@@ -23,10 +13,7 @@ data class DuckBridgeConnectorConfig(
     val enableTimestampTz: Boolean = false,
 ) {
     /**
-     * REDACTED toString (Item 2): `password` carries the Quack auth token — the data-class default
-     * would print it verbatim into any log/exception/debug string that renders the config. We
-     * override to mask it (`***` when set, `null` when unset) while keeping the rest for
-     * debuggability. Note the field itself is unchanged — only its rendering.
+     * The data-class default would expose the Quack auth token in logs.
      */
     override fun toString(): String =
         "DuckBridgeConnectorConfig(jdbcUrl=$jdbcUrl, driverClass=$driverClass, " +
@@ -34,11 +21,8 @@ data class DuckBridgeConnectorConfig(
             "enableTimestampTz=$enableTimestampTz)"
 
     companion object {
-        /** Mask a secret for toString: `***` if present, `null` if absent. */
         private fun redact(secret: String?): String = if (secret == null) "null" else "***"
 
-        /** quack-jdbc's driver class (`jdbc:quack://...`), verified against the shipped jar's
-         *  `META-INF/services/java.sql.Driver`. */
         const val DEFAULT_DRIVER_CLASS: String = "com.gizmodata.quack.jdbc.sql.QuackDriver"
 
         const val PROP_JDBC_URL: String = "jdbc_url"
@@ -48,10 +32,6 @@ data class DuckBridgeConnectorConfig(
         const val PROP_PASSWORD: String = "password"
         const val PROP_ENABLE_TIMESTAMP_TZ: String = "enable.mapping.timestamp_tz"
 
-        /**
-         * Build a config from raw catalog properties. Requires [PROP_JDBC_URL]; everything else is
-         * optional. Fails loud (never silently defaults a missing URL) per the repo's fail-loud rule.
-         */
         fun from(properties: Map<String, String>): DuckBridgeConnectorConfig {
             val jdbcUrl = properties[PROP_JDBC_URL]?.takeIf { it.isNotBlank() }
                 ?: throw IllegalArgumentException(

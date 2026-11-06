@@ -5,11 +5,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.util.ServiceLoader
 
-/**
- * Proves the SPI wiring: `ServiceLoader` discovers [DuckBridgeConnectorProvider] via the
- * `META-INF/services` file, and it declares the whitelisted catalog type `"duckbridge"`. This is
- * This guards the load-bearing registration/type mechanics; behavioral suites cover metadata/scans.
- */
 class TestDuckBridgeConnectorProviderLoads {
 
     @Test

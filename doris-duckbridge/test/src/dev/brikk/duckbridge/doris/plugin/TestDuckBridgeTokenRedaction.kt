@@ -16,11 +16,6 @@ package dev.brikk.duckbridge.doris.plugin
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/**
- * Item 2 — the Quack token rides `jdbc_password`; our OWN `toString`s must never print it. (At the
- * pin, FE-core already masks `password` in SHOW CREATE CATALOG / EXPLAIN VERBOSE / the audit log —
- * documented in DESIGN-jdbc-scan-contract.md; this test guards the surfaces that ARE ours to redact.)
- */
 class TestDuckBridgeTokenRedaction {
 
     private val secret = "s3cr3t-quack-token-DO-NOT-LEAK"
@@ -35,7 +30,6 @@ class TestDuckBridgeTokenRedaction {
         val rendered = config.toString()
         assertThat(rendered).doesNotContain(secret)
         assertThat(rendered).contains("password=***")
-        // Non-secret fields stay for debuggability.
         assertThat(rendered).contains("jdbc:quack://duck:4200").contains("user=analyst")
     }
 
@@ -58,15 +52,12 @@ class TestDuckBridgeTokenRedaction {
         val rendered = range.toString()
         assertThat(rendered).doesNotContain(secret)
         assertThat(rendered).contains("jdbc_password=***")
-        // The BE still gets the real value via getProperties() — only toString masks.
         assertThat(range.getProperties()["jdbc_password"]).isEqualTo(secret)
-        // Non-secret props still visible.
         assertThat(rendered).contains("query_sql=SELECT 1").contains("table_type=DUCKDB")
     }
 
     @Test
     fun getPropertiesStillCarriesRealTokenForTheBe() {
-        // Redaction must NOT break the wire: the BE needs the real jdbc_password.
         val range = DuckBridgeJdbcScanRange.Builder().jdbcPassword(secret).build()
         assertThat(range.getProperties()["jdbc_password"]).isEqualTo(secret)
     }

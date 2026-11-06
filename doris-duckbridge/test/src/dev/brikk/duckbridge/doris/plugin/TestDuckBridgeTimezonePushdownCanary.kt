@@ -23,18 +23,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
 
-/**
- * P3/P6 drift canary — proves the connector's temporal pushdown is **server-zone independent**.
- *
- * For a naive `TIMESTAMP` column and a `TIMESTAMPTZ` column, this runs the EXACT SQL the connector
- * composes ([DuckBridgeQueryBuilder]) against a DuckDB/quack server started in BOTH UTC and an
- * exotic non-UTC zone (`America/Los_Angeles`), and asserts identical rows. If the rendering ever
- * regressed to the zone-dependent naive-literal-vs-TIMESTAMPTZ form, the LA run would return
- * different rows and this fails. (The report `dev-docs/archive/REPORT-doris-timezone-probe.md` records the
- * live evidence this test guards.)
- *
- * Requires Docker. Two containers (one per zone) — small, torn down at test end.
- */
 class TestDuckBridgeTimezonePushdownCanary {
 
     private fun cols(vararg names: String): List<ConnectorColumnHandle> =
@@ -49,7 +37,6 @@ class TestDuckBridgeTimezonePushdownCanary {
 
     private val boundary = ConnectorLiteral.ofDatetime(LocalDateTime.of(2024, 6, 1, 6, 30, 0))
 
-    /** Seed the fixture table + return the id set matching the connector-rendered predicate. */
     private fun idsMatching(
         server: TestingQuackServer,
         col: String,
@@ -59,7 +46,6 @@ class TestDuckBridgeTimezonePushdownCanary {
             "memory", "sales", "t", cols("id"), ge(col, boundary), -1,
             mapOf(col to duckdbType),
         )
-        // The predicate MUST push (temporal pushdown is enabled and the column type is known).
         assertThat(sql).describedAs("temporal predicate must push: $sql").contains("WHERE")
         val out = ArrayList<Int>()
         server.openConnection().use { conn ->
@@ -84,7 +70,6 @@ class TestDuckBridgeTimezonePushdownCanary {
 
     @Test
     fun temporalPushdownIsServerZoneIndependent() {
-        // Expected rows are the SAME at both zones (both instants ≥ the 06:30 UTC boundary).
         val expected = listOf(1, 2)
 
         TestingQuackServer(serverTimeZone = "Etc/UTC").use { utc ->
@@ -95,8 +80,6 @@ class TestDuckBridgeTimezonePushdownCanary {
 
         TestingQuackServer(serverTimeZone = "America/Los_Angeles").use { la ->
             seed(la)
-            // The decisive assertion: SAME rows under an exotic server zone. A zone-dependent
-            // rendering (naive literal vs TIMESTAMPTZ) would return {} here for the tz column.
             assertThat(idsMatching(la, "dt", "TIMESTAMP")).describedAs("naive dt @LA").isEqualTo(expected)
             assertThat(idsMatching(la, "ts", "TIMESTAMP WITH TIME ZONE")).describedAs("tz @LA").isEqualTo(expected)
         }

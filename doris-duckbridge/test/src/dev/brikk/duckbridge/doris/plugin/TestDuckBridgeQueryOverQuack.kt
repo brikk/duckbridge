@@ -28,11 +28,6 @@ import org.junit.jupiter.api.TestInstance
 import java.sql.Connection
 import java.sql.SQLException
 
-/**
- * Proves the SQL [DuckBridgeQueryBuilder] composes is VALID DuckDB by running it over quack-jdbc
- * against a real server and asserting rows. This is the FE-side proof (the BE-side round-trip
- * through the DuckDbTypeHandler is the compose smoke). Requires Docker.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeQueryOverQuack {
 
@@ -134,7 +129,6 @@ class TestDuckBridgeQueryOverQuack {
 
     @Test
     fun predicateSqlFiltersExactly() {
-        // WHERE ("id" >= 2)
         val filter: ConnectorExpression = ConnectorComparison(
             ConnectorComparison.Operator.GE,
             ConnectorColumnRef("id", ConnectorType.of("BIGINT")),
@@ -173,7 +167,6 @@ class TestDuckBridgeQueryOverQuack {
 
     @Test
     fun largeintAndArrayColumnsAreValidDuckDb() {
-        // HUGEINT + LIST projected — proves the SELECT is valid; the BE-side decode is the smoke.
         val sql = DuckBridgeQueryBuilder.buildQuery(
             "memory", "sales", "customers", cols("id", "big_id", "tags"), null, -1,
         )

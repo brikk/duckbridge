@@ -28,10 +28,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 
-/**
- * Golden-SQL unit tests for [DuckBridgeQueryBuilder] — projection, the domain-floor predicate
- * shapes, LIMIT gating, and identifier/literal escaping (unicode-safe, NUL-refusing). No Docker.
- */
 class TestDuckBridgeQueryBuilder {
 
     private fun intCol(name: String) =
@@ -60,9 +56,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun projectionAndTableQualification() {
-        // Empty projection (e.g. no-grouping COUNT(*)) ⇒ `SELECT 1`, never `SELECT *`: same row
-        // cardinality, but DuckDB reads no columns and quack-jdbc marshals a constant instead of every
-        // column of every row. Row-count hygiene only — NOT true COUNT(*) pushdown (see friction doc).
         assertThat(build(emptyList()))
             .isEqualTo("""SELECT 1 FROM "memory"."sales"."customers"""")
         assertThat(build(listOf(intCol("id"), stringCol("name"))))
@@ -89,11 +82,9 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun stringLiteralEscapingUnicodeSafe() {
-        // Single-quote doubling + unicode preserved verbatim.
         val f = eq(colRef("name", ConnectorType.of("STRING")), ConnectorLiteral.ofString("straße'; DROP"))
         assertThat(build(listOf(stringCol("name")), f))
             .isEqualTo("""SELECT "name" FROM "memory"."sales"."customers" WHERE ("name" = 'straße''; DROP')""")
-        // Astral plane / non-latin round-trips.
         val g = eq(colRef("name", ConnectorType.of("STRING")), ConnectorLiteral.ofString("δοκιμή"))
         assertThat(build(listOf(stringCol("name")), g)).contains("'δοκιμή'")
     }
@@ -106,8 +97,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun nulLiteralIsRefusedAndConjunctDropped() {
-        // A string literal containing U+0000 must NOT be pushed — the conjunct is dropped (no WHERE),
-        // Doris re-filters above. Never silently mangled.
         val f = eq(colRef("name", ConnectorType.of("STRING")), ConnectorLiteral.ofString("a\u0000b"))
         assertThat(build(listOf(stringCol("name")), f))
             .isEqualTo("""SELECT "name" FROM "memory"."sales"."customers"""")
@@ -141,10 +130,7 @@ class TestDuckBridgeQueryBuilder {
                 ),
             ),
         )
-        // Provide the signup column's DuckDB type (naive DATE) so the date comparison pushes
-        // zone-safely (P3/P6). Without a known type a temporal comparison drops (fail-safe).
         val sql = build(listOf(intCol("id")), and, columnDuckdbTypes = mapOf("signup" to "DATE"))
-        // Top-level AND flattens into WHERE (a) AND (b).
         assertThat(sql).contains(""""id" >= 1""").contains("""DATE '2020-01-15'""").contains(" AND ")
         val or = ConnectorOr(
             listOf(
@@ -157,12 +143,9 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun limitPushedOnlyWhenAllFiltersRendered() {
-        // No filter → LIMIT pushes.
         assertThat(build(listOf(intCol("id")), null, 10)).endsWith(" LIMIT 10")
-        // Fully-pushable filter → LIMIT pushes.
         assertThat(build(listOf(intCol("id")), eq(colRef("id"), ConnectorLiteral.ofLong(1)), 10))
             .endsWith(" LIMIT 10")
-        // A dropped conjunct (a DIVERGENT function → unpushable) → LIMIT withheld (would under-return).
         val divergent = ConnectorComparison(
             ConnectorComparison.Operator.EQ,
             ConnectorFunctionCall("upper", ConnectorType.of("STRING"), listOf(colRef("name", ConnectorType.of("STRING")))),
@@ -171,19 +154,15 @@ class TestDuckBridgeQueryBuilder {
         val withFn = ConnectorAnd(listOf(eq(colRef("id"), ConnectorLiteral.ofLong(1)), divergent))
         val sql = build(listOf(intCol("id")), withFn, 10)
         assertThat(sql).doesNotContain("LIMIT")
-        // The renderable conjunct still pushes.
         assertThat(sql).contains(""""id" = 1""")
     }
 
     @Test
     fun nonScalarColumnPredicateIsDropped() {
-        // A predicate on an ARRAY column is not the domain floor → dropped (no WHERE).
         val f = ConnectorIsNull(colRef("tags", ConnectorType.arrayOf(ConnectorType.of("STRING"))), false)
         assertThat(build(listOf(arrayCol("tags")), f))
             .isEqualTo("""SELECT "tags" FROM "memory"."sales"."customers"""")
     }
-
-    // ---- P1 function allowlist: DIVERGENT functions stay unpushed ----
 
     private fun strColRef(name: String) = colRef(name, ConnectorType.of("STRING"))
     private fun fn(name: String, ret: ConnectorType, vararg args: ConnectorExpression) =
@@ -193,7 +172,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun divergentFunctionsStayUnpushed() {
-        // upper/lower/reverse/concat/power are DIVERGENT in the P1 audit → never pushed.
         val nameRef = strColRef("name")
         val cases = listOf(
             fnEq(fn("upper", ConnectorType.of("STRING"), nameRef), ConnectorLiteral.ofString("X")),
@@ -210,8 +188,6 @@ class TestDuckBridgeQueryBuilder {
                 .isEqualTo("""SELECT "name" FROM "memory"."sales"."customers"""")
         }
     }
-
-    // ---- P1 function allowlist: IDENTICAL functions push with the audited rendering ----
 
     @Test
     fun newDuckDbJsonFunctionsRemainUnpushedUntilSemanticsAreQualified() {
@@ -238,7 +214,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun characterLengthRendersAsDuckDbLength() {
-        // Doris character_length (code points) → DuckDB length.
         val sql = buildFnWhere(
             fn("character_length", ConnectorType.of("INT"), strColRef("name")),
             ConnectorLiteral.ofLong(6),
@@ -248,18 +223,16 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun lengthRendersAsDuckDbStrlenBytes() {
-        // Doris length (BYTES) → DuckDB strlen — NOT DuckDB length (code points).
         val sql = buildFnWhere(
             fn("length", ConnectorType.of("INT"), strColRef("name")),
             ConnectorLiteral.ofLong(7),
         )
         assertThat(sql).contains("""WHERE (strlen("name") = 7)""")
-        assertThat(sql).doesNotContain("length(") // must not use bare DuckDB length
+        assertThat(sql).doesNotContain("length(")
     }
 
     @Test
     fun locateSwapsArgsToStrpos() {
-        // Doris locate(needle, hay) → DuckDB strpos(hay, needle).
         val call = fn(
             "locate", ConnectorType.of("INT"),
             ConnectorLiteral.ofString("lo"), strColRef("name"),
@@ -284,7 +257,6 @@ class TestDuckBridgeQueryBuilder {
             "starts_with", ConnectorType.of("BOOLEAN"),
             strColRef("name"), ConnectorLiteral.ofString("δ"),
         )
-        // starts_with is a boolean-returning conjunct on its own.
         assertThat(build(listOf(intCol("id")), call))
             .contains("""WHERE (starts_with("name", 'δ'))""")
     }
@@ -305,7 +277,6 @@ class TestDuckBridgeQueryBuilder {
     @Test
     fun substringPushesOnlyWithConstantStartNonZero() {
         val nameRef = strColRef("name")
-        // start = 2 (constant, ≠ 0) → pushes.
         assertThat(
             build(
                 listOf(stringCol("name")),
@@ -315,7 +286,6 @@ class TestDuckBridgeQueryBuilder {
                 ),
             ),
         ).contains("""substring("name", 2, 3)""")
-        // start = 0 → DIVERGENT (Doris NULL vs DuckDB 'he') → dropped.
         assertThat(
             build(
                 listOf(stringCol("name")),
@@ -329,13 +299,10 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun unAuditedFunctionIsDropped() {
-        // A function not in the allowlist (e.g. sqrt — float-returning, excluded) → dropped.
         val call = fn("sqrt", ConnectorType.of("DOUBLE"), colRef("id"))
         assertThat(build(listOf(intCol("id")), fnEq(call, ConnectorLiteral.ofDouble(2.0))))
             .isEqualTo("""SELECT "id" FROM "memory"."sales"."customers"""")
     }
-
-    // ---- P3/P6 timezone-safe temporal rendering ----
 
     private val dtLit = ConnectorLiteral.ofDatetime(java.time.LocalDateTime.of(2024, 6, 1, 6, 30, 0))
     private val dateLit = ConnectorLiteral.ofDate(LocalDate.of(2024, 6, 1))
@@ -345,7 +312,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun naiveTimestampColumnPushesNaiveLiteral() {
-        // A DuckDB naive TIMESTAMP column → naive literal (wall-clock, zone-independent).
         val sql = build(
             listOf(intCol("id")),
             dtCmp("dt"),
@@ -357,7 +323,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun timestamptzColumnPushesExplicitUtcLiteral() {
-        // A DuckDB TIMESTAMPTZ column → explicit-UTC literal (option 2, proven zone-independent).
         val sql = build(
             listOf(intCol("id")),
             dtCmp("ts"),
@@ -379,8 +344,6 @@ class TestDuckBridgeQueryBuilder {
 
     @Test
     fun unknownColumnTypeDropsTemporalComparison() {
-        // Fail-safe: a datetime comparison against a column whose DuckDB type is UNKNOWN (not in the
-        // map) DROPS — never the zone-dependent naive-literal-vs-TIMESTAMPTZ form.
         val sql = build(listOf(intCol("id")), dtCmp("mystery"), columnDuckdbTypes = emptyMap())
         assertThat(sql).isEqualTo("""SELECT "id" FROM "memory"."sales"."customers"""")
     }

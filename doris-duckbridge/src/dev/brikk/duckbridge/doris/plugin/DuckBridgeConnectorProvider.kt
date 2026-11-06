@@ -7,10 +7,7 @@ import org.apache.doris.connector.spi.ConnectorSecuritySurface
 import org.apache.doris.foundation.security.JdbcDriverUrlSecurity
 
 /**
- * `ServiceLoader` entry point for the duckbridge Doris connector. Registered via
- * `resources/META-INF/services/org.apache.doris.connector.spi.ConnectorProvider`, discovered at
- * FE startup, and accepted by upstream Doris's provider-first connector routing. The manifest API
- * major is checked before registration; [create] then wires the production metadata and scan path.
+ * `ServiceLoader` entry point for the read-only DuckDB connector.
  */
 class DuckBridgeConnectorProvider : ConnectorProvider {
 
@@ -20,7 +17,7 @@ class DuckBridgeConnectorProvider : ConnectorProvider {
         ConnectorSecuritySurface.ofJdbcDriverUrls(null, DuckBridgeConnectorConfig.PROP_DRIVER_URL)
 
     override fun validateProperties(properties: Map<String, String>) {
-        // Statement-time only: reconstruction/replay must retain historical catalog compatibility.
+        // Validate only at statement time so reconstruction/replay can load existing catalogs.
         val config = DuckBridgeConnectorConfig.from(properties)
         JdbcDriverUrlSecurity.check(config.driverUrl)
     }

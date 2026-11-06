@@ -10,7 +10,6 @@ import java.nio.file.Path
 import java.sql.DriverManager
 import kotlin.io.path.writeText
 
-/** Native signatures and NULL propagation; the larger BE/EXPLAIN matrix is in overlay_qualification.py. */
 object OverlayTypeAudit {
     @JvmStatic
     fun main(args: Array<String>) {

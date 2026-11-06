@@ -5,7 +5,7 @@ import org.apache.doris.connector.spi.pushdown.ConnectorExpression
 import org.apache.doris.connector.spi.pushdown.ConnectorFunctionCall
 import org.apache.doris.connector.spi.pushdown.ConnectorLiteral
 
-/** Test-only prototype; native JNI qualification is blocked. Never a production allowlist entry. */
+/** Test-only prototype, not a production allowlist entry. */
 internal object DorisOverlayCandidate {
     private val STRING_TYPES = setOf("STRING", "VARCHAR")
     private val INTEGER_TYPES = setOf("TINYINT", "SMALLINT", "INT", "INTEGER", "BIGINT")
@@ -38,7 +38,7 @@ internal object DorisOverlayCandidate {
                 types[expression.columnName]?.trim()?.uppercase() == "VARCHAR"
             is ConnectorLiteral -> expression.type.typeName.uppercase() in STRING_TYPES &&
                 (expression.isNull || expression.value is String)
-            else -> false // no casts, nested calls, JSON/nested-value text, CHAR padding or unknown types
+            else -> false
         }
 
     private fun integerConstant(expression: ConnectorExpression): Long? {

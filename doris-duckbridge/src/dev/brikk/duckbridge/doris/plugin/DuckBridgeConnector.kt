@@ -1,21 +1,15 @@
 package dev.brikk.duckbridge.doris.plugin
 
 import org.apache.doris.connector.spi.Connector
+import org.apache.doris.connector.spi.ConnectorContext
 import org.apache.doris.connector.spi.ConnectorMetadata
 import org.apache.doris.connector.spi.ConnectorSession
-import org.apache.doris.connector.spi.scan.ConnectorScanPlanProvider
-import org.apache.doris.connector.spi.ConnectorContext
 import org.apache.doris.connector.spi.ConnectorValidationContext
+import org.apache.doris.connector.spi.scan.ConnectorScanPlanProvider
 import org.apache.doris.foundation.security.JdbcDriverUrlSecurity
 
 /**
- * Read-only duckbridge [Connector]. Composes the SPI object graph — metadata resolution and the
- * scan-plan seam.
- *
- * As of probes P4 (metadata) + P5/P2 (scan), both planes are **real**: [DuckBridgeDorisMetadata]
- * resolves schemas/tables/columns over quack-jdbc, and [DuckBridgeScanPlanProvider] emits a JDBC
- * scan range so rows flow through the BE `JdbcJniScanner` + our `DuckDbTypeHandler`. Predicate
- * pushdown is the DOMAIN FLOOR only (comparisons/IN/IS NULL); function-shape pushdown waits on P1.
+ * Read-only Doris connector for DuckDB over quack-jdbc.
  */
 class DuckBridgeConnector internal constructor(
     private val config: DuckBridgeConnectorConfig,
@@ -24,7 +18,7 @@ class DuckBridgeConnector internal constructor(
 
     private val connections = DuckBridgeQuackConnections(config)
     private val metadata =
-        DuckBridgeDorisMetadata(config, connections, config.enableTimestampTz)
+        DuckBridgeDorisMetadata(config, connections)
     private val scanPlanProvider = DuckBridgeScanPlanProvider(config, context.catalogId)
 
     override fun getMetadata(session: ConnectorSession?): ConnectorMetadata = metadata

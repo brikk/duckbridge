@@ -12,26 +12,12 @@ import java.sql.DatabaseMetaData
 import java.util.Optional
 
 /**
- * Read-side metadata for duckbridge — the REAL implementation, built on what probe P4 proved about
- * quack-jdbc `DatabaseMetaData` fidelity (`dev-docs/archive/REPORT-quack-jdbc-metadata-probe.md`).
- *
- * Namespace flattening (P4): DuckDB is 3-level (`catalog.schema.table`), Doris catalogs are 2-level
- * (`database.table`). We map **DuckDB schema → Doris database**, scoped to the connection's **main
- * catalog only** (discovered from the connection, not hard-coded — an in-memory server's is
- * `memory`, a file/attached DB's is its name). DuckDB-internal catalogs (`system`, `temp`) and
- * schemas (`information_schema`, `pg_catalog`) are excluded, and only `TABLE`/`VIEW` table types are
- * listed (not `SYSTEM VIEW`). Multi-catalog (`ATTACH`) is deferred (report §Open question).
- *
- * Types map via [DuckDbToDorisTypeMapper] keyed off `getColumns().TYPE_NAME` (the faithful field;
- * `DATA_TYPE` is lossy). Unmappable types fail loud naming the column.
- *
- * Connections are short-lived: one per resolution call, closed immediately (doris-ducklake's
- * plan-time round-trip pattern; P2 note in the report).
+ * JDBC metadata scoped to the connection's main catalog.
+ * DuckDB schemas map to Doris databases; nested schema ancestry cannot be represented.
  */
 internal class DuckBridgeDorisMetadata(
     private val config: DuckBridgeConnectorConfig,
     private val connections: DuckBridgeQuackConnections,
-    private val enableTimestampTz: Boolean,
 ) : ConnectorMetadata {
 
     override fun listDatabaseNames(session: ConnectorSession?): List<String> =
@@ -46,7 +32,9 @@ internal class DuckBridgeDorisMetadata(
             val out = ArrayList<String>()
             conn.metaData.getTables(catalog, literalPattern(conn, database), "%", USER_TABLE_TYPES).use { rs ->
                 while (rs.next()) {
-                    if (rs.getString("TABLE_CAT") == catalog && rs.getString("TABLE_SCHEM") == database) out.add(rs.getString("TABLE_NAME"))
+                    if (rs.getString("TABLE_CAT") == catalog && rs.getString("TABLE_SCHEM") == database) {
+                        out.add(rs.getString("TABLE_NAME"))
+                    }
                 }
             }
             out
@@ -63,7 +51,10 @@ internal class DuckBridgeDorisMetadata(
                 var exact = false
                 while (rows.next()) {
                     if (rows.getString("TABLE_CAT") == catalog && rows.getString("TABLE_SCHEM") == database &&
-                        rows.getString("TABLE_NAME") == table) exact = true
+                        rows.getString("TABLE_NAME") == table
+                    ) {
+                        exact = true
+                    }
                 }
                 exact
             }
@@ -86,7 +77,7 @@ internal class DuckBridgeDorisMetadata(
                 ConnectorColumn(
                     col.columnName,
                     col.columnType,
-                    "", // DuckDB column comments not surfaced in v1
+                    "",
                     col.nullable,
                     null, // no default-value backfill for a live JDBC source
                 ),
@@ -118,8 +109,6 @@ internal class DuckBridgeDorisMetadata(
         // Connections are per-call and self-closing; nothing long-lived to release here.
     }
 
-    // ---- resolution helpers ----
-
     /** JDBC Quack currently returns null for getCatalog; ask the engine, never guess from ATTACH listings. */
     private fun mainCatalog(conn: Connection): String {
         val catalog = conn.createStatement().use { statement ->
@@ -137,7 +126,6 @@ internal class DuckBridgeDorisMetadata(
         return catalog
     }
 
-    /** User schemas (Doris databases) under [catalog]: non-system schemas only. */
     private fun userSchemas(conn: Connection, catalog: String): List<String> {
         val out = ArrayList<String>()
         conn.metaData.getSchemas(catalog, "%").use { rs ->
@@ -151,7 +139,6 @@ internal class DuckBridgeDorisMetadata(
         return out
     }
 
-    /** Resolve a table's columns to duckbridge handles, mapping each type off the faithful TYPE_NAME. */
     private fun resolveColumns(conn: Connection, handle: DuckBridgeTableHandle): List<DuckBridgeColumnHandle> {
         requireFlatNamespace(conn, handle.catalog)
         val out = ArrayList<DuckBridgeColumnHandle>()
@@ -159,11 +146,14 @@ internal class DuckBridgeDorisMetadata(
             var ordinal = 0
             while (rs.next()) {
                 if (rs.getString("TABLE_CAT") != handle.catalog || rs.getString("TABLE_SCHEM") != handle.database ||
-                    rs.getString("TABLE_NAME") != handle.table) continue
+                    rs.getString("TABLE_NAME") != handle.table
+                ) {
+                    continue
+                }
                 val name = rs.getString("COLUMN_NAME")
                 val duckdbType = rs.getString("TYPE_NAME")
                 val nullable = rs.getInt("NULLABLE") != DatabaseMetaData.columnNoNulls
-                val dorisType = DuckDbToDorisTypeMapper.toDorisType(duckdbType, name, enableTimestampTz)
+                val dorisType = DuckDbToDorisTypeMapper.toDorisType(duckdbType, name, config.enableTimestampTz)
                 out.add(DuckBridgeColumnHandle(name, dorisType, duckdbType, nullable, ordinal++))
             }
         }
@@ -179,6 +169,7 @@ internal class DuckBridgeDorisMetadata(
     private fun literalPattern(conn: Connection, name: String): String {
         val escape = conn.metaData.searchStringEscape
         check(escape.isNotEmpty()) { "DuckDB metadata must provide its literal pattern escape" }
+        // Escape the escape character first so escaping wildcards does not double-escape them.
         return name.replace(escape, escape + escape).replace("_", escape + "_").replace("%", escape + "%")
     }
 
@@ -188,10 +179,13 @@ internal class DuckBridgeDorisMetadata(
         ).use { statement ->
             statement.setString(1, catalog)
             statement.executeQuery().use { rows ->
-                if (rows.next()) throw DorisConnectorException(
-                    "Nested DuckDB schema '${rows.getString(1)}' under '${rows.getString(2)}' in catalog '$catalog' cannot be exposed " +
-                        "through flat JDBC schema metadata: ancestry would be lost. Use a database with flat schemas or explicit native SQL; " +
-                        "literal dots in flat schema names remain supported.")
+                if (rows.next()) {
+                    throw DorisConnectorException(
+                        "Nested DuckDB schema '${rows.getString(1)}' under '${rows.getString(2)}' in catalog '$catalog' cannot be exposed " +
+                            "through flat JDBC schema metadata: ancestry would be lost. Use a database with flat schemas or explicit native SQL; " +
+                            "literal dots in flat schema names remain supported.",
+                    )
+                }
             }
         }
     }
@@ -203,12 +197,9 @@ internal class DuckBridgeDorisMetadata(
             )
 
     private companion object {
-        // DuckDB-internal catalogs / schemas excluded from user-facing listing (probe P4).
         val SYSTEM_CATALOGS = setOf("system", "temp")
         val SYSTEM_SCHEMAS = setOf("information_schema", "pg_catalog")
 
-        // getTables type filter: base tables report "TABLE", views "VIEW"; "SYSTEM VIEW" /
-        // "LOCAL TEMPORARY" are DuckDB internals we don't surface (probe P4).
         val USER_TABLE_TYPES = arrayOf("TABLE", "VIEW")
     }
 }

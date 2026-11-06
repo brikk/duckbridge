@@ -21,20 +21,7 @@ import java.sql.DatabaseMetaData
 import java.sql.Types
 
 /**
- * Probe P4 — quack-jdbc `DatabaseMetaData` fidelity.
- *
- * Evidence BEFORE code: creates a table covering DuckDB's type surface on a real Quack server,
- * then records what `DatabaseMetaData.getColumns` reports per column (TYPE_NAME, DATA_TYPE JDBC
- * code, COLUMN_SIZE, DECIMAL_DIGITS, nullability) and compares against ground truth from
- * `duckdb_columns()`. Also records getCatalogs / getSchemas / getTables (table-type strings,
- * catalog/schema naming). Findings are printed to stdout AND appended to a machine-diffable
- * section in the report so the type map can key off whatever the driver actually reports.
- *
- * This test does not ASSERT a mapping (that's the metadata plane's job / the integration test);
- * it fails only if the probe itself can't run (server/driver broken). The verdicts it prints are
- * transcribed into dev-docs/archive/REPORT-quack-jdbc-metadata-probe.md.
- *
- * Requires Docker.
+ * Diagnostic metadata capture, not an assertion of type-mapping correctness. Requires Docker.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestQuackJdbcMetadataProbe {
@@ -44,8 +31,6 @@ class TestQuackJdbcMetadataProbe {
     @BeforeAll
     fun setUp() {
         server = TestingQuackServer()
-        // Cover DuckDB's type surface. Types that DuckDB can't create as a plain column, or that
-        // need a cast, are noted inline. ENUM needs a CREATE TYPE first.
         server.exec(
             "CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy')",
             """
@@ -133,7 +118,6 @@ class TestQuackJdbcMetadataProbe {
             md.tableTypes.use { rs -> while (rs.next()) out("  tableType=${rs.getString(1)}") }
             out()
 
-            // Ground truth from duckdb_columns() for the same table.
             val groundTruth = groundTruth(conn)
 
             out("### getColumns(all_types) vs duckdb_columns() ground truth")
@@ -156,8 +140,7 @@ class TestQuackJdbcMetadataProbe {
             out()
         }
 
-        // Persist the transcript next to the report so the human-written verdicts can be checked
-        // against the raw evidence (best-effort; test dir may be read-only in some CI).
+        // Transcript persistence is best-effort because the test directory may be read-only in CI.
         runCatching {
             val target = java.nio.file.Path.of("build/reports/quack-jdbc-metadata-probe.transcript.txt")
             java.nio.file.Files.createDirectories(target.parent)
@@ -165,8 +148,6 @@ class TestQuackJdbcMetadataProbe {
             println("[probe] transcript written to ${target.toAbsolutePath()}")
         }.onFailure { println("[probe] could not write transcript: ${it.message}") }
     }
-
-    // ---- helpers ----
 
     private data class ColumnMeta(
         val name: String,
@@ -225,7 +206,6 @@ class TestQuackJdbcMetadataProbe {
             }.toList()
         }
 
-    /** column_name -> duckdb data_type text, straight from duckdb_columns() (the truth oracle). */
     private fun groundTruth(conn: java.sql.Connection): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         conn.createStatement().use { st ->

@@ -22,11 +22,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
-/**
- * Integration test for the REAL metadata plane (probe P4 output): [DuckBridgeDorisMetadata]
- * resolving schemas/tables/columns over a live quack-jdbc connection to a testcontainer DuckDB,
- * asserting the probe-decided type map. Requires Docker.
- */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestDuckBridgeDorisMetadataOverQuack {
 
@@ -74,14 +69,13 @@ class TestDuckBridgeDorisMetadataOverQuack {
             """.trimIndent(),
             "CREATE TABLE sales.simple (id BIGINT, name VARCHAR)",
             "CREATE TABLE sales.unsupported_timetz (offset_time TIMETZ)",
-            // Unicode table + column names.
             "CREATE TABLE sales.\"tãble_ünï\" (\"cölumn_ä\" INTEGER, val VARCHAR)",
         )
         val config = DuckBridgeConnectorConfig(
             jdbcUrl = server.connectionUrl(),
             password = server.token,
         )
-        metadata = DuckBridgeDorisMetadata(config, DuckBridgeQuackConnections(config), enableTimestampTz = false)
+        metadata = DuckBridgeDorisMetadata(config, DuckBridgeQuackConnections(config))
     }
 
     @AfterAll
@@ -95,7 +89,6 @@ class TestDuckBridgeDorisMetadataOverQuack {
     @Test
     fun listsUserSchemasAsDatabases() {
         val databases = metadata.listDatabaseNames(null)
-        // main (the default schema) + sales; system schemas excluded.
         assertThat(databases).contains("main", "sales")
         assertThat(databases).doesNotContain("information_schema", "pg_catalog")
         assertThat(metadata.databaseExists(null, "sales")).isTrue()
@@ -107,7 +100,6 @@ class TestDuckBridgeDorisMetadataOverQuack {
     fun listsUserTablesOnly() {
         val tables = metadata.listTableNames(null, "sales")
         assertThat(tables).contains("all_types", "simple", "tãble_ünï")
-        // No system objects leak in.
         assertThat(tables).doesNotContain("duckdb_columns", "pg_type")
     }
 
@@ -203,7 +195,6 @@ class TestDuckBridgeDorisMetadataOverQuack {
         assertType("c_integer", "INT")
         assertType("c_bigint", "BIGINT")
         assertType("c_hugeint", "LARGEINT")
-        // Unsigned promotion (report §notes).
         assertType("c_utinyint", "SMALLINT")
         assertType("c_usmallint", "INT")
         assertType("c_uinteger", "BIGINT")
@@ -216,36 +207,30 @@ class TestDuckBridgeDorisMetadataOverQuack {
         assertType("c_date", "DATEV2")
         assertType("c_time", "STRING")
         assertDecimalLike("c_timestamp", "DATETIMEV2", 6, 0)
-        // TIMESTAMPTZ → naive DATETIMEV2(6) over UTC instants (report §TIMESTAMPTZ).
         assertDecimalLike("c_timestamptz", "DATETIMEV2", 6, 0)
         assertDecimalLike("c_ts_ns", "DATETIMEV2", 6, 0) // nanos degrade to micros
         assertType("c_uuid", "UUID")
         assertType("c_json", "STRING")
-        // LIST → ARRAY<element>.
         assertType("c_list_int", "ARRAY")
         assertThat(type("c_list_int").children.single().typeName).isEqualTo("INT")
         assertType("c_list_varchar", "ARRAY")
         assertThat(type("c_list_varchar").children.single().typeName).isEqualTo("STRING")
-        // Parametric element type over the getColumns path: DECIMAL(5,2)[] → ARRAY<DECIMALV3(5,2)>.
         assertType("c_list_dec", "ARRAY")
         type("c_list_dec").children.single().let { el ->
             assertThat(el.typeName).isEqualTo("DECIMALV3")
             assertThat(el.precision).isEqualTo(5)
             assertThat(el.scale).isEqualTo(2)
         }
-        // STRUCT / MAP / ENUM → STRING (v1).
         assertType("c_struct", "STRING")
         assertType("c_map", "STRING")
         assertType("c_enum", "STRING")
 
-        // Nullability faithful.
         assertThat(cols.getValue("c_notnull").nullable).isFalse()
         assertThat(cols.getValue("c_integer").nullable).isTrue()
     }
 
     @Test
     fun failsLoudOnUnmappableType() {
-        // INTERVAL has no faithful Doris mapping → fail loud naming the column + type.
         server.exec("CREATE TABLE sales.bad_interval (id INTEGER, span INTERVAL)")
         val handle = metadata.getTableHandle(null, "sales", "bad_interval").get()
         assertThatThrownBy { metadata.getColumnHandles(null, handle) }
@@ -256,7 +241,6 @@ class TestDuckBridgeDorisMetadataOverQuack {
 
     @Test
     fun failsLoudOnUnsignedHugeint() {
-        // UHUGEINT (0..2^128-1) has no correct Doris fit → fail loud.
         server.exec("CREATE TABLE sales.bad_uhuge (id INTEGER, big UHUGEINT)")
         val handle = metadata.getTableHandle(null, "sales", "bad_uhuge").get()
         assertThatThrownBy { metadata.getColumnHandles(null, handle) }

@@ -4,10 +4,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/**
- * Config-holder tests. This covers the catalog-property parsing the connector
- * implements; metadata and scan behavior are covered by their integration suites.
- */
 class TestDuckBridgeConnectorConfig {
 
     @Test
