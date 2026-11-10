@@ -289,7 +289,6 @@ class DuckBridgeClient
             super.addColumn(session, handle, column, position)
         }
 
-        @Suppress("CyclomaticComplexMethod")
         override fun toColumnMapping(
             session: ConnectorSession,
             connection: Connection,

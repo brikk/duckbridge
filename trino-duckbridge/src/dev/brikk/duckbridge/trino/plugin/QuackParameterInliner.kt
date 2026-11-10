@@ -53,7 +53,6 @@ object QuackParameterInliner {
         return substitutePlaceholders(prepared.query(), literals)
     }
 
-    @Suppress("CyclomaticComplexMethod")
     private fun renderLiteral(param: QueryParameter): String {
         val value = param.value.orElse(null) ?: return "NULL"
         val type = param.type

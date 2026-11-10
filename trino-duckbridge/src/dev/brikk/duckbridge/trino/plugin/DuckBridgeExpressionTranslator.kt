@@ -115,7 +115,6 @@ object DuckBridgeExpressionTranslator {
         return "\"$escaped\""
     }
 
-    @Suppress("CyclomaticComplexMethod")
     private fun translateConstant(constant: Constant): String? {
         val value: Any? = constant.value
         val type: Type = constant.type
@@ -152,7 +151,6 @@ object DuckBridgeExpressionTranslator {
         return null
     }
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun translateCall(
         call: Call,
         assignments: Map<String, ColumnHandle>,

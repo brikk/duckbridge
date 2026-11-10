@@ -29,6 +29,7 @@ kotlin {
 // Custom src / test/src layout (from buildlogic.kotlin.common), so point detekt at it explicitly.
 detekt {
     buildUponDefaultConfig = true
+    failOnSeverity = dev.detekt.gradle.extensions.FailOnSeverity.Error
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     baseline = file("detekt-baseline.xml")
     source.setFrom("src", "test/src", "audit/src")

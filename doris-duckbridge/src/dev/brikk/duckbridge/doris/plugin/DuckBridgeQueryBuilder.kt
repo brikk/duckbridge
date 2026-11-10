@@ -117,7 +117,6 @@ internal object DuckBridgeQueryBuilder {
         }
     }
 
-    @Suppress("ReturnCount")
     private fun render(expr: ConnectorExpression, ctx: RenderContext): String? = when (expr) {
         is ConnectorComparison -> renderComparison(expr, ctx)
         is ConnectorIn -> renderIn(expr, ctx)
@@ -231,7 +230,6 @@ internal object DuckBridgeQueryBuilder {
 
     private enum class TemporalClass { NAIVE, TZ }
 
-    @Suppress("ReturnCount")
     private fun renderLiteral(lit: ConnectorLiteral, temporalClass: TemporalClass?): String? {
         if (lit.isNull) {
             return "NULL"

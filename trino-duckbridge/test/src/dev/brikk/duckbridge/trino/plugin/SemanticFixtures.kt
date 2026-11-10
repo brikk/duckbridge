@@ -93,7 +93,6 @@ object SemanticFixtures {
         fun emittedDuckSql(): String? = DuckBridgeExpressionTranslator.translate(expr, ASSIGNMENTS, SESSION, aliasAvailable = true)
     }
 
-    @Suppress("LongMethod")
     fun all(): List<Case> =
         buildList {
             addAll(stringFixtures())
@@ -106,7 +105,6 @@ object SemanticFixtures {
         }
 
 
-    @Suppress("LongMethod")
     private fun stringFixtures(): List<Case> =
         buildList {
             add(fx("length", 1, "code-point count (cyrillic)", call("length", BIGINT, str("пингвин"))))
@@ -157,7 +155,6 @@ object SemanticFixtures {
         }
 
 
-    @Suppress("LongMethod")
     private fun numericFixtures(): List<Case> =
         buildList {
             add(fx("abs", 1, "negative", call("abs", BIGINT, int(-5))))
@@ -249,7 +246,6 @@ object SemanticFixtures {
         }
 
 
-    @Suppress("LongMethod")
     private fun dateTimeFixtures(): List<Case> =
         buildList {
             add(fx("year", 1, "on DATE", call("year", BIGINT, date("2024-02-29"))))
@@ -414,7 +410,6 @@ object SemanticFixtures {
         }
 
 
-    @Suppress("LongMethod")
     private fun aliasFixtures(): List<Case> =
         buildList {
             val caseCorpus =

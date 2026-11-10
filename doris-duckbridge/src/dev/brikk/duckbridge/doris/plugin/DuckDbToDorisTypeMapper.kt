@@ -56,7 +56,6 @@ internal object DuckDbToDorisTypeMapper {
         normalized.startsWith("struct(") || normalized.startsWith("struct<") ||
             normalized.startsWith("map(") || normalized.startsWith("map<") || normalized.startsWith("enum(")
 
-    @Suppress("CyclomaticComplexMethod") // A flat DuckDB-type → Doris-type dispatch; one arm per type.
     private fun mapScalar(
         normalized: String,
         columnName: String,

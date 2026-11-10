@@ -146,7 +146,6 @@ class TestDuckBridgeScalarTypes {
     }
 
     @Test
-    @Suppress("LongMethod") // one write followed by the native DuckDB type/value assertions
     fun trinoWritesNativeScalarTypesBackToDuckDb() {
         queryRunner.execute(
             """

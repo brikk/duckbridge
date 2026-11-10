@@ -28,6 +28,7 @@ tasks.named("compileKotlin") { dependsOn(generateTrinoTarget) }
 // Custom src/test layout, so point detekt at it explicitly.
 detekt {
     buildUponDefaultConfig = true
+    failOnSeverity = dev.detekt.gradle.extensions.FailOnSeverity.Error
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     baseline = file("detekt-baseline.xml")
     source.setFrom("src", "test")

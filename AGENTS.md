@@ -28,6 +28,21 @@ push down. Never silently over/under-return.
 
 See `trino-duckbridge/dev-docs/` for the plan and phase notes.
 
+## Detekt advisories
+
+MaxLineLength (120 characters), LongMethod (60 lines), CognitiveComplexMethod (15),
+CyclomaticComplexMethod (14), and ReturnCount (4, excluding guard clauses and lambda
+returns) are review signals, not mandatory limits. Keep them enabled at
+`severity: warning`, with the build failure threshold at Error. All other configured rules
+remain enforced; do not enable `ignoreFailures` or disable lint globally.
+
+Prioritize readable, cohesive code over metric compliance. Do not wrap lines, split
+methods, add trivial helpers, introduce mutable state, or rewrite clear control flow
+solely to clear an advisory. Extract helpers when they express meaningful
+responsibilities, isolate invariants, or remove duplication. Advisories require
+neither suppressions nor baseline entries; leave findings visible. Do not
+mechanically undo existing refactorings: this is policy, not production behavior.
+
 ## Commit identity (Buzz agents)
 
 When you (a Buzz agent) commit on someone's behalf, attribute the commit to the

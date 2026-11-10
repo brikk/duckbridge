@@ -116,7 +116,6 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
 
         private fun isJsonType(type: Type): Boolean = type.baseName == StandardTypes.JSON
 
-        @Suppress("CyclomaticComplexMethod", "LongMethod")
         private fun convertColumn(type: Type, vector: FieldVector, rowCount: Int): Block {
             val builder: BlockBuilder = type.createBlockBuilder(null, rowCount)
             when (type) {
@@ -485,7 +484,6 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             }
         }
 
-        @Suppress("CyclomaticComplexMethod")
         private fun writeTimestampColumn(type: TimestampType, vector: FieldVector, builder: BlockBuilder, rowCount: Int) {
             // Trino stores TIMESTAMP at micros-since-epoch in a long for precision <= 6,
             // and as LongTimestamp(micros, picosOfMicro) for precision <= 9.
@@ -550,7 +548,6 @@ class DuckBridgeArrowToPageConverter(columnTypes: List<Type>) {
             }
         }
 
-        @Suppress("CyclomaticComplexMethod")
         private fun writeTimestampTzColumn(type: TimestampWithTimeZoneType, vector: FieldVector, builder: BlockBuilder, rowCount: Int) {
             // DuckDB stamps the Arrow vector with its session TimeZone, which is set to Trino's session
             // zone, so values come back in the session zone like other Trino connectors. Falls back to

@@ -72,7 +72,6 @@ internal object Re2Safety {
     }
 
     /** Consume one construct outside a bracket class; returns the next index or -1 to reject. */
-    @Suppress("CyclomaticComplexMethod", "ReturnCount") // one branch per regex construct
     private fun stepOutsideClass(st: Scan): Int {
         val p = st.p
         val i = st.i
@@ -114,7 +113,6 @@ internal object Re2Safety {
      * Length of the escape sequence starting at [i] (which is a backslash), or -1 if it is not on the
      * allowlist.
      */
-    @Suppress("CyclomaticComplexMethod", "ReturnCount")
     private fun escapeLength(p: String, i: Int, inClass: Boolean): Int {
         if (i + 1 >= p.length) return -1
         val e = p[i + 1]

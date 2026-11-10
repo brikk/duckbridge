@@ -146,7 +146,6 @@ class TestPushdownRowSetParity : AbstractTestQueryFramework() {
             .materializedRows
             .joinToString("\n") { it.getField(0).toString() }
 
-    @Suppress("LongMethod")
     private fun cases(): List<Case> =
         listOf(
             Case("BARE string + unicode + NULL", "length(s) = 6"),
