@@ -150,7 +150,7 @@ log "  driver: $(basename "$driver_src") → .be-drivers/quack-jdbc.jar (BE driv
 # Populate the named volume before the FE starts so its first plugin scan cannot observe an empty
 # directory and record a transient load failure. docker cp avoids unreliable macOS VM bind mounts.
 log "Installing plugin from $(basename "$zip_path") into the FE plugin volume…"
-PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api27-4bc7f426}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-doris-duckbridge-api30-9fb3e3a2}"
 VOL_NAME="${PROJECT_NAME}_fe-plugin-duckbridge"
 "${DOCKER}" volume create \
     --label "com.docker.compose.project=${PROJECT_NAME}" \
@@ -216,8 +216,7 @@ while :; do
     sleep 3
 done
 
-# API-major compatibility is not FE/BE wire compatibility. #68785 renumbered query options and
-# #68837 changed report field 34. Both engines must report BASELINE's exact pin before fixtures.
+# API-major compatibility does not imply FE/BE wire compatibility.
 live_version() {
     local statement="$1"
     fe_sql -B -e "${statement}" | awk -F'\t' \
@@ -226,7 +225,13 @@ live_version() {
 }
 expected_pin=$(sed -n 's/^PIN_SHA=//p' "${REPO_ROOT}/doris-patches/BASELINE")
 [[ "${expected_pin}" =~ ^[0-9a-f]{40}$ ]] || { log "Invalid Doris BASELINE pin."; exit 1; }
-expected_version="doris-0.0.0-${expected_pin:0:11}"
+expected_version=$(sed -n 's/^PIN_VERSION=//p' "${REPO_ROOT}/doris-patches/BASELINE")
+expected_revision="${expected_version#doris-0.0.0-}"
+[[ "${expected_version}" == "doris-0.0.0-${expected_revision}" &&
+    "${expected_revision}" =~ ^[0-9a-f]{8,40}$ && "${expected_pin}" == "${expected_revision}"* ]] || {
+    log "Invalid Doris BASELINE SQL version."
+    exit 1
+}
 fe_version=$(live_version "SHOW FRONTENDS")
 be_version=$(live_version "SHOW BACKENDS")
 if [[ "${fe_version}" != "${expected_version}" || "${be_version}" != "${expected_version}" ]]; then

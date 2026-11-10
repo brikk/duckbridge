@@ -16,12 +16,15 @@ SOURCE = Path(__file__).resolve().parent
 
 class SmokeDriverTests(unittest.TestCase):
     def test_smoke_rejects_mismatched_fe_be_before_catalog_creation(self):
-        self.assert_rejected_versions("doris-0.0.0-4bc7f426828", "doris-0.0.0-stale-be")
+        self.assert_versions("doris-0.0.0-9fb3e3a2", "doris-0.0.0-stale-be")
 
     def test_smoke_rejects_matched_but_wrong_source_before_catalog_creation(self):
-        self.assert_rejected_versions("doris-0.0.0-62e3d81a42b", "doris-0.0.0-62e3d81a42b")
+        self.assert_versions("doris-0.0.0-62e3d81a42b", "doris-0.0.0-62e3d81a42b")
 
-    def assert_rejected_versions(self, fe_version, be_version):
+    def test_smoke_accepts_matching_api30_eight_character_version(self):
+        self.assert_versions("doris-0.0.0-9fb3e3a2", "doris-0.0.0-9fb3e3a2", accepted=True)
+
+    def assert_versions(self, fe_version, be_version, accepted=False):
         with tempfile.TemporaryDirectory(prefix="duckbridge-version-") as temporary:
             root = Path(temporary)
             compose = root / "doris-duckbridge" / "compose"
@@ -99,8 +102,12 @@ exit 0
                 timeout=10,
             )
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("VERSION FAIL", result.stdout + result.stderr)
+            if accepted:
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("VERSION GREEN", result.stdout)
+            else:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("VERSION FAIL", result.stdout + result.stderr)
             self.assertNotIn("Creating catalog duckbridge_test", result.stdout + result.stderr)
 
     def test_down_stages_static_fe_election_network(self):

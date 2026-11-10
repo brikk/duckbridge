@@ -1,5 +1,10 @@
 # Doris OVERLAY qualification — 2026-10-29
 
+> Historical API24 result. The [API30 adoption checks](REVIEW-doris-api30-2026-11-10.md)
+> verify upstream's JNI UTF-8 fix, including the exact pushed-astral-literal
+> reproduction below. The candidate mapping remains test-only and production
+> OVERLAY pushdown remains disabled; this old failed run is not reclassified.
+
 ## Contract and decision
 
 **Qualification is blocked; the candidate renderer is test-only and cannot ship

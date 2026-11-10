@@ -9,6 +9,8 @@ import org.apache.doris.thrift.TPaimonFileDesc
 import org.apache.doris.thrift.TReportExecStatusParams
 import org.apache.doris.thrift.TReportRequest
 import org.apache.doris.thrift.TQueryOptions
+import org.apache.doris.thrift.TRoutineLoadTask
+import org.apache.doris.thrift.TSchemaTableRequestParams
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -16,22 +18,27 @@ import java.lang.reflect.Proxy
 import java.util.Properties
 import java.util.Optional
 
-class TestDorisApi27Contract {
+class TestDorisApi30Contract {
     private val properties = mapOf("jdbc_url" to "jdbc:quack://localhost:9494")
 
     @Test
-    fun compileClosureIsApi27WithMatchingWireFields() {
+    fun compileClosureIsApi30WithMatchingWireFields() {
         val resource = "META-INF/doris/connector-plugin-api-version.properties"
         val version = Properties().apply {
-            checkNotNull(TestDorisApi27Contract::class.java.classLoader.getResourceAsStream(resource)).use { load(it) }
+            checkNotNull(TestDorisApi30Contract::class.java.classLoader.getResourceAsStream(resource)).use { load(it) }
         }
-        assertThat(version.getProperty("api.version")).isEqualTo("27.0")
+        assertThat(version.getProperty("api.version")).isEqualTo("30.0")
         assertThat(TReportExecStatusParams._Fields.PAIMON_COMMIT_MESSAGES.thriftFieldId.toInt()).isEqualTo(34)
         assertThat(TPaimonFileDesc._Fields.ORIGINAL_FILE_PATH.thriftFieldId.toInt()).isEqualTo(20)
         assertThat(TReportRequest._Fields.TOP_QUERY_TABLETS.thriftFieldId.toInt()).isEqualTo(18)
         assertThat(TReportRequest._Fields.TOP_LOAD_TABLETS.thriftFieldId.toInt()).isEqualTo(19)
         assertThat(TQueryOptions._Fields.ENABLE_FILE_SCANNER_V2.thriftFieldId.toInt()).isEqualTo(1002)
         assertThat(TQueryOptions().isEnableFileScannerV2).isTrue()
+        assertThat(TSchemaTableRequestParams._Fields.RESERVED_FIELD_9.thriftFieldId.toInt()).isEqualTo(9)
+        assertThat(TSchemaTableRequestParams._Fields.TABLE_NAME.thriftFieldId.toInt()).isEqualTo(10)
+        assertThat(TRoutineLoadTask._Fields.QUALIFIED_USER.thriftFieldId.toInt()).isEqualTo(18)
+        assertThat(TRoutineLoadTask._Fields.CLOUD_CLUSTER.thriftFieldId.toInt()).isEqualTo(19)
+        assertThat(TRoutineLoadTask._Fields.KINESIS_LOAD_INFO.thriftFieldId.toInt()).isEqualTo(20)
     }
 
     @Test
@@ -120,7 +127,9 @@ class TestDorisApi27Contract {
         assertThat(scan.streamingSplitEstimate(null, handle, Optional.empty(), false)).isEqualTo(-1L)
         assertThat(scan.partitionBatchSize(null, 100, 2)).isEqualTo(1024)
         assertThat(scan.supportsTableSample()).isFalse()
+        assertThat(scan.supportsFileCache()).isFalse()
         val request = ConnectorScanRequest.builder(handle, emptyList()).build()
+        assertThat(scan.streamPartitionSources(null, request, 1024, 2)).isEmpty()
         val ranges = scan.planScan(null, request)
         assertThat(ranges).hasSize(1)
         assertThat(ranges.single().tableFormatType).isEqualTo("jdbc")

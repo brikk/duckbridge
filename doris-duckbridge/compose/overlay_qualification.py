@@ -53,8 +53,7 @@ def remote_query(sql):
 
 def check_versions():
     baseline = Path(__file__).resolve().parents[2] / "doris-patches/BASELINE"
-    pin = next(line.split("=", 1)[1] for line in baseline.read_text().splitlines() if line.startswith("PIN_SHA="))
-    expected = "doris-0.0.0-" + pin[:11]
+    expected = next(line.split("=", 1)[1] for line in baseline.read_text().splitlines() if line.startswith("PIN_VERSION="))
     for statement in ("SHOW FRONTENDS", "SHOW BACKENDS"):
         rows = checked("doris", statement)
         if not rows or any(expected not in row for row in rows):

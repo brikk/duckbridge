@@ -5,9 +5,10 @@ scans/projections/predicates into a user-operated DuckDB (remote via the Quack
 protocol, `jdbc:quack://…`), using Doris's `fe-connector` plugin SPI and the BE's
 existing JDBC JNI scanner.
 
-**Status:** read-only development connector for the pinned Doris master baseline and
-DuckDB **2.0.0**. The matched FE/BE runtime is locally qualified for correctness;
-this is not a production rollout or performance claim. The plugin bundles its Quack
+**Status:** read-only development connector targeting Doris connector API **30** and
+DuckDB **2.0.0**. The matched FE/BE and patched JDBC/JNI runtime are locally qualified
+for correctness; this is not a production rollout or performance claim.
+The plugin bundles its Quack
 JDBC driver; dependency versions are pinned in
 [`../gradle/libs.versions.toml`](../gradle/libs.versions.toml).
 

@@ -4,13 +4,15 @@
 
 [`doris-patches/BASELINE`](../../doris-patches/BASELINE) is the single source of
 truth for the exact apache/doris master SHA. The current lane uses connector API
-27, filesystem API 7, JNI API 6 and Thrift 0.24.0. Do not build a moving branch
+30, filesystem API 7, JNI API 6 and Thrift 0.24.0. Do not build a moving branch
 tip, relabel an older native output, mix FE/BE pins or assume an unchanged SPI
 qualifies a different transitive plugin/runtime closure.
 
 Only the BE DuckDbTypeHandler patch is carried. The FE is pristine at the matching
 pin. Keep LARGEINT/ARRAY/VARBINARY, UUID and UTC-field timestamp behavior intact.
-The UTF-8/JNI OVERLAY issue is separate and remains uncorrected by the handler.
+The pin includes upstream JNI standard UTF-8 conversion. Actual JDBC/Quack reads,
+native OVERLAY evaluation and pushed supplementary-Unicode literals pass the
+scoped API30 checks. OVERLAY pushdown remains disabled; the handler patch is unchanged.
 
 ## Bootstrap and apply
 
@@ -47,8 +49,9 @@ smoke, persisted restart and plugin-scoped failure/recovery are distinct checks.
 Do not weaken assertions, hide native failures, change data types or claim ASAN
 correctness evidence is production performance qualification.
 
-The [current baseline qualification](QUALIFICATION-api27-2026-11-02.md) records
-the actual input/output hashes and rollback boundaries. The [compose guide](DEVELOPMENT-compose.md)
+The [API30 adoption](REVIEW-doris-api30-2026-11-10.md) records current SDK/build status;
+the [API27 qualification](QUALIFICATION-api27-2026-11-02.md) is prior-pin evidence only.
+The [compose guide](DEVELOPMENT-compose.md)
 describes the developer fixture and destructive volume teardown options; do not
 apply those options to unrelated or shared stacks.
 

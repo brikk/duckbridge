@@ -12,11 +12,11 @@ Each entry is a pickable upstream ask, ordered by what most reduces the out-of-t
 | **P2** | `COUNT(*)` pushdown on the BE JDBC scanner | `COUNT(*)` is O(rows) not O(1); helps every JDBC connector | No (interim: `SELECT 1`) |
 | **P3** | Per-scan `connectionInitSql` on the BE JDBC pool | Unblocks tz-sensitive predicate pushdown | No (feature gated off; we render zone-explicit) |
 
-At the current API-27/JNI-6 pin in `doris-patches/BASELINE`, these three seams
+At the API-30/JNI-6 target in `doris-patches/BASELINE`, these three seams
 remain the relevant asks. The FE is pristine; the only carried source patch is
 the BE DuckDbTypeHandler. Row/JDBC connectors keep storage/nested-pruning
-capabilities off. A JDBC-to-ADBC migration is an optional architecture choice,
-not a missing prerequisite for the current connector.
+capabilities off. The API30 upgrade retains JDBC/Quack; it does not migrate to ADBC
+or native file readers.
 
 Sister docs: [`scan contract`](./DESIGN-jdbc-scan-contract.md) ·
 [`PATCHES.md`](../../doris-patches/PATCHES.md).

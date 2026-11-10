@@ -10,6 +10,10 @@ must be baked before `up`; Compose does not compile Doris.
 This environment uses the complete matching Java/JNI tree and an ASAN-enabled BE
 for correctness testing, not production or performance measurements.
 
+The configuration targets the locally qualified API30 Duckbridge-patched JDBC/JNI
+images; the pristine DuckLake donor BE lacks the handler and is not a substitute.
+See [API30 adoption status](REVIEW-doris-api30-2026-11-10.md).
+
 ## Branch FE **and** branch BE — both required
 
 Both engines must match the exact baseline in
@@ -26,8 +30,8 @@ layer and complete JNI plugin layout:
    ```bash
    BUILD_TYPE=ASAN tools/doris-baseline.sh --build-fe --build-be   # JDK 17; multi-hour BE build
    ```
-2. **Baked images** `doris-fe:duckbridge-4bc7f426828-api27` +
-   `doris-be:duckbridge-4bc7f426828-api27-asan` (see below).
+2. **Baked images** `doris-fe:duckbridge-9fb3e3a2a13-api30` +
+   `doris-be:duckbridge-9fb3e3a2a13-api30-asan` (see below).
 3. **Plugin zip** — built on demand by `smoke.sh` (`./gradlew :doris-duckbridge:pluginZip`).
 4. **`.env`** — `cp .env.example .env` and set `QUACK_TOKEN` (smoke.sh auto-copies if absent).
 5. Docker (or podman — set `DOCKER=podman`).
@@ -81,7 +85,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_smoke_driver.py
   Podman-on-macOS host↔VM file sharing can't drop the jar tree).
 - **No local-shuffle shim.** FE/BE source and Thrift must match; never disable planning paths
   to conceal a stale engine image.
-- **Project-scoped volumes.** The Compose project is `doris-duckbridge-api27-4bc7f426`.
+- **Project-scoped volumes.** The Compose project is `doris-duckbridge-api30-9fb3e3a2`.
   `--down` deletes that project's FE metadata/plugin/log and BE storage/log volumes;
   do not reuse state from a different Doris baseline.
 - **BE dist root** is `/opt/apache-doris/be`; keep the Dockerfile and storage/log mounts aligned.

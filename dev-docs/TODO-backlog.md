@@ -16,9 +16,6 @@ weaken types, normalize values or claim arbitrary matching failures as parity.
   carrier refusals until a real typed fix is proved. The raw TUPLE-list getter
   crash was reproduced; this is not a pending request to repeat that audit.
   [Guard policy](../trino-duckbridge/dev-docs/REPORT-boundary-type-policy-2026-10-30.md).
-- [ ] **B-DORIS-UTF8:** retain the OVERLAY refusal until Doris JNI's UTF-8 /
-  modified-UTF-8 boundary is corrected. No handler/JNI splice or text workaround.
-  [Evidence](../doris-duckbridge/dev-docs/REPORT-overlay-qualification-2026-10-29.md).
 - [ ] **B-QUACK-YEAR-BIND:** direct Quack OffsetDateTime batch binding of expanded
   positive years produced rejected `+69388...` timestamp spelling. This fixture
   finding does not alone establish the production writer's whole boundary.
@@ -26,6 +23,11 @@ weaken types, normalize values or claim arbitrary matching failures as parity.
 
 ## Retained engine/tooling knowledge
 
+- **B-DORIS-UTF8:** corrected upstream and verified on API30, including the exact
+  pushed supplementary-Unicode SQL-literal reproduction over JDBC/Quack. No text
+  workaround or native handler splice was used. OVERLAY pushdown remains disabled;
+  its candidate mapping needs separate qualification.
+  [Current evidence](../doris-duckbridge/dev-docs/REVIEW-doris-api30-2026-11-10.md).
 - **B-TRINO-IN:** 483's compiled REAL membership path distinguishes negative-zero
   bits from its equality/domain paths. The specific IN/NOT IN issue is fixed in
   stock 484; maintain version-specific assertions, not a skipped test or value

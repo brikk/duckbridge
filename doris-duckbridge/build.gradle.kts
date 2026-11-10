@@ -40,9 +40,8 @@ detekt {
 val functionAudit = sourceSets.create("functionAudit")
 kotlin.sourceSets.named("functionAudit") { kotlin.srcDir("audit/src") }
 val brikkSqlAuditVersion = providers.gradleProperty("brikkSqlAuditVersion").orNull
-val functionAuditDorisPin = rootProject.file("doris-patches/BASELINE").readLines()
-    .single { it.startsWith("PIN_SHA=") }.substringAfter('=')
-val functionAuditDorisVersion = "doris-0.0.0-${functionAuditDorisPin.take(11)}"
+val functionAuditDorisVersion = rootProject.file("doris-patches/BASELINE").readLines()
+    .single { it.startsWith("PIN_VERSION=") }.substringAfter('=')
 
 // PROJECT-LOCAL Doris artifact repository — the self-contained bootstrap.
 //
@@ -146,11 +145,10 @@ tasks.withType<JavaCompile>().configureEach {
 
 // The FE's ApiVersionGate compares this provider JAR's manifest major with the kernel's
 // META-INF/doris/connector-plugin-api-version.properties. An absent or stale major is rejected.
-// API 27 matches doris-patches/BASELINE; write-default/streaming/cache/partition capabilities remain
-// disabled. TestDorisApi27Contract pins the compile resource and the safe runtime defaults.
+// The manifest major must match the compile SDK and FE host.
 tasks.jar {
     manifest {
-        attributes("Doris-Connector-Plugin-Api-Version" to "27.0")
+        attributes("Doris-Connector-Plugin-Api-Version" to "30.0")
     }
 }
 
